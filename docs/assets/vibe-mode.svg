@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" role="img" aria-labelledby="title desc">
+  <title id="title">Vibe Mode turns rambling speech into a clear agent brief</title>
+  <desc id="desc">Right Command records speech, transcribes and cleans it locally, sends only cleaned text to Kimi K3, then inserts a structured brief. A real example preserves the speaker's boundary that deployment must be left to them.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#9d988e"/>
+    </marker>
+    <style>
+      .title{font:600 30px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1c1c1a}
+      .body{font:450 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#2b2b28}
+      .strong{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1c1c1a}
+      .label{font:650 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:1.5px;fill:#77736a}
+      .small{font:450 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#706c64}
+      .step{font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#272725}
+      .mono{font:550 15px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#1c1c1a}
+      .line{stroke:#aaa69d;stroke-width:1.6;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1200" height="780" rx="26" fill="#f6f3ec"/>
+
+  <rect x="48" y="36" width="132" height="28" rx="14" fill="#f7e3dd"/>
+  <circle cx="66" cy="50" r="4" fill="#cf6b4c"/>
+  <text x="78" y="54" class="label" fill="#a84e35">VIBE MODE</text>
+  <text x="48" y="106" class="title">Ramble in. Brief out.</text>
+  <text x="1152" y="101" text-anchor="end" class="small">A deliberate second gear for agent prompts</text>
+
+  <g transform="translate(48 140)">
+    <rect width="1104" height="108" rx="18" fill="#fffefa" stroke="#dedad0" stroke-width="1.5"/>
+    <rect x="20" y="23" width="132" height="62" rx="15" fill="#f7e3dd"/>
+    <text x="86" y="49" text-anchor="middle" class="step">Hold Right ⌘</text>
+    <text x="86" y="70" text-anchor="middle" class="small">speak naturally</text>
+    <path class="line" d="M168 54H218"/>
+    <rect x="236" y="23" width="160" height="62" rx="15" fill="#eeeaff"/>
+    <text x="316" y="49" text-anchor="middle" class="step">Local Whisper</text>
+    <text x="316" y="70" text-anchor="middle" class="small">on-device ASR</text>
+    <path class="line" d="M412 54H462"/>
+    <rect x="480" y="23" width="166" height="62" rx="15" fill="#eeeaff"/>
+    <text x="563" y="49" text-anchor="middle" class="step">Local cleanup</text>
+    <text x="563" y="70" text-anchor="middle" class="small">fillers · dictionary</text>
+    <path class="line" d="M662 54H712"/>
+    <rect x="730" y="23" width="160" height="62" rx="15" fill="#f7e3dd"/>
+    <text x="810" y="49" text-anchor="middle" class="step">Kimi K3</text>
+    <text x="810" y="70" text-anchor="middle" class="small">Vibing… · ~8s</text>
+    <path class="line" d="M906 54H956"/>
+    <rect x="974" y="23" width="110" height="62" rx="15" fill="#eeeaff"/>
+    <text x="1029" y="49" text-anchor="middle" class="step">Insert</text>
+    <text x="1029" y="70" text-anchor="middle" class="small">at cursor</text>
+  </g>
+
+  <g transform="translate(48 290)">
+    <rect width="466" height="342" rx="20" fill="#fffefa" stroke="#dedad0" stroke-width="1.5"/>
+    <text x="26" y="40" class="label">SAID</text>
+    <text x="26" y="88" class="body">
+      <tspan x="26" dy="0">“…help me put them into the system.</tspan>
+      <tspan x="26" dy="31">Pull request with the changes so we can</tspan>
+      <tspan x="26" dy="31">just approve it or merge it, and then it’s</tspan>
+      <tspan x="26" dy="31">gonna deploy. Leave that step to me—</tspan>
+      <tspan x="26" dy="31">you just do the pull request.”</tspan>
+    </text>
+    <line x1="26" y1="254" x2="440" y2="254" stroke="#e4e0d7"/>
+    <circle cx="39" cy="291" r="5" fill="#cf6b4c"/>
+    <text x="56" y="297" class="small">The boundary arrives at the end of a ramble.</text>
+  </g>
+
+  <path d="M530 461H650" fill="none" stroke="#9d988e" stroke-width="1.7" marker-end="url(#arrow)"/>
+  <rect x="545" y="408" width="90" height="34" rx="17" fill="#f7e3dd"/>
+  <text x="590" y="430" text-anchor="middle" class="label" fill="#a84e35">VIBING…</text>
+  <text x="590" y="493" text-anchor="middle" class="small">intent stays</text>
+  <text x="590" y="514" text-anchor="middle" class="small">packaging improves</text>
+
+  <g transform="translate(668 290)">
+    <rect width="484" height="342" rx="20" fill="#fffefa" stroke="#dedad0" stroke-width="1.5"/>
+    <text x="26" y="40" class="label">TYPED</text>
+    <text x="26" y="90" class="strong">Open a pull request with the changes so I</text>
+    <text x="26" y="119" class="strong">can approve or merge it.</text>
+    <rect x="24" y="153" width="436" height="94" rx="14" fill="#f7e3dd"/>
+    <text x="43" y="185" class="strong">Deployment happens after merge—</text>
+    <text x="43" y="214" class="body">leave that step to me; just do the</text>
+    <text x="43" y="239" class="body">pull request.</text>
+    <line x1="26" y1="278" x2="458" y2="278" stroke="#e4e0d7"/>
+    <circle cx="39" cy="306" r="5" fill="#6d5ce7"/>
+    <text x="56" y="312" class="small">The same boundary is now impossible to miss.</text>
+  </g>
+
+  <rect x="48" y="674" width="1104" height="62" rx="16" fill="#fffefa" stroke="#dedad0" stroke-width="1.5"/>
+  <text x="72" y="711" class="label">KNOWS WHEN TO STOP</text>
+  <text x="300" y="711" class="small">A lone fragment passes through untouched:</text>
+  <rect x="663" y="689" width="132" height="34" rx="10" fill="#f1efe9"/>
+  <text x="729" y="711" text-anchor="middle" class="mono">SwiftData</text>
+  <path d="M814 706H875" fill="none" stroke="#9d988e" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="894" y="689" width="132" height="34" rx="10" fill="#eeeaff"/>
+  <text x="960" y="711" text-anchor="middle" class="mono">SwiftData</text>
+</svg>

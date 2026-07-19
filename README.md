@@ -21,13 +21,13 @@ Pressay is a native, hold-to-talk dictation app built for people who communicate
 It is deliberately not an always-listening assistant. There is no account, telemetry, subscription, or cloud transcription.
 
 > [!IMPORTANT]
-> Pressay 1.0 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
+> Pressay 1.1 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
 
 ## Why Pressay
 
 - **Quality first.** Whisper Large V3 Turbo is the calibrated default; language can be fixed for more reliable short clips.
 - **Fast local inference.** `transcribe.cpp` runs GGUF models through ggml and Metal, with the model and Metal pipeline warmed before the first dictation.
-- **Two intentional modes.** Right Option inserts a faithful transcript. Right Command can send the cleaned text to Kimi for a deliberate prompt rewrite.
+- **Two intentional gears.** Right Option inserts faithful text. Right Command activates Vibe Mode and turns natural speech into an agent-ready brief.
 - **Cursor-first UX.** A clipboard-preserving synthetic paste handles native, web, and Electron editors; direct Accessibility replacement is the fallback.
 - **Learns your vocabulary.** A curated coding glossary, user rules, and local phonetic learning preserve repository names, products, acronyms, and casing.
 - **Private by default.** Microphone audio never leaves the Mac. Standard dictation text stays local. No captured application context is retained.
@@ -41,29 +41,29 @@ It is deliberately not an always-listening assistant. There is no account, telem
 | Shortcut | Default | Result | Network |
 | --- | --- | --- | --- |
 | Dictate | Right Option | Faithful transcript with deterministic cleanup | None after model download |
-| Prompt polish | Right Command | Kimi rewrites the cleaned transcript into a structured agent prompt | Cleaned text is sent to Kimi |
+| Vibe Mode | Right Command | Kimi rewrites the cleaned transcript into a first-person work order | Cleaned text is sent to Kimi |
 | Escape | Escape while recording | Cancels without inserting | None |
 
 Both hold keys are configurable. Pressay captures the destination before its nonactivating overlay appears, so the result returns to the right app and selection.
 
-## Prompt polish: ramble in, send a brief
+## Vibe Mode: Ramble in. Brief out.
 
-Standard dictation is for fidelity. Prompt polish is for the moments when you know what you want but say it as a stream of consciousness. Hold the second shortcut—Right Command by default—and Pressay turns the same local transcript into a clearer instruction for an AI agent.
+Standard dictation is for fidelity. Vibe Mode is the deliberate second gear for moments when you know what you want but say it as a stream of consciousness. Hold Right Command by default, ramble, self-correct, and think out loud; Pressay turns the result into a first-person work order for an AI coding agent.
 
 <p align="center">
-  <img src="docs/assets/prompt-polish.svg" width="100%" alt="Prompt polish extracts an easily missed do-not-deploy constraint from natural speech and makes it explicit, while leaving a lone SwiftData fragment unchanged">
+  <img src="docs/assets/vibe-mode.svg" width="100%" alt="Vibe Mode transcribes and cleans speech locally, then uses Kimi K3 to turn a rambling pull-request instruction into a concise brief that preserves the deployment boundary">
 </p>
 
-Prompt polish is deliberately a different mode, with its own amber-to-pink overlay and **Polishing…** state:
+Vibe Mode has its own amber-to-pink overlay and **Vibing…** state so the slower generative step always feels intentional:
 
-- It leads with the task, groups related requirements, and uses short bullets only when the dictation has multiple parts.
-- It removes fillers, false starts, and superseded corrections without inventing requirements or answering the prompt.
-- It is instructed to preserve facts, names, technical identifiers, numbers, URLs, negations, constraints, and the speaker's uncertainty.
-- It knows when not to rewrite: a fragment such as `SwiftData` remains `SwiftData`.
+- It writes in your first-person voice: direct instruction first, then your goal, boundaries, and requested deliverable.
+- It merges redundant thoughts and removes fillers, false starts, and superseded corrections without answering the prompt.
+- It is instructed to preserve facts, names, technical identifiers, numbers, URLs, negations, constraints, and uncertainty.
+- It knows when there is nothing to improve: a fragment such as `SwiftData` remains `SwiftData`.
 
-Audio and ASR remain local. Only the deterministically cleaned transcript is sent to Kimi, using an API key stored in the macOS keychain. Cloud latency is accepted in this deliberate mode; the request has a 45-second ceiling. If rewriting fails, Pressay inserts nothing and saves the local transcript to History for recovery.
+Audio, transcription, cleanup, and vocabulary learning remain local. Only the deterministically cleaned transcript is sent to Kimi using an API key stored in the macOS keychain. Kimi K3 is the calibrated default at roughly eight seconds; K2.7 and K2.7 HighSpeed are also selectable in Settings. If the rewrite fails, Pressay inserts nothing and saves the local transcript to History for recovery.
 
-See [Prompt polish in depth](docs/prompt-polish.md) for the exact pipeline, trust boundary, failure behavior, and five real before/after examples from the calibration set.
+See [Vibe Mode in depth](docs/vibe-mode.md) for the model matrix, exact trust boundary, failure behavior, and four real before/after examples from the shipped v1.1 calibration set.
 
 ## The configuration we ship
 
@@ -75,7 +75,7 @@ Pressay has one quality-first default instead of exposing a wall of decoder knob
 | ASR | Whisper Large V3 Turbo Q8 GGUF via `transcribe.cpp` | Best transcript quality on the development corpus with much lower latency than the previous WhisperKit path |
 | Language | Automatic by default; fixed language available | Automatic is flexible; fixing a language skips detection and helps short clips |
 | Cleanup | Deterministic text and vocabulary pipeline | Predictable, quick, and preserves protected tokens |
-| Prompt rewrite | Separate Kimi shortcut | A rewrite can be useful, but it should never silently change faithful dictation |
+| Vibe Mode | Separate Kimi shortcut; K3 default | Rewriting is useful, but it should never silently replace faithful dictation |
 | Fast alternative | Parakeet TDT 0.6B v3 F16 | Near-instant on long clips; weaker on very short fragments in our testing |
 
 ### ASR latency
@@ -103,7 +103,7 @@ Pressay therefore keeps its normal path deterministic and makes generative promp
 | Data | Standard dictation | Optional Kimi features | Retention |
 | --- | --- | --- | --- |
 | Microphone audio | Processed locally | Never sent | 7 days by default |
-| Transcript | Stored locally | Prompt mode sends cleaned text | 30 days by default |
+| Transcript | Stored locally | Vibe Mode sends cleaned text | 30 days by default |
 | Vocabulary candidates | Learned locally | Periodic review may send candidate terms and short transcript excerpts | Local learned rules follow history retention |
 | Text around the cursor | Read transiently during Accessibility target capture | Never sent | Never stored |
 | Telemetry or analytics | None | None | Never collected |

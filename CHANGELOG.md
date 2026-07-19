@@ -2,6 +2,25 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-07-19
+
+### Added
+
+- Vibe Mode: a separate hold-to-talk workflow that turns natural dictation into a first-person work order for coding agents.
+- A single Vibe Mode model picker with Kimi K3, K2.7, and K2.7 HighSpeed; K3 is the calibrated default.
+- Amber-to-pink **Vibing…** feedback while the deliberate cloud rewrite runs.
+
+### Changed
+
+- Renamed every Swift package product, target, source module, and test target from LocalFlow to Pressay.
+- Migrated models, audio, history, defaults, and keychain access without changing the bundle identity that anchors macOS permissions.
+- Updated the Kimi instruction from generic prose cleanup to a calibrated agent-brief contract.
+
+### Fixed
+
+- Preserved existing model and audio data during the rename without triggering permission prompts.
+- Addressed review findings across the rename, migration, model picker, and Vibe Mode paths.
+
 ## [1.0.0] - 2026-07-19
 
 ### Added
@@ -22,3 +41,4 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 - Removed automatic on-device LLM rewriting from standard dictation after protected-token testing found meaning-changing edits.
 
 [1.0.0]: https://github.com/Zheruel/pressay-macos/releases/tag/v1.0.0
+[1.1.0]: https://github.com/Zheruel/pressay-macos/commit/caba3a9
