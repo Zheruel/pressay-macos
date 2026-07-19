@@ -13,7 +13,7 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 - Separate prompt-polish shortcut using Kimi's coding model.
 - Accessibility-first insertion with clipboard-preserving paste fallback.
 - SwiftData history with local retention, correction, pinning, retry, and deletion.
-- Calibration and replay tooling through `LocalFlowBench`.
+- Calibration and replay tooling through `PressayBench`.
 - Bluetooth and audio-device-change resilient segmented recording.
 
 ### Changed

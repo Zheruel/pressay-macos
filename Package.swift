@@ -3,19 +3,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "LocalFlow",
+    name: "Pressay",
     platforms: [.macOS(.v26)],
     products: [
-        .library(name: "LocalFlowCore", targets: ["LocalFlowCore"]),
-        .library(name: "LocalFlowTranscription", targets: ["LocalFlowTranscription"]),
-        .library(name: "LocalFlowPostProcessing", targets: ["LocalFlowPostProcessing"]),
-        .executable(name: "LocalFlow", targets: ["LocalFlowApp"]),
-        .executable(name: "LocalFlowBench", targets: ["LocalFlowBench"]),
+        .library(name: "PressayCore", targets: ["PressayCore"]),
+        .library(name: "PressayTranscription", targets: ["PressayTranscription"]),
+        .library(name: "PressayPostProcessing", targets: ["PressayPostProcessing"]),
+        .executable(name: "Pressay", targets: ["PressayApp"]),
+        .executable(name: "PressayBench", targets: ["PressayBench"]),
     ],
     dependencies: [],
     targets: [
-        .target(name: "LocalFlowCore"),
-        .target(name: "LocalFlowObjCShim", publicHeadersPath: "include"),
+        .target(name: "PressayCore"),
+        .target(name: "PressayObjCShim", publicHeadersPath: "include"),
         // transcribe.cpp (MIT): prebuilt ggml/Metal static lib + vendored Swift
         // wrapper (Sources/TranscribeCpp, from bindings/swift of the same tag).
         .binaryTarget(
@@ -37,35 +37,35 @@ let package = Package(
             ]
         ),
         .target(
-            name: "LocalFlowTranscription",
+            name: "PressayTranscription",
             dependencies: [
-                "LocalFlowCore",
+                "PressayCore",
                 "TranscribeCpp",
             ]
         ),
         .target(
-            name: "LocalFlowPostProcessing",
-            dependencies: ["LocalFlowCore"]
+            name: "PressayPostProcessing",
+            dependencies: ["PressayCore"]
         ),
         .executableTarget(
-            name: "LocalFlowBench",
+            name: "PressayBench",
             dependencies: [
-                "LocalFlowCore",
-                "LocalFlowTranscription",
-                "LocalFlowPostProcessing",
+                "PressayCore",
+                "PressayTranscription",
+                "PressayPostProcessing",
             ]
         ),
         .executableTarget(
-            name: "LocalFlowApp",
+            name: "PressayApp",
             dependencies: [
-                "LocalFlowCore",
-                "LocalFlowObjCShim",
-                "LocalFlowTranscription",
+                "PressayCore",
+                "PressayObjCShim",
+                "PressayTranscription",
             ]
         ),
         .testTarget(
-            name: "LocalFlowCoreTests",
-            dependencies: ["LocalFlowCore"]
+            name: "PressayCoreTests",
+            dependencies: ["PressayCore"]
         ),
     ],
     swiftLanguageModes: [.v6]

@@ -46,6 +46,25 @@ It is deliberately not an always-listening assistant. There is no account, telem
 
 Both hold keys are configurable. Pressay captures the destination before its nonactivating overlay appears, so the result returns to the right app and selection.
 
+## Prompt polish: ramble in, send a brief
+
+Standard dictation is for fidelity. Prompt polish is for the moments when you know what you want but say it as a stream of consciousness. Hold the second shortcut—Right Command by default—and Pressay turns the same local transcript into a clearer instruction for an AI agent.
+
+<p align="center">
+  <img src="docs/assets/prompt-polish.svg" width="100%" alt="Prompt polish extracts an easily missed do-not-deploy constraint from natural speech and makes it explicit, while leaving a lone SwiftData fragment unchanged">
+</p>
+
+Prompt polish is deliberately a different mode, with its own amber-to-pink overlay and **Polishing…** state:
+
+- It leads with the task, groups related requirements, and uses short bullets only when the dictation has multiple parts.
+- It removes fillers, false starts, and superseded corrections without inventing requirements or answering the prompt.
+- It is instructed to preserve facts, names, technical identifiers, numbers, URLs, negations, constraints, and the speaker's uncertainty.
+- It knows when not to rewrite: a fragment such as `SwiftData` remains `SwiftData`.
+
+Audio and ASR remain local. Only the deterministically cleaned transcript is sent to Kimi, using an API key stored in the macOS keychain. Cloud latency is accepted in this deliberate mode; the request has a 45-second ceiling. If rewriting fails, Pressay inserts nothing and saves the local transcript to History for recovery.
+
+See [Prompt polish in depth](docs/prompt-polish.md) for the exact pipeline, trust boundary, failure behavior, and five real before/after examples from the calibration set.
+
 ## The configuration we ship
 
 Pressay has one quality-first default instead of exposing a wall of decoder knobs:
@@ -162,18 +181,18 @@ The preferred spelling appears on the left; comma-separated forms on the right a
 
 ```text
 Sources/
-├── LocalFlowApp/             SwiftUI/AppKit app, permissions, audio, insertion
-├── LocalFlowCore/            Domain types, cleanup, vocabulary, retention
-├── LocalFlowTranscription/   transcribe.cpp-backed ASR
-├── LocalFlowPostProcessing/  Experimental on-device benchmark module
-├── LocalFlowBench/           Corpus replay and tuning CLI
+├── PressayApp/             SwiftUI/AppKit app, permissions, audio, insertion
+├── PressayCore/            Domain types, cleanup, vocabulary, retention
+├── PressayTranscription/   transcribe.cpp-backed ASR
+├── PressayPostProcessing/  Experimental on-device benchmark module
+├── PressayBench/           Corpus replay and tuning CLI
 └── TranscribeCpp/            Vendored Swift wrapper for the native runtime
-Tests/LocalFlowCoreTests/      Deterministic pipeline tests
+Tests/PressayCoreTests/      Deterministic pipeline tests
 Config/                       App metadata, icons, entitlements, and earcons
 scripts/                      Build, install, signing, and DMG tooling
 ```
 
-The executable and internal Swift package modules still use the original `LocalFlow` development name. The shipped app name and product identity are Pressay.
+All modules and targets use the `Pressay` name. The bundle identifier and keychain service intentionally remain `dev.localflow.app` — they anchor macOS permission grants and stored data from earlier builds.
 
 ## Development
 
@@ -183,11 +202,11 @@ make test
 make app
 ```
 
-`LocalFlowBench` can replay a private calibration manifest without checking audio or transcripts into Git:
+`PressayBench` can replay a private calibration manifest without checking audio or transcripts into Git:
 
 ```bash
-swift run LocalFlowBench asr --manifest /path/to/manifest.json --out /path/to/results
-swift run LocalFlowBench polish --manifest /path/to/manifest.json --out /path/to/results
+swift run PressayBench asr --manifest /path/to/manifest.json --out /path/to/results
+swift run PressayBench polish --manifest /path/to/manifest.json --out /path/to/results
 ```
 
 Keep benchmark audio, transcripts, API keys, and generated results outside the repository. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.

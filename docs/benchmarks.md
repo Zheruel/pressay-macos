@@ -68,19 +68,19 @@ The shipping design is:
 
 ## Reproducing the harness
 
-`LocalFlowBench` is included in the Swift package. Create your own local manifest rather than committing recordings:
+`PressayBench` is included in the Swift package. Create your own local manifest rather than committing recordings:
 
 ```bash
-swift run LocalFlowBench asr \
+swift run PressayBench asr \
   --manifest /absolute/path/manifest.json \
   --out /absolute/path/results
 
-swift run LocalFlowBench polish \
+swift run PressayBench polish \
   --manifest /absolute/path/manifest.json \
   --out /absolute/path/results
 ```
 
-The manifest schema is represented by `ManifestEntry` in [`Sources/LocalFlowBench/Bench.swift`](../Sources/LocalFlowBench/Bench.swift). Keep paths absolute, use the same clips for every engine, warm each model before timing, and manually correct reference transcripts before calculating error rates.
+The manifest schema is represented by `ManifestEntry` in [`Sources/PressayBench/Bench.swift`](../Sources/PressayBench/Bench.swift). Keep paths absolute, use the same clips for every engine, warm each model before timing, and manually correct reference transcripts before calculating error rates.
 
 ## What the numbers do not prove
 

@@ -12,11 +12,11 @@ if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]
     export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fi
 export CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-$ROOT/.build/ModuleCache}"
-xcrun swift build --disable-sandbox -c "$CONFIGURATION" --product LocalFlow
+xcrun swift build --disable-sandbox -c "$CONFIGURATION" --product Pressay
 
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Frameworks"
-cp "$ROOT/.build/$CONFIGURATION/LocalFlow" "$CONTENTS/MacOS/Pressay"
+cp "$ROOT/.build/$CONFIGURATION/Pressay" "$CONTENTS/MacOS/Pressay"
 cp "$ROOT/Config/Info.plist" "$CONTENTS/Info.plist"
 
 # transcribe.cpp ships as a dynamic framework; the binary references it via
@@ -70,14 +70,14 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
         --sign "$SIGNING_IDENTITY" \
         --options runtime \
         "$TIMESTAMP_ARGUMENT" \
-        --entitlements "$ROOT/Config/LocalFlow.entitlements" \
+        --entitlements "$ROOT/Config/Pressay.entitlements" \
         "$APP"
     echo "Signed with $SIGNING_IDENTITY"
 else
     codesign --force --sign - "$CONTENTS/Frameworks/CTranscribe.framework"
     codesign --force \
         --sign - \
-        --entitlements "$ROOT/Config/LocalFlow.entitlements" \
+        --entitlements "$ROOT/Config/Pressay.entitlements" \
         "$APP"
     echo "Warning: ad-hoc signed build; macOS permissions may reset after updates." >&2
 fi

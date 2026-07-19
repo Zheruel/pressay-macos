@@ -36,4 +36,4 @@ jobs:
         run: xcrun swift test --disable-sandbox
 
       - name: Build release app executable
-        run: xcrun swift build --disable-sandbox -c release --product LocalFlow
+        run: xcrun swift build --disable-sandbox -c release --product Pressay
