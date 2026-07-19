@@ -2,11 +2,58 @@ import AppKit
 import LocalFlowCore
 import SwiftUI
 
+/// Visual identity of the active workflow: dictation keeps the purple→blue
+/// voice gradient; prompt polish is amber→pink with a "Polishing…" caption so
+/// the multi-second cloud call reads as intentional.
+enum OverlayStyle {
+    case dictation
+    case promptPolish
+
+    var gradient: LinearGradient {
+        switch self {
+        case .dictation:
+            LinearGradient(
+                colors: [
+                    Color(red: 0.63, green: 0.42, blue: 1),
+                    Color(red: 0.48, green: 0.82, blue: 1),
+                ],
+                startPoint: .bottom,
+                endPoint: .top
+            )
+        case .promptPolish:
+            LinearGradient(
+                colors: [
+                    Color(red: 1, green: 0.62, blue: 0.26),
+                    Color(red: 1, green: 0.4, blue: 0.62),
+                ],
+                startPoint: .bottom,
+                endPoint: .top
+            )
+        }
+    }
+
+    var glowColor: Color {
+        switch self {
+        case .dictation: .indigo
+        case .promptPolish: .orange
+        }
+    }
+
+    var processingLabel: String? {
+        switch self {
+        case .dictation: nil
+        case .promptPolish: "Polishing…"
+        }
+    }
+}
+
 @MainActor
 final class OverlayState: ObservableObject {
     @Published var phase: DictationPhase = .idle
     @Published var levels: [Float] = [0, 0, 0, 0]
     @Published var message = ""
+    @Published var style: OverlayStyle = .dictation
+    @Published var toast: String?
 }
 
 @MainActor
@@ -15,21 +62,27 @@ final class OverlayPanelController {
     private var panel: NSPanel?
     private var dismissTask: Task<Void, Never>?
 
-    func showRecording() {
+    func showRecording(style: OverlayStyle = .dictation) {
+        state.toast = nil
         dismissTask?.cancel()
+        state.style = style
         state.phase = .recording
         state.message = ""
         present(width: 78, height: 44)
     }
 
+    /// Keeps the style set by showRecording so the whole session stays visually
+    /// consistent from key press to insertion.
     func showProcessing() {
+        state.toast = nil
         dismissTask?.cancel()
         state.phase = .processing
         state.message = ""
-        present(width: 78, height: 44)
+        present(width: state.style.processingLabel == nil ? 78 : 138, height: 44)
     }
 
     func showSuccess() {
+        state.toast = nil
         state.phase = .succeeded
         state.message = ""
         present(width: 78, height: 44)
@@ -37,9 +90,19 @@ final class OverlayPanelController {
     }
 
     func showError(_ message: String) {
+        state.toast = nil
         state.phase = .failed(message)
         state.message = message
         present(width: 280, height: 58)
+        dismiss(after: .seconds(2.4))
+    }
+
+    /// Celebration for newly learned vocabulary; only shows between sessions.
+    func showLearnedToast(_ message: String) {
+        guard state.phase == .idle else { return }
+        dismissTask?.cancel()
+        state.toast = message
+        present(width: 320, height: 50)
         dismiss(after: .seconds(2.4))
     }
 
@@ -48,6 +111,8 @@ final class OverlayPanelController {
         panel?.orderOut(nil)
         state.phase = .idle
         state.levels = [0, 0, 0, 0]
+        state.style = .dictation
+        state.toast = nil
     }
 
     private func present(width: CGFloat, height: CGFloat) {
@@ -97,7 +162,9 @@ private struct RecordingOverlayView: View {
 
     var body: some View {
         Group {
-            if case .failed = state.phase {
+            if let toast = state.toast {
+                toastContent(toast)
+            } else if case .failed = state.phase {
                 errorContent
             } else {
                 compactContent
@@ -115,20 +182,35 @@ private struct RecordingOverlayView: View {
         ZStack {
             switch state.phase {
             case .recording:
-                RecordingVoiceBars(levels: state.levels)
+                RecordingVoiceBars(levels: state.levels, style: state.style)
                     .transition(.scale(scale: 0.82).combined(with: .opacity))
             case .processing:
-                ProcessingVoiceDots()
+                ProcessingVoiceDots(style: state.style)
                     .transition(.scale(scale: 0.82).combined(with: .opacity))
             case .succeeded:
                 SuccessCheckmark()
             case .idle:
-                RecordingVoiceBars(levels: [0, 0, 0, 0])
+                RecordingVoiceBars(levels: [0, 0, 0, 0], style: state.style)
             case .failed:
                 EmptyView()
             }
         }
         .animation(.snappy(duration: 0.22), value: state.phase)
+    }
+
+    private func toastContent(_ message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(OverlayStyle.dictation.gradient)
+                .shadow(color: .indigo.opacity(0.35), radius: 5)
+            Text(message)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 15)
+        .transition(.scale(scale: 0.88).combined(with: .opacity))
     }
 
     private var errorContent: some View {
@@ -146,6 +228,7 @@ private struct RecordingOverlayView: View {
 
 private struct RecordingVoiceBars: View {
     let levels: [Float]
+    let style: OverlayStyle
     private let profiles: [CGFloat] = [0.64, 0.9, 1, 0.72]
 
     var body: some View {
@@ -153,20 +236,11 @@ private struct RecordingVoiceBars: View {
             ForEach(profiles.indices, id: \.self) { index in
                 let level = index < levels.count ? CGFloat(levels[index]) : 0
                 Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.63, green: 0.42, blue: 1),
-                                Color(red: 0.48, green: 0.82, blue: 1),
-                            ],
-                            startPoint: .bottom,
-                            endPoint: .top
-                        )
-                    )
+                    .fill(style.gradient)
                     .frame(width: 5, height: height(for: level, profile: profiles[index]))
                     .opacity(level > 0 ? 1 : 0.52)
                     .shadow(
-                        color: level > 0 ? .indigo.opacity(0.26) : .clear,
+                        color: level > 0 ? style.glowColor.opacity(0.26) : .clear,
                         radius: 4
                     )
                     .animation(
@@ -185,29 +259,29 @@ private struct RecordingVoiceBars: View {
 }
 
 private struct ProcessingVoiceDots: View {
+    let style: OverlayStyle
+
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
-            HStack(spacing: 4) {
-                ForEach(0..<4, id: \.self) { index in
-                    let progress = sin(time * 8.25 - Double(index) * 0.92)
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 0.63, green: 0.42, blue: 1),
-                                    Color(red: 0.48, green: 0.82, blue: 1),
-                                ],
-                                startPoint: .bottom,
-                                endPoint: .top
-                            )
-                        )
-                        .frame(width: 5, height: 6)
-                        .offset(y: CGFloat(progress) * 4)
-                        .opacity(0.62 + 0.38 * CGFloat((progress + 1) / 2))
+            HStack(spacing: 8) {
+                HStack(spacing: 4) {
+                    ForEach(0..<4, id: \.self) { index in
+                        let progress = sin(time * 8.25 - Double(index) * 0.92)
+                        Capsule()
+                            .fill(style.gradient)
+                            .frame(width: 5, height: 6)
+                            .offset(y: CGFloat(progress) * 4)
+                            .opacity(0.62 + 0.38 * CGFloat((progress + 1) / 2))
+                    }
+                }
+                .frame(width: 42, height: 26)
+                if let label = style.processingLabel {
+                    Text(label)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 42, height: 26)
         }
     }
 }

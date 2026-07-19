@@ -5,7 +5,7 @@ Pressay is a local-only, hold-to-talk macOS dictation app optimized for composin
 ## Current stack
 
 - macOS 26+, Swift 6.2, SwiftUI/AppKit
-- English Whisper Large V3 Turbo through Argmax OSS/WhisperKit 1.0.0
+- Whisper Large V3 Turbo through Argmax OSS/WhisperKit 1.0.0, with automatic language detection by default (English/Norsk/auto selectable in Settings)
 - Strict greedy decoding without timestamps, fallback sampling, or prompt conditioning
 - Deterministic vocabulary cleanup followed by guarded Apple Foundation Models polishing only for disfluent speech
 - SwiftData for 30-day text history and 7-day audio history
@@ -43,7 +43,9 @@ On first launch, Pressay opens a setup assistant for Microphone, Accessibility, 
 
 ## Vocabulary
 
-Open Settings → Vocabulary and enter one term per line:
+Pressay learns how to spell the names and products you dictate. A background pass over your recent transcripts finds recurring mishearings and fixes them automatically — no manual entry needed. Learned rules appear in Settings → Vocabulary, where you can delete any of them; they expire with the 30-day transcript window. Adding a Kimi API key there lets Pressay periodically ask Kimi K3 to review new terms for even sharper fixes; everything works without a key, on-device.
+
+You can also curate terms by hand, one per line:
 
 ```text
 WhisperKit <= whisper kit

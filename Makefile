@@ -1,4 +1,4 @@
-.PHONY: build test icon app dmg run clean
+.PHONY: build test icon app dmg run install clean
 
 DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
 CLANG_MODULE_CACHE_PATH ?= $(CURDIR)/.build/ModuleCache
@@ -22,6 +22,9 @@ dmg:
 
 run: app
 	open .build/Pressay.app
+
+install: app
+	./scripts/install-app.sh
 
 clean:
 	swift package clean

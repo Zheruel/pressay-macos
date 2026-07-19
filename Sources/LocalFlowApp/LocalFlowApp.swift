@@ -19,22 +19,44 @@ struct LocalFlowApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        AppCoordinator.shared.start()
+    // These entry points are deliberately nonisolated and hop explicitly.
+    // The compiler-emitted @MainActor check at @objc entry points crashes in
+    // swift_task_isCurrentExecutorWithFlagsImpl on swiftlang 6.3.x / macOS 26
+    // when executor state is under load (swiftlang/swift#89197).
+    nonisolated func applicationDidFinishLaunching(_ notification: Notification) {
+        Task { @MainActor in AppCoordinator.shared.start() }
     }
 
-    func applicationDidBecomeActive(_ notification: Notification) {
-        AppCoordinator.shared.permissions.refresh()
-        AppCoordinator.shared.settings.refreshLaunchAtLogin()
+    // ggml's Metal device teardown aborts in a C++ static destructor during
+    // normal exit(); skipping atexit handlers avoids a crash report per quit.
+    nonisolated func applicationWillTerminate(_ notification: Notification) {
+        _exit(0)
     }
 
-    func applicationShouldHandleReopen(
+    nonisolated func applicationDidBecomeActive(_ notification: Notification) {
+        Task { @MainActor in
+            AppCoordinator.shared.permissions.refresh()
+            AppCoordinator.shared.settings.refreshLaunchAtLogin()
+        }
+    }
+
+    nonisolated func applicationShouldHandleReopen(
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
-        AppCoordinator.shared.showSettings()
+        Task { @MainActor in
+            let coordinator = AppCoordinator.shared
+            // Reopen must lead back to onboarding (and its model-download
+            // Retry) while setup is unfinished, or a closed window strands
+            // the user with no way to complete it.
+            if coordinator.settings.onboardingComplete {
+                coordinator.showSettings()
+            } else {
+                coordinator.showOnboarding()
+            }
+        }
         return true
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    nonisolated func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }

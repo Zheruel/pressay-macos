@@ -15,9 +15,25 @@ export CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-$ROOT/.build/ModuleCa
 xcrun swift build --disable-sandbox -c "$CONFIGURATION" --product LocalFlow
 
 rm -rf "$APP"
-mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
+mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Frameworks"
 cp "$ROOT/.build/$CONFIGURATION/LocalFlow" "$CONTENTS/MacOS/Pressay"
 cp "$ROOT/Config/Info.plist" "$CONTENTS/Info.plist"
+
+# transcribe.cpp ships as a dynamic framework; the binary references it via
+# @rpath, so it must be embedded and reachable from Contents/Frameworks.
+# SwiftPM's artifact extraction resolves the framework's symlinks into real
+# directories, which codesign rejects as ambiguous — rebuild the canonical
+# Versions/Current symlink layout from the Versions/A payload.
+FRAMEWORK_SOURCE="$ROOT/.build/artifacts/whisper/CTranscribe/TranscribeCpp.xcframework/macos-arm64_x86_64/CTranscribe.framework"
+FRAMEWORK="$CONTENTS/Frameworks/CTranscribe.framework"
+mkdir -p "$FRAMEWORK/Versions"
+ditto "$FRAMEWORK_SOURCE/Versions/A" "$FRAMEWORK/Versions/A"
+ln -sfn A "$FRAMEWORK/Versions/Current"
+ln -sfn Versions/Current/CTranscribe "$FRAMEWORK/CTranscribe"
+ln -sfn Versions/Current/Headers "$FRAMEWORK/Headers"
+ln -sfn Versions/Current/Modules "$FRAMEWORK/Modules"
+ln -sfn Versions/Current/Resources "$FRAMEWORK/Resources"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$CONTENTS/MacOS/Pressay" 2>/dev/null || true
 if [[ -d "$ROOT/Config/Sounds" ]]; then
     mkdir -p "$CONTENTS/Resources/Sounds"
     cp "$ROOT"/Config/Sounds/*.wav "$CONTENTS/Resources/Sounds/"
@@ -48,12 +64,17 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
     fi
     codesign --force \
         --sign "$SIGNING_IDENTITY" \
+        "$TIMESTAMP_ARGUMENT" \
+        "$CONTENTS/Frameworks/CTranscribe.framework"
+    codesign --force \
+        --sign "$SIGNING_IDENTITY" \
         --options runtime \
         "$TIMESTAMP_ARGUMENT" \
         --entitlements "$ROOT/Config/LocalFlow.entitlements" \
         "$APP"
     echo "Signed with $SIGNING_IDENTITY"
 else
+    codesign --force --sign - "$CONTENTS/Frameworks/CTranscribe.framework"
     codesign --force \
         --sign - \
         --entitlements "$ROOT/Config/LocalFlow.entitlements" \

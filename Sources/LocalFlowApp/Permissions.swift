@@ -22,7 +22,7 @@ final class PermissionController: ObservableObject {
             switch self {
             case .microphone: "Records only while you hold the dictation key."
             case .accessibility: "Inserts the finished prompt at your cursor."
-            case .inputMonitoring: "Detects Right Option in any application."
+            case .inputMonitoring: "Detects your hold-to-talk key in any application."
             }
         }
         var systemImage: String {
@@ -70,7 +70,9 @@ final class PermissionController: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
                 refresh()
-                let delay: Duration = allGranted ? .seconds(2) : .milliseconds(400)
+                // Every tick hits tccd; holdKeyPressed() refreshes on demand,
+                // so the slow cadence only has to keep the menu UI honest.
+                let delay: Duration = allGranted ? .seconds(10) : .milliseconds(400)
                 try? await Task.sleep(for: delay)
             }
         }

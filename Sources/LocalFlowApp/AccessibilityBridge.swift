@@ -27,6 +27,10 @@ enum InsertionOutcome {
 @MainActor
 final class AccessibilityBridge {
     private let logger = Logger(subsystem: "dev.localflow.app", category: "insertion")
+    /// The user clipboard awaiting restore while our inserted text sits on the
+    /// pasteboard, keyed by the changeCount of that insertion.
+    private var pendingRestore: (snapshot: PasteboardSnapshot, insertedChangeCount: Int)?
+    private var restoreWorkItem: DispatchWorkItem?
 
     func capture(vocabulary: [String]) -> CapturedTarget {
         let application = NSWorkspace.shared.frontmostApplication
@@ -185,9 +189,20 @@ final class AccessibilityBridge {
 
     private func pastePreservingClipboard(_ text: String) -> Bool {
         let pasteboard = NSPasteboard.general
-        let snapshot = PasteboardSnapshot(pasteboard)
+        // A second dictation within the restore window must preserve the
+        // user's original clipboard, not our still-pending inserted text.
+        let snapshot: PasteboardSnapshot
+        if let pending = pendingRestore, pending.insertedChangeCount == pasteboard.changeCount {
+            snapshot = pending.snapshot
+        } else {
+            snapshot = PasteboardSnapshot(pasteboard)
+        }
+        restoreWorkItem?.cancel()
         pasteboard.clearContents()
-        guard pasteboard.setString(text, forType: .string) else { return false }
+        guard pasteboard.setString(text, forType: .string) else {
+            pendingRestore = nil
+            return false
+        }
         let insertedTextChangeCount = pasteboard.changeCount
 
         // The app is still verified as frontmost above. Post through the normal HID
@@ -210,10 +225,16 @@ final class AccessibilityBridge {
         // Electron/content-editable clients may read the pasteboard asynchronously.
         // Keep our value available long enough for that read, and never overwrite a
         // clipboard change the user made in the meantime.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            guard pasteboard.changeCount == insertedTextChangeCount else { return }
-            snapshot.restore(to: pasteboard)
+        pendingRestore = (snapshot, insertedTextChangeCount)
+        let work = DispatchWorkItem {
+            MainActor.assumeIsolated { [weak self] in
+                defer { self?.pendingRestore = nil }
+                guard pasteboard.changeCount == insertedTextChangeCount else { return }
+                snapshot.restore(to: pasteboard)
+            }
         }
+        restoreWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
         return true
     }
 }

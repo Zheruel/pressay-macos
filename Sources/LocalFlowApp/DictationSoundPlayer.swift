@@ -5,6 +5,8 @@ final class DictationSoundPlayer {
     enum Cue: Hashable {
         case begin
         case release
+        case polishRelease
+        case learned
         case cancel
         case error
 
@@ -12,6 +14,8 @@ final class DictationSoundPlayer {
             switch self {
             case .begin: 0.135
             case .release: 0.135
+            case .polishRelease: 0.165
+            case .learned: 0.28
             case .cancel: 0.065
             case .error: 0.115
             }
@@ -21,7 +25,9 @@ final class DictationSoundPlayer {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private var assetBuffers: [Cue: AVAudioPCMBuffer] = [:]
-    private let format = AVAudioFormat(
+    // nonisolated(unsafe): written once in init, read once in deinit.
+    private nonisolated(unsafe) var configurationObserver: (any NSObjectProtocol)?
+    private let synthFormat = AVAudioFormat(
         standardFormatWithSampleRate: 48_000,
         channels: 2
     )!
@@ -32,22 +38,66 @@ final class DictationSoundPlayer {
 
     init() {
         engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: format)
-        engine.prepare()
-        try? engine.start()
         assetBuffers[.begin] = loadBuffer(named: "dictation-begin")
         assetBuffers[.release] = loadBuffer(named: "dictation-release")
+        connectPlayer()
+        try? catchingObjCException { try engine.start() }
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleConfigurationChange() }
+        }
+    }
+
+    deinit {
+        if let configurationObserver {
+            NotificationCenter.default.removeObserver(configurationObserver)
+        }
     }
 
     func play(_ cue: Cue) {
         if !engine.isRunning {
-            try? engine.start()
+            try? catchingObjCException { try engine.start() }
         }
+        // A dead output device skips the earcon; dictation continues.
+        guard engine.isRunning else { return }
+        // Synthesized cues are deterministic; cache so the ~8k-frame synthesis
+        // loop doesn't rerun on the latency-sensitive key-release path.
+        if assetBuffers[cue] == nil, let synthesized = makeBuffer(for: cue) {
+            assetBuffers[cue] = synthesized
+        }
+        guard let buffer = assetBuffers[cue] else { return }
+        try? catchingObjCException {
+            player.stop()
+            player.scheduleBuffer(buffer, at: nil)
+            player.play()
+        }
+    }
 
-        player.stop()
-        guard let buffer = assetBuffers[cue] ?? makeBuffer(for: cue) else { return }
-        player.scheduleBuffer(buffer, at: nil)
-        player.play()
+    /// Player → mixer uses the cue buffer's format so the mixer resamples to
+    /// whatever the output device currently negotiates — never the reverse.
+    private func connectPlayer() {
+        try? catchingObjCException {
+            engine.connect(
+                player,
+                to: engine.mainMixerNode,
+                format: assetBuffers[.begin]?.format ?? synthFormat
+            )
+            engine.prepare()
+        }
+    }
+
+    /// Rebuilds the graph now but restarts lazily on the next play() —
+    /// starting mid-device-transition is exactly when CoreAudio fails.
+    private func handleConfigurationChange() {
+        try? catchingObjCException {
+            player.stop()
+            engine.stop()
+            engine.disconnectNodeOutput(player)
+        }
+        connectPlayer()
     }
 
     private func loadBuffer(named name: String) -> AVAudioPCMBuffer? {
@@ -76,14 +126,18 @@ final class DictationSoundPlayer {
         let specification: (startFrequency: Double, endFrequency: Double, gain: Double) = switch cue {
         case .begin: (720, 890, 0.055)
         case .release: (790, 640, 0.045)
+        // Rising sweep, unlike the falling dictation release, so the ear knows
+        // a longer cloud polish is starting.
+        case .polishRelease: (640, 960, 0.045)
+        case .learned: (880, 1320, 0.035)
         case .cancel: (540, 470, 0.036)
         case .error: (430, 330, 0.042)
         }
 
-        let sampleRate = format.sampleRate
+        let sampleRate = synthFormat.sampleRate
         let frameCount = Int((cue.duration * sampleRate).rounded(.up))
         guard let buffer = AVAudioPCMBuffer(
-            pcmFormat: format,
+            pcmFormat: synthFormat,
             frameCapacity: AVAudioFrameCount(frameCount)
         ), let channels = buffer.floatChannelData else {
             return nil

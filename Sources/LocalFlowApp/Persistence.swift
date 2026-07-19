@@ -5,7 +5,6 @@ import SwiftData
 
 @Model
 final class DictationRecord: Identifiable {
-    static let transcriptionModel = "Whisper Large V3 Turbo"
     @Attribute(.unique) var id: UUID
     var createdAt: Date
     var duration: TimeInterval
@@ -26,6 +25,7 @@ final class DictationRecord: Identifiable {
         createdAt: Date = .now,
         duration: TimeInterval,
         targetBundleID: String?,
+        engine: String,
         rawTranscript: String,
         polishedText: String,
         correction: String? = nil,
@@ -40,7 +40,7 @@ final class DictationRecord: Identifiable {
         self.createdAt = createdAt
         self.duration = duration
         self.targetBundleID = targetBundleID
-        self.engineRawValue = Self.transcriptionModel
+        self.engineRawValue = engine
         self.rawTranscript = rawTranscript
         self.polishedText = polishedText
         self.correction = correction
@@ -147,7 +147,7 @@ final class HistoryStore: ObservableObject {
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
         )
-        let cutoff = now.addingTimeInterval(-7 * 24 * 60 * 60)
+        let cutoff = Calendar.current.date(byAdding: .day, value: -retention.audioDays, to: now)!
         for url in urls where !referencedPaths.contains(url.path) {
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
             if let modified = values?.contentModificationDate, modified < cutoff {
@@ -166,14 +166,18 @@ enum AudioFileStore {
     static func save(_ clip: AudioClip, id: UUID) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appending(path: "\(id.uuidString).caf")
-        let format = AVAudioFormat(standardFormatWithSampleRate: Double(clip.sampleRate), channels: 1)!
-        let file = try AVAudioFile(forWriting: url, settings: format.settings)
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(clip.samples.count))!
+        guard
+            let format = AVAudioFormat(standardFormatWithSampleRate: Double(clip.sampleRate), channels: 1),
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(clip.samples.count))
+        else { throw LocalFlowError.audioConversionFailed }
         buffer.frameLength = buffer.frameCapacity
         clip.samples.withUnsafeBufferPointer { source in
             buffer.floatChannelData![0].update(from: source.baseAddress!, count: clip.samples.count)
         }
-        try file.write(from: buffer)
+        try catchingObjCException {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            try file.write(from: buffer)
+        }
         return url
     }
 

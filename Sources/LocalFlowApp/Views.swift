@@ -49,6 +49,7 @@ struct MenuContentView: View {
                     Spacer()
                     Button("Quit") { NSApplication.shared.terminate(nil) }
                 }
+                .pointerStyle(.link)
                 .buttonStyle(.plain)
             }
         }
@@ -74,11 +75,13 @@ struct MenuContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("Continue setup") { coordinator.showOnboarding() }
+                .pointerStyle(.link)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .frame(maxWidth: .infinity)
             Divider()
             Button("Quit") { NSApplication.shared.terminate(nil) }
+                .pointerStyle(.link)
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -110,7 +113,7 @@ struct MenuContentView: View {
                 .frame(width: 32, height: 32)
                 .background(.indigo.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
             VStack(alignment: .leading, spacing: 2) {
-                Text("Hold (settings.holdKey.rawValue) and speak")
+                Text("Hold \(settings.holdKey.displayName) and speak")
                     .font(.callout.weight(.semibold))
                 Text("Release to insert at the cursor")
                     .font(.caption)
@@ -151,7 +154,9 @@ private struct CompactHistoryRow: View {
         .padding(.horizontal, 2)
         .contextMenu {
             Button(record.isPinned ? "Unpin" : "Pin") { try? coordinator.history.togglePin(record) }
+                .pointerStyle(.link)
             Button("Delete", role: .destructive) { try? coordinator.history.delete(record) }
+                .pointerStyle(.link)
         }
     }
 }
@@ -186,6 +191,7 @@ struct SettingsRootView: View {
                 List(SettingsSection.allCases, selection: $selection) { section in
                     Label(section.title, systemImage: section.systemImage)
                         .tag(section)
+                        .pointerStyle(.link)
                 }
                 .listStyle(.sidebar)
             }
@@ -195,8 +201,8 @@ struct SettingsRootView: View {
             switch selection ?? .general {
             case .general:
                 GeneralSettingsView(coordinator: coordinator)
-            case .vocabulary:
-                VocabularySettingsView(settings: coordinator.settings)
+            case .dictionary:
+                DictionarySettingsView(coordinator: coordinator)
             case .history:
                 HistoryView(coordinator: coordinator)
             }
@@ -207,7 +213,7 @@ struct SettingsRootView: View {
 
 private enum SettingsSection: String, CaseIterable, Identifiable {
     case general
-    case vocabulary
+    case dictionary
     case history
 
     var id: Self { self }
@@ -215,7 +221,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: "gearshape"
-        case .vocabulary: "text.book.closed"
+        case .dictionary: "text.book.closed"
         case .history: "clock.arrow.circlepath"
         }
     }
@@ -225,6 +231,12 @@ private struct GeneralSettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings
     @ObservedObject private var permissions: PermissionController
+    @State private var apiKeyDraft = ""
+    @State private var keyStatus: String?
+    @State private var testingConnection = false
+    /// Cached presence check: SecItemCopyMatching is a securityd IPC, too
+    /// expensive to run on every body pass (each SecureField keystroke).
+    @State private var keyConfigured = false
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
@@ -248,12 +260,63 @@ private struct GeneralSettingsView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Picker("", selection: $settings.holdKey) {
-                            ForEach(HoldKey.allCases) { Text($0.rawValue).tag($0) }
+                        KeyCaptureButton(
+                            key: $settings.holdKey,
+                            reservedKey: { coordinator.settings.polishHoldKey },
+                            onChange: { coordinator.restartHotkey() },
+                            onCaptureActive: coordinator.keyCaptureActive
+                        )
+                    }
+
+                    Divider()
+
+                    HStack(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Prompt polish shortcut").font(.body.weight(.medium))
+                            Text("Hold to dictate a prompt Kimi rewrites before inserting")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        KeyCaptureButton(
+                            key: $settings.polishHoldKey,
+                            reservedKey: { coordinator.settings.holdKey },
+                            onChange: { coordinator.restartHotkey() },
+                            onCaptureActive: coordinator.keyCaptureActive
+                        )
+                    }
+
+                    Divider()
+
+                    HStack(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Transcription model").font(.body.weight(.medium))
+                            Text(settings.asrModel.caption)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: $settings.asrModel) {
+                            ForEach(ASRModel.allCases) { Text($0.displayName).tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(width: 230)
+                        .onChange(of: settings.asrModel) { _, _ in coordinator.applyASRModel() }
+                    }
+
+                    Divider()
+
+                    HStack(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Transcription language").font(.body.weight(.medium))
+                            Text("Automatic handles mixed Norwegian and English")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: $settings.language) {
+                            ForEach(TranscriptionLanguage.allCases) { Text($0.rawValue).tag($0) }
                         }
                         .labelsHidden()
                         .frame(width: 155)
-                        .onChange(of: settings.holdKey) { _, _ in coordinator.restartHotkey() }
+                        .onChange(of: settings.language) { _, _ in coordinator.applyTranscriptionLanguage() }
                     }
 
                     Divider()
@@ -273,6 +336,7 @@ private struct GeneralSettingsView: View {
                                 .foregroundStyle(.orange)
                             Spacer()
                             Button("Open Login Items") { settings.openLoginItemsSettings() }
+                                .pointerStyle(.link)
                         }
                     }
                 }
@@ -295,6 +359,7 @@ private struct GeneralSettingsView: View {
                                 .font(.caption.weight(.medium)).foregroundStyle(.green)
                         } else {
                             Button("Retry") { Task { await coordinator.prepareModel() } }
+                                .pointerStyle(.link)
                         }
                     }
                 }
@@ -319,6 +384,7 @@ private struct GeneralSettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         Button("Open Setup Assistant") { coordinator.showOnboarding() }
+                            .pointerStyle(.link)
                     }
                 }
 
@@ -329,6 +395,43 @@ private struct GeneralSettingsView: View {
                             .textSelection(.enabled)
                     }
                 }
+
+                SettingsCard(title: "Kimi cloud features", systemImage: "sparkles.rectangle.stack") {
+                    Text("Optional. A Kimi API key unlocks two features: the prompt polish shortcut (Kimi K2.7 rewrites your dictation into a well-engineered prompt before inserting) and periodic vocabulary review (Kimi checks new names found in your transcripts). Without a key, dictation and tuning stay fully on-device.")
+                        .font(.callout).foregroundStyle(.secondary)
+                    HStack {
+                        SecureField("sk-kimi-…", text: $apiKeyDraft)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Save") {
+                            let saved = KimiAPIKeyStore.save(apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines))
+                            apiKeyDraft = ""
+                            keyStatus = saved ? "Saved to Keychain" : "Keychain refused the key — try again"
+                            keyConfigured = saved || keyConfigured
+                        }
+                        .pointerStyle(.link)
+                        .disabled(apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if keyConfigured {
+                            Button(testingConnection ? "Testing…" : "Test") { testConnection() }
+                                .pointerStyle(.link)
+                                .disabled(testingConnection)
+                            Button("Clear") {
+                                KimiAPIKeyStore.clear()
+                                keyStatus = "Removed"
+                                keyConfigured = false
+                            }
+                        }
+                    }
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(keyConfigured ? Color.green : Color.secondary.opacity(0.4))
+                            .frame(width: 8, height: 8)
+                        Text(keyConfigured ? "Key saved — Kimi review enabled" : "Not set — on-device tuning only")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let keyStatus {
+                            Text("· \(keyStatus)").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             .frame(maxWidth: 680, alignment: .leading)
             .padding(28)
@@ -337,6 +440,22 @@ private struct GeneralSettingsView: View {
         .onAppear {
             permissions.startMonitoring()
             settings.refreshLaunchAtLogin()
+            keyConfigured = KimiAPIKeyStore.read() != nil
+        }
+    }
+
+    private func testConnection() {
+        guard let key = KimiAPIKeyStore.read() else { return }
+        testingConnection = true
+        keyStatus = nil
+        Task {
+            do {
+                _ = try await KimiTunerClient().testConnection(apiKey: key)
+                keyStatus = "Connection works"
+            } catch {
+                keyStatus = "Failed: \(error.localizedDescription)"
+            }
+            testingConnection = false
         }
     }
 }
@@ -363,7 +482,9 @@ private struct PermissionSettingsRow: View {
                         .foregroundStyle(.green)
                 } else {
                     Button("Allow") { allow() }
+                        .pointerStyle(.link)
                     Button("System Settings") { openSettings() }
+                        .pointerStyle(.link)
                 }
             }
             .font(.caption.weight(.medium))
@@ -416,52 +537,337 @@ private struct SettingsPageHeader: View {
     }
 }
 
-private struct VocabularySettingsView: View {
-    @ObservedObject var settings: AppSettings
+private struct DictionaryEntry: Identifiable {
+    let preferred: String
+    let aliases: [String]
+    let line: String
+    var id: String { line }
+}
+
+private struct DictionarySettingsView: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject private var settings: AppSettings
+    @ObservedObject private var learned: LearnedVocabularyStore
+    @ObservedObject private var runner: VocabularyTunerRunner
     @State private var confirmingRestore = false
+    @State private var addingEntry = false
+    @State private var hoveredRow: String?
+
+    init(coordinator: AppCoordinator) {
+        self.coordinator = coordinator
+        settings = coordinator.settings
+        learned = coordinator.settings.learnedVocabulary
+        runner = coordinator.tunerRunner
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .bottom) {
-                SettingsPageHeader(
-                    title: "Vocabulary",
-                    subtitle: "Curated for Slack and coding, with room for your projects and names"
-                )
-                Spacer()
-                Button("Restore curated defaults") { confirmingRestore = true }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(alignment: .bottom) {
+                    SettingsPageHeader(
+                        title: "Dictionary",
+                        subtitle: "How Pressay spells the names and terms you dictate"
+                    )
+                    Spacer()
+                    Button("Add new") { addingEntry = true }
+                        .pointerStyle(.link)
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
+                }
+
+                learnedCard
+                yourDictionaryCard
+
+                HStack {
+                    Spacer()
+                    Button("Restore curated defaults") { confirmingRestore = true }
+                        .pointerStyle(.link)
+                        .font(.caption)
+                }
+                Text("\(settings.vocabularyEntries.count) terms (incl. \(learned.records.count) learned) · used for casing cleanup and polish validation")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(.bottom, 8)
-            Text("One preferred spelling per line. Add safe mishearings with `Preferred <= alias, another alias`. Lines beginning with # are section labels.")
-                .font(.callout).foregroundStyle(.secondary)
-            TextEditor(text: $settings.vocabularySource)
-                .font(.system(.body, design: .monospaced))
-                .lineSpacing(2)
-                .padding(8)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(.separator.opacity(0.5)))
-            Text("\(settings.vocabularyEntries.count) terms · used for safe casing cleanup and polish validation")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            .frame(maxWidth: 680, alignment: .leading)
+            .padding(28)
         }
-        .padding(28)
+        .background(.background)
+        .sheet(isPresented: $addingEntry) {
+            AddDictionaryEntrySheet { preferred, aliases in
+                addEntry(preferred: preferred, aliases: aliases)
+            }
+        }
         .confirmationDialog(
-            "Replace your vocabulary with the curated Slack and coding defaults?",
+            "Replace your dictionary with the curated defaults?",
             isPresented: $confirmingRestore
         ) {
             Button("Restore defaults", role: .destructive) { settings.restoreCuratedVocabulary() }
+                .pointerStyle(.link)
             Button("Cancel", role: .cancel) {}
+                .pointerStyle(.link)
         } message: {
-            Text("Any custom names or aliases in the editor will be replaced.")
+            Text("Any custom terms you added will be replaced.")
         }
+    }
+
+    private var learnedCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Label("Learned automatically", systemImage: "sparkles")
+                    .font(.headline)
+                Spacer()
+                switch runner.status {
+                case .idle, .done:
+                    Button("Optimize now") { runner.runNow(history: coordinator.history, settings: settings) }
+                        .pointerStyle(.link)
+                        .controlSize(.small)
+                case .running:
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Reviewing…").font(.caption).foregroundStyle(.secondary)
+                    }
+                case .failed(let message):
+                    Text("Kimi review failed: \(message)").font(.caption).foregroundStyle(.orange)
+                }
+            }
+            .padding(.bottom, 4)
+
+            Text("Mishearings Pressay fixed from your recent transcripts.")
+                .font(.caption).foregroundStyle(.secondary)
+                .padding(.bottom, 8)
+
+            if learned.records.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "sparkle.magnifyingglass")
+                        .font(.title3).foregroundStyle(.tertiary)
+                    Text("Nothing learned yet — keep dictating and fixes show up here on their own.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 18)
+            } else {
+                ForEach(Array(learned.records.enumerated()), id: \.element.heard) { index, record in
+                    if index > 0 { Divider() }
+                    DictionaryRow(
+                        alias: record.heard,
+                        preferred: record.preferred,
+                        badge: "✨",
+                        trailing: "×\(record.count) · \(record.source)",
+                        hovered: hoveredRow == "learned|\(record.heard)",
+                        onDelete: { learned.remove(record) }
+                    )
+                    .onHover { hoveredRow = $0 ? "learned|\(record.heard)" : nil }
+                }
+            }
+
+            Divider().padding(.top, 6)
+            Text("Rules expire with the 30-day transcript window · deleted rules are never re-learned")
+                .font(.caption).foregroundStyle(.tertiary)
+                .padding(.top, 8)
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.32))
+        }
+    }
+
+    private var yourDictionaryCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Label("Your dictionary", systemImage: "text.book.closed")
+                .font(.headline)
+                .padding(.bottom, 8)
+
+            ForEach(Array(parsedSections.enumerated()), id: \.offset) { sectionIndex, section in
+                if let title = section.title {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .padding(.top, sectionIndex == 0 ? 2 : 12)
+                        .padding(.bottom, 4)
+                }
+                ForEach(Array(section.entries.enumerated()), id: \.element.id) { index, entry in
+                    if index > 0 { Divider() }
+                    dictionaryRows(entry)
+                }
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.32))
+        }
+    }
+
+    @ViewBuilder
+    private func dictionaryRows(_ entry: DictionaryEntry) -> some View {
+        if entry.aliases.isEmpty {
+            DictionaryRow(
+                alias: nil,
+                preferred: entry.preferred,
+                badge: nil,
+                trailing: nil,
+                hovered: hoveredRow == entry.line,
+                onDelete: { deleteEntry(line: entry.line) }
+            )
+            .onHover { hoveredRow = $0 ? entry.line : nil }
+        } else {
+            ForEach(entry.aliases, id: \.self) { alias in
+                let rowKey = "\(entry.line)|\(alias)"
+                DictionaryRow(
+                    alias: alias,
+                    preferred: entry.preferred,
+                    badge: nil,
+                    trailing: nil,
+                    hovered: hoveredRow == rowKey,
+                    onDelete: { removeAlias(entry: entry, alias: alias) }
+                )
+                .onHover { hoveredRow = $0 ? rowKey : nil }
+            }
+        }
+    }
+
+    private func removeAlias(entry: DictionaryEntry, alias: String) {
+        let remaining = entry.aliases.filter { $0 != alias }
+        var newLine = entry.preferred
+        if !remaining.isEmpty { newLine += " <= " + remaining.joined(separator: ", ") }
+        let lines = settings.vocabularySource
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+            .map { $0.trimmingCharacters(in: .whitespaces) == entry.line ? newLine : $0 }
+        settings.vocabularySource = lines.joined(separator: "\n")
+    }
+
+    private var parsedSections: [(title: String?, entries: [DictionaryEntry])] {
+        var sections: [(String?, [DictionaryEntry])] = []
+        var currentTitle: String?
+        var current: [DictionaryEntry] = []
+        func flush() {
+            if currentTitle != nil || !current.isEmpty {
+                sections.append((currentTitle, current))
+            }
+        }
+        for rawLine in settings.vocabularySource.split(whereSeparator: \.isNewline) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("#") {
+                flush()
+                currentTitle = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
+                current = []
+            } else if let entry = VocabularyParser.parse(line).first {
+                current.append(DictionaryEntry(preferred: entry.preferred, aliases: entry.aliases, line: line))
+            }
+        }
+        flush()
+        return sections
+    }
+
+    private func deleteEntry(line: String) {
+        let lines = settings.vocabularySource
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+            .filter { $0.trimmingCharacters(in: .whitespaces) != line }
+        settings.vocabularySource = lines.joined(separator: "\n")
+    }
+
+    private func addEntry(preferred: String, aliases: [String]) {
+        var line = preferred
+        if !aliases.isEmpty { line += " <= " + aliases.joined(separator: ", ") }
+        var source = settings.vocabularySource.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !source.contains("# Custom") { source += "\n\n# Custom" }
+        source += "\n" + line
+        settings.vocabularySource = source
+    }
+}
+
+private struct DictionaryRow: View {
+    let alias: String?
+    let preferred: String
+    let badge: String?
+    let trailing: String?
+    let hovered: Bool
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let alias {
+                Text(alias)
+                    .foregroundStyle(.secondary)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            Text(preferred)
+                .font(.body.weight(alias == nil ? .regular : .semibold))
+            if let badge {
+                Text(badge).font(.caption)
+            }
+            Spacer()
+            if let trailing {
+                Text(trailing)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(.quaternary.opacity(0.6), in: Capsule())
+            }
+            if hovered {
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "xmark.circle")
+                        .foregroundStyle(.secondary)
+                }
+                .pointerStyle(.link)
+                .buttonStyle(.plain)
+                .transition(.opacity)
+            }
+        }
+        .padding(.vertical, 7)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct AddDictionaryEntrySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var preferred = ""
+    @State private var aliases = ""
+    let onSave: (String, [String]) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add to dictionary").font(.title3.bold())
+            Text("The preferred spelling is what gets inserted; aliases are the mishearings that map to it.")
+                .font(.caption).foregroundStyle(.secondary)
+            TextField("Preferred spelling (e.g. SonarCloud)", text: $preferred)
+                .textFieldStyle(.roundedBorder)
+            TextField("Aliases, comma-separated (e.g. soonercloud, sooner cloud)", text: $aliases)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .pointerStyle(.link)
+                Button("Add") {
+                    let aliasList = aliases.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                    onSave(preferred.trimmingCharacters(in: .whitespaces), aliasList)
+                    dismiss()
+                }
+                .pointerStyle(.link)
+                .buttonStyle(.borderedProminent)
+                .disabled(preferred.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 }
 
 private struct HistoryView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var history: HistoryStore
-    @State private var editing: DictationRecord?
     @State private var showingDeleteAll = false
     @State private var searchText = ""
+    @State private var hoveredID: UUID?
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
@@ -473,41 +879,55 @@ private struct HistoryView: View {
             HStack {
                 SettingsPageHeader(
                     title: "History",
-                    subtitle: "Recent prompts and calibration examples stored only on this Mac"
+                    subtitle: "Recent prompts stored only on this Mac"
                 )
                 Spacer()
                 Button("Delete all", role: .destructive) { showingDeleteAll = true }
+                    .pointerStyle(.link)
             }
-            Text("Text expires after 30 days and audio after 7 days. Edited or pinned entries are retained.")
-                .font(.caption).foregroundStyle(.secondary)
-            Text("Editing changes copy and retry for that entry; it does not retrain the transcription model.")
+            Text("Text expires after 30 days, audio after 7 days.")
                 .font(.caption).foregroundStyle(.secondary)
             List(filteredRecords) { record in
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(record.referenceText).lineLimit(3)
-                        Text("\(record.createdAt.formatted()) · \(record.totalLatency.formatted(.number.precision(.fractionLength(2))))s")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button { try? history.togglePin(record) } label: {
-                        Image(systemName: record.isPinned ? "pin.fill" : "pin")
-                    }
-                    .help(record.isPinned ? "Unpin" : "Pin")
-                    Button("Edit text") { editing = record }
-                    Button { coordinator.copy(record) } label: { Image(systemName: "doc.on.doc") }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.referenceText).lineLimit(3)
+                    Text(metaLine(record))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+                .overlay(alignment: .trailing) {
+                    if hoveredID == record.id {
+                        Button { coordinator.copy(record) } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.plain)
                         .help("Copy")
-                    Button(role: .destructive) { try? history.delete(record) } label: { Image(systemName: "trash") }
-                        .help("Delete")
+                    }
+                }
+                .onHover { hoveredID = $0 ? record.id : nil }
+                .contextMenu {
+                    Button("Copy") { coordinator.copy(record) }
+                        .pointerStyle(.link)
+                    Button("Delete entry", role: .destructive) { try? history.delete(record) }
+                        .pointerStyle(.link)
                 }
             }
         }
         .padding(28)
         .searchable(text: $searchText, prompt: "Search prompts")
-        .sheet(item: $editing) { CorrectionView(record: $0, history: history) }
         .confirmationDialog("Delete all local history and audio?", isPresented: $showingDeleteAll) {
             Button("Delete all", role: .destructive) { try? history.deleteAll() }
+                .pointerStyle(.link)
         }
+    }
+
+    private func metaLine(_ record: DictationRecord) -> String {
+        var parts = [
+            record.createdAt.formatted(.relative(presentation: .named)),
+            record.totalLatency.formatted(.number.precision(.fractionLength(2))) + "s",
+        ]
+        if record.usedLanguageModel { parts.append("✨") }
+        return parts.joined(separator: " · ")
     }
 
     private var filteredRecords: [DictationRecord] {
@@ -516,38 +936,5 @@ private struct HistoryView: View {
             $0.referenceText.localizedCaseInsensitiveContains(searchText)
                 || ($0.targetBundleID?.localizedCaseInsensitiveContains(searchText) ?? false)
         }
-    }
-}
-
-private struct CorrectionView: View {
-    @Environment(\.dismiss) private var dismiss
-    let record: DictationRecord
-    let history: HistoryStore
-    @State private var correction: String
-
-    init(record: DictationRecord, history: HistoryStore) {
-        self.record = record
-        self.history = history
-        _correction = State(initialValue: record.correction ?? record.polishedText)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Edit saved text").font(.title2.bold())
-            Text("Raw: \(record.rawTranscript)").font(.caption).foregroundStyle(.secondary)
-            TextEditor(text: $correction).frame(minHeight: 180)
-                .padding(6).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Save and retain") {
-                    try? history.update(record, correction: correction, pin: true)
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(20)
-        .frame(width: 560)
     }
 }

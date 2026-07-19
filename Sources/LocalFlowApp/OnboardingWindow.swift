@@ -121,7 +121,7 @@ struct OnboardingView: View {
 
     private var permissionContent: some View {
         VStack(alignment: .leading, spacing: 18) {
-            DictationFlowStrip(shortcut: settings.holdKey.rawValue)
+            DictationFlowStrip(shortcut: settings.holdKey.displayName)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Allow three macOS permissions")
@@ -163,7 +163,7 @@ struct OnboardingView: View {
                 .font(.title3.bold())
                 .foregroundStyle(.green)
 
-            DictationFlowStrip(shortcut: settings.holdKey.rawValue)
+            DictationFlowStrip(shortcut: settings.holdKey.displayName)
 
             VStack(spacing: 0) {
                 setupChoiceRow(
@@ -171,11 +171,12 @@ struct OnboardingView: View {
                     title: "Hold-to-talk shortcut",
                     detail: "Hold to record, release to insert"
                 ) {
-                    Picker("", selection: $settings.holdKey) {
-                        ForEach(HoldKey.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .labelsHidden()
-                    .frame(width: 160)
+                    KeyCaptureButton(
+                        key: $settings.holdKey,
+                        reservedKey: { coordinator.settings.polishHoldKey },
+                        onChange: { coordinator.restartHotkey() },
+                        onCaptureActive: coordinator.keyCaptureActive
+                    )
                 }
                 Divider().padding(.leading, 52)
                 setupChoiceRow(

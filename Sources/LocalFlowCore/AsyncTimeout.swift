@@ -1,5 +1,12 @@
 import Foundation
 
+extension Duration {
+    /// Seconds as a TimeInterval; shared so latency math is written once.
+    public var seconds: TimeInterval {
+        Double(components.seconds) + Double(components.attoseconds) / 1e18
+    }
+}
+
 public enum Timeout {
     public static func run<T: Sendable>(
         for duration: Duration,
