@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "generatedFor": "Pressay 1.0",
+  "measuredOn": "Apple Silicon M5 Pro development Mac",
+  "corpus": {
+    "private": true,
+    "clipCount": 184,
+    "minimumDurationSeconds": 0.54,
+    "maximumDurationSeconds": 103.59,
+    "totalDurationSeconds": 2179.99
+  },
+  "asrSharedClips": [
+    {
+      "durationSeconds": 6.09,
+      "latencySeconds": {
+        "parakeetV3TranscribeCpp": 0.05741275,
+        "whisperV3TurboTranscribeCpp": 0.326568875,
+        "whisperV3TurboWhisperKit": 0.566128959
+      }
+    },
+    {
+      "durationSeconds": 35.89,
+      "latencySeconds": {
+        "parakeetV3TranscribeCpp": 0.214995083,
+        "whisperV3TurboTranscribeCpp": 0.7648425,
+        "whisperV3TurboWhisperKit": 1.568509667
+      }
+    }
+  ],
+  "whisperKitWorkerSweepMedianSeconds": {
+    "1": 0.563784166,
+    "4": 0.560603708,
+    "16": 0.561321625
+  },
+  "whisperKitAutomaticLanguageMedianSeconds": 0.600233833,
+  "onDevicePolishValidator": {
+    "clipCount": 31,
+    "variants": [
+      {
+        "name": "light-fewshot",
+        "accepted": 29,
+        "passRatePercent": 93.5484,
+        "medianLatencySeconds": 0.811201709
+      },
+      {
+        "name": "light",
+        "accepted": 27,
+        "passRatePercent": 87.0968,
+        "medianLatencySeconds": 0.761679208
+      },
+      {
+        "name": "shipping-experiment",
+        "accepted": 21,
+        "passRatePercent": 67.7419,
+        "medianLatencySeconds": 0.812935167
+      },
+      {
+        "name": "light-plain",
+        "accepted": 8,
+        "passRatePercent": 25.8065,
+        "medianLatencySeconds": 0.823561667
+      }
+    ]
+  }
+}

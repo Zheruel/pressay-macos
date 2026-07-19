@@ -1,51 +1,154 @@
-# Pressay
+<p align="center">
+  <img src="Config/PressayIconSource.png" width="132" alt="Pressay app icon">
+</p>
 
-Pressay is a local-only, hold-to-talk macOS dictation app optimized for composing prompts for AI agents. Hold Right Option, say what you need, and release to insert a polished prompt at the cursor. It records only while the shortcut is held, transcribes on-device, and performs a guarded on-device polish pass when it improves the result.
+<h1 align="center">Pressay</h1>
 
-## Current stack
+<p align="center">
+  <strong>Quality-first voice dictation for AI prompts on macOS.</strong><br>
+  Hold. Speak. Release. Your words appear at the cursor.
+</p>
 
-- macOS 26+, Swift 6.2, SwiftUI/AppKit
-- Whisper Large V3 Turbo through Argmax OSS/WhisperKit 1.0.0, with automatic language detection by default (English/Norsk/auto selectable in Settings)
-- Strict greedy decoding without timestamps, fallback sampling, or prompt conditioning
-- Deterministic vocabulary cleanup followed by guarded Apple Foundation Models polishing only for disfluent speech
-- SwiftData for 30-day text history and 7-day audio history
+<p align="center">
+  <a href="https://github.com/Zheruel/pressay-macos/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Zheruel/pressay-macos/actions/workflows/ci.yml/badge.svg"></a>
+  <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111827?logo=apple&logoColor=white">
+  <img alt="Swift 6.2" src="https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-7C3AED"></a>
+</p>
 
-No transcription, prompt, surrounding application text, or telemetry is sent to a server. The ASR packages download model assets from Hugging Face on initial setup; subsequent inference is local.
+Pressay is a native, hold-to-talk dictation app built for people who communicate with coding agents all day. Standard dictation records only while a shortcut is held, transcribes locally on Apple Silicon, cleans up predictable speech artifacts, and inserts the result into the field that was focused when recording began.
 
-## Prerequisites
+It is deliberately not an always-listening assistant. There is no account, telemetry, subscription, or cloud transcription.
 
-Install the full Xcode release whose toolchain matches your macOS 26 SDK. The Makefile and app build script automatically use `/Applications/Xcode.app`.
+> [!IMPORTANT]
+> Pressay 1.0 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
 
-```sh
-xcodebuild -version
-```
+## Why Pressay
 
-## Build and run
+- **Quality first.** Whisper Large V3 Turbo is the calibrated default; language can be fixed for more reliable short clips.
+- **Fast local inference.** `transcribe.cpp` runs GGUF models through ggml and Metal, with the model and Metal pipeline warmed before the first dictation.
+- **Two intentional modes.** Right Option inserts a faithful transcript. Right Command can send the cleaned text to Kimi for a deliberate prompt rewrite.
+- **Cursor-first UX.** A clipboard-preserving synthetic paste handles native, web, and Electron editors; direct Accessibility replacement is the fallback.
+- **Learns your vocabulary.** A curated coding glossary, user rules, and local phonetic learning preserve repository names, products, acronyms, and casing.
+- **Private by default.** Microphone audio never leaves the Mac. Standard dictation text stays local. No captured application context is retained.
 
-```sh
+## How it works
+
+<p align="center">
+  <img src="docs/assets/architecture.svg" width="100%" alt="Pressay architecture: audio is recorded, transcribed, cleaned and inserted locally; an optional prompt shortcut sends only cleaned text to Kimi">
+</p>
+
+| Shortcut | Default | Result | Network |
+| --- | --- | --- | --- |
+| Dictate | Right Option | Faithful transcript with deterministic cleanup | None after model download |
+| Prompt polish | Right Command | Kimi rewrites the cleaned transcript into a structured agent prompt | Cleaned text is sent to Kimi |
+| Escape | Escape while recording | Cancels without inserting | None |
+
+Both hold keys are configurable. Pressay captures the destination before its nonactivating overlay appears, so the result returns to the right app and selection.
+
+## The configuration we ship
+
+Pressay has one quality-first default instead of exposing a wall of decoder knobs:
+
+| Layer | Shipping choice | Why |
+| --- | --- | --- |
+| Audio | Segmented `AVAudioEngine` capture, 16 kHz mono resampling, conservative edge trimming | Handles Bluetooth/device changes without clipping first or last words |
+| ASR | Whisper Large V3 Turbo Q8 GGUF via `transcribe.cpp` | Best transcript quality on the development corpus with much lower latency than the previous WhisperKit path |
+| Language | Automatic by default; fixed language available | Automatic is flexible; fixing a language skips detection and helps short clips |
+| Cleanup | Deterministic text and vocabulary pipeline | Predictable, quick, and preserves protected tokens |
+| Prompt rewrite | Separate Kimi shortcut | A rewrite can be useful, but it should never silently change faithful dictation |
+| Fast alternative | Parakeet TDT 0.6B v3 F16 | Near-instant on long clips; weaker on very short fragments in our testing |
+
+### ASR latency
+
+The chart below replays the same two real recordings through every engine shown. Lower is better.
+
+<p align="center">
+  <img src="docs/assets/asr-latency.svg" width="100%" alt="ASR latency comparison on shared 6.09 and 35.89 second recordings">
+</p>
+
+On the 35.89-second shared clip, Whisper V3 Turbo through `transcribe.cpp` finished in **0.765 s**, versus **1.569 s** for the previous WhisperKit path. Parakeet v3 finished in **0.215 s**, but speed alone does not make it the default.
+
+### Why normal dictation does not use an LLM
+
+We replayed 31 real dictations through four guarded on-device language-model prompt variants. Even the best variant changed a protected token on 2 of 31 clips. For standard dictation, that is the wrong failure mode.
+
+<p align="center">
+  <img src="docs/assets/polish-safety.svg" width="100%" alt="Protected-token validator pass rate for four on-device language model cleanup variants">
+</p>
+
+Pressay therefore keeps its normal path deterministic and makes generative prompt rewriting a separate, deliberate action. Read the [benchmark notes](docs/benchmarks.md) for the corpus, method, limitations, and sanitized data.
+
+## Privacy model
+
+| Data | Standard dictation | Optional Kimi features | Retention |
+| --- | --- | --- | --- |
+| Microphone audio | Processed locally | Never sent | 7 days by default |
+| Transcript | Stored locally | Prompt mode sends cleaned text | 30 days by default |
+| Vocabulary candidates | Learned locally | Periodic review may send candidate terms and short transcript excerpts | Local learned rules follow history retention |
+| Text around the cursor | Read transiently during Accessibility target capture | Never sent | Never stored |
+| Telemetry or analytics | None | None | Never collected |
+
+The first model download comes from Hugging Face. A Kimi API key is optional, stored in the macOS login keychain, and only enables the explicitly labeled cloud features. Pressay remains fully useful without it.
+
+Pinned or corrected history records are retained until you delete them. Delete history from the full app window at any time.
+
+## Install from source
+
+### Requirements
+
+- Apple Silicon Mac
+- macOS 26+
+- Xcode 26+ with the macOS 26 SDK
+- Around 2 GB of free space for the default model and build artifacts
+
+```bash
+git clone https://github.com/Zheruel/pressay-macos.git
+cd pressay-macos
 make test
 make app
 open .build/Pressay.app
 ```
 
-`make app` creates `.build/Pressay.app`. The build script uses a compatible signing identity when one is available, including the local Pressay development certificate. Otherwise it uses an ad-hoc signature and warns that macOS may ask for permissions again after a rebuild.
+On first launch, the setup assistant requests:
 
-Create a drag-to-install disk image with:
+1. Microphone access — record while a hold key is pressed.
+2. Accessibility — insert the finished text into the focused field.
+3. Input Monitoring — observe the global hold shortcut.
 
-```sh
+The first launch also downloads and warms the selected speech model. Later transcription is offline.
+
+To install the current build in `/Applications`:
+
+```bash
+make install
+```
+
+To create a drag-to-install disk image:
+
+```bash
 make dmg
 open .build/Pressay-*.dmg
 ```
 
-For stable permissions while developing on one Mac, create the local code-signing identity once with `scripts/create-local-signing-certificate.sh`. It is trusted only on that Mac and cannot be notarized. To share the MVP privately without an Apple Developer membership, create an ad-hoc-signed disk image with `SIGNING_IDENTITY=- make dmg`; the recipient must explicitly approve the app in macOS on first launch.
+### Signing without a paid Apple Developer account
 
-On first launch, Pressay opens a setup assistant for Microphone, Accessibility, and Input Monitoring. Approval status refreshes automatically, including after returning from System Settings. The local model begins preparing immediately in parallel; its first preparation can take several minutes because assets are downloaded and Core ML specializes them for the machine.
+The build script uses a compatible signing identity when one is present and otherwise applies an ad-hoc signature. Ad-hoc builds work for local development, but macOS may ask for permissions again after the app changes.
+
+For stable permissions on one development Mac, create the local certificate once:
+
+```bash
+./scripts/create-local-signing-certificate.sh
+make install
+```
+
+That certificate is trusted only on that Mac and cannot produce a notarized public release. Friends testing an ad-hoc build must explicitly approve it in Privacy & Security on first launch.
 
 ## Vocabulary
 
-Pressay learns how to spell the names and products you dictate. A background pass over your recent transcripts finds recurring mishearings and fixes them automatically — no manual entry needed. Learned rules appear in Settings → Vocabulary, where you can delete any of them; they expire with the 30-day transcript window. Adding a Kimi API key there lets Pressay periodically ask Kimi K3 to review new terms for even sharper fixes; everything works without a key, on-device.
+Pressay ships with a curated vocabulary for coding agents and team communication. It also learns phonetic corrections from recent dictations and applies them deterministically after ASR.
 
-You can also curate terms by hand, one per line:
+Add custom entries in **Settings → Dictionary**, one per line:
 
 ```text
 WhisperKit <= whisper kit
@@ -53,13 +156,58 @@ Core ML <= core ml, core em el
 myRepository <= my repository
 ```
 
-Preferred terms feed deterministic casing cleanup and polish-output validation. Vocabulary is deliberately applied after transcription because decoder-level conditioning was less reliable in the calibration corpus.
+The preferred spelling appears on the left; comma-separated forms on the right are corrected to it. Learned rules are visible and removable. Optional Kimi review only accepts corrections that map back to trusted vocabulary anchors.
 
-## Retention
+## Project layout
 
-- Ordinary transcript records: 30 days
-- Ordinary audio: 7 days
-- Corrected or pinned records and audio: retained until deleted
-- Surrounding application context: never stored
+```text
+Sources/
+├── LocalFlowApp/             SwiftUI/AppKit app, permissions, audio, insertion
+├── LocalFlowCore/            Domain types, cleanup, vocabulary, retention
+├── LocalFlowTranscription/   transcribe.cpp-backed ASR
+├── LocalFlowPostProcessing/  Experimental on-device benchmark module
+├── LocalFlowBench/           Corpus replay and tuning CLI
+└── TranscribeCpp/            Vendored Swift wrapper for the native runtime
+Tests/LocalFlowCoreTests/      Deterministic pipeline tests
+Config/                       App metadata, icons, entitlements, and earcons
+scripts/                      Build, install, signing, and DMG tooling
+```
 
-The runtime intentionally contains one calibrated transcription configuration rather than alternate engines or experimental decoder settings.
+The executable and internal Swift package modules still use the original `LocalFlow` development name. The shipped app name and product identity are Pressay.
+
+## Development
+
+```bash
+make build
+make test
+make app
+```
+
+`LocalFlowBench` can replay a private calibration manifest without checking audio or transcripts into Git:
+
+```bash
+swift run LocalFlowBench asr --manifest /path/to/manifest.json --out /path/to/results
+swift run LocalFlowBench polish --manifest /path/to/manifest.json --out /path/to/results
+```
+
+Keep benchmark audio, transcripts, API keys, and generated results outside the repository. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+## Known limitations
+
+- macOS 26+ and Apple Silicon only.
+- Meeting transcription, diarization, always-listening mode, mobile, Windows, and cloud ASR are out of scope.
+- Insertion depends on Accessibility behavior in the target app. Pressay preserves the clipboard and falls back cleanly, but custom editors can still behave differently.
+- Accuracy varies with microphones, accents, background noise, and domain vocabulary. Review critical text before executing destructive agent actions.
+- Public notarized binaries are not available yet.
+
+## Acknowledgements
+
+- [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) for a unified ggml/Metal speech runtime.
+- [OpenAI Whisper Large V3 Turbo](https://huggingface.co/openai/whisper-large-v3-turbo) and [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) for the speech models.
+- [Freesound](https://freesound.org/) contributor AbdrTar for the CC0 recording cues from which Pressay's earcons are derived.
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licensing details.
+
+## License
+
+Pressay source code is released under the [MIT License](LICENSE). Downloaded model weights and third-party components remain subject to their own licenses.

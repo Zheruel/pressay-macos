@@ -11,3 +11,6 @@ notes five semitones lower, trims each cue to 135 ms, removes sub-bass and sharp
 upper harmonics, lowers the peak to about -28 dBFS for comfortable frequent
 use, adds a soft attack and click-safe fades, and converts the result to 48 kHz
 stereo PCM.
+
+Both source recordings are published under CC0 1.0. See the root
+`THIRD_PARTY_NOTICES.md` for links and licensing details.

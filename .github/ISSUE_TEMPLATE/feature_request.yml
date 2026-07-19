@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest a focused improvement to Pressay.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest user-facing change that would solve it.
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Primary goal
+      options:
+        - Transcription quality
+        - Privacy
+        - Reliability
+        - Speed
+        - Accessibility
+        - UX polish
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Privacy and quality tradeoffs
+      description: Would this add network use, store more data, or risk changing dictated meaning?
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for a similar request.
+          required: true
+        - label: I did not include private dictation data or secrets.
+          required: true

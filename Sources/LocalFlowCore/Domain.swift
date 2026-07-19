@@ -150,7 +150,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     public var supportsLanguageHint: Bool { self != .parakeetV3 }
 }
 
-/// Language configuration for Whisper decoding. `auto` lets WhisperKit detect
+/// Language configuration for Whisper decoding. `auto` lets the model detect
 /// the language per audio window; the fixed cases force a language token,
 /// which skips the detection pass and cannot misfire on short clips.
 public enum TranscriptionLanguage: String, CaseIterable, Codable, Sendable, Identifiable {

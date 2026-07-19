@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="540" viewBox="0 0 1200 540" role="img" aria-labelledby="title desc">
+  <title id="title">Pressay local-first dictation architecture</title>
+  <desc id="desc">Audio is captured, transcribed, cleaned and inserted locally. A separate optional shortcut sends only cleaned text to Kimi for prompt rewriting.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#99958c"/>
+    </marker>
+    <style>
+      .title{font:600 26px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1c1c1a}
+      .label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1c1c1a}
+      .small{font:450 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#6d6a63}
+      .eyebrow{font:650 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:1.6px;fill:#77736a}
+      .number{font:600 13px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#6d5ce7}
+      .card{fill:#fffefa;stroke:#dedad0;stroke-width:1.5}
+      .line{stroke:#aaa69d;stroke-width:1.6;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1200" height="540" rx="26" fill="#f6f3ec"/>
+  <rect x="44" y="38" width="132" height="28" rx="14" fill="#e9e4ff"/>
+  <circle cx="61" cy="52" r="4" fill="#6d5ce7"/>
+  <text x="73" y="56" class="eyebrow" fill="#5949c7">LOCAL PATH</text>
+  <text x="44" y="103" class="title">From held key to focused field</text>
+  <text x="1156" y="99" text-anchor="end" class="small">No account · no telemetry · no cloud ASR</text>
+
+  <g transform="translate(44 135)">
+    <rect class="card" width="242" height="188" rx="18"/>
+    <text x="22" y="33" class="number">01</text>
+    <rect x="91" y="44" width="60" height="42" rx="11" fill="#f1efe9" stroke="#d8d4ca"/>
+    <text x="121" y="71" text-anchor="middle" class="label">⌥</text>
+    <text x="121" y="124" text-anchor="middle" class="label">Hold to talk</text>
+    <text x="121" y="150" text-anchor="middle" class="small">Records only while held</text>
+  </g>
+  <path class="line" d="M294 229H314"/>
+  <g transform="translate(322 135)">
+    <rect class="card" width="242" height="188" rx="18"/>
+    <text x="22" y="33" class="number">02</text>
+    <g transform="translate(73 49)" fill="#6d5ce7">
+      <rect x="0" y="17" width="7" height="26" rx="3.5"/>
+      <rect x="16" y="8" width="7" height="44" rx="3.5"/>
+      <rect x="32" y="0" width="7" height="60" rx="3.5"/>
+      <rect x="48" y="12" width="7" height="36" rx="3.5"/>
+      <rect x="64" y="4" width="7" height="52" rx="3.5"/>
+      <rect x="80" y="18" width="7" height="24" rx="3.5"/>
+      <rect x="96" y="23" width="7" height="14" rx="3.5"/>
+    </g>
+    <text x="121" y="124" text-anchor="middle" class="label">Prepare audio</text>
+    <text x="121" y="150" text-anchor="middle" class="small">Segment · resample · trim</text>
+  </g>
+  <path class="line" d="M572 229H592"/>
+  <g transform="translate(600 135)">
+    <rect class="card" width="242" height="188" rx="18"/>
+    <text x="22" y="33" class="number">03</text>
+    <circle cx="121" cy="70" r="30" fill="#eeeaff"/>
+    <path d="M104 72c6-15 28-15 34 0M109 81h24M113 90h16" fill="none" stroke="#6d5ce7" stroke-width="4" stroke-linecap="round"/>
+    <text x="121" y="124" text-anchor="middle" class="label">Transcribe locally</text>
+    <text x="121" y="150" text-anchor="middle" class="small">Whisper V3 Turbo · Metal</text>
+  </g>
+  <path class="line" d="M850 229H870"/>
+  <g transform="translate(878 135)">
+    <rect class="card" width="278" height="188" rx="18"/>
+    <text x="22" y="33" class="number">04</text>
+    <circle cx="139" cy="70" r="30" fill="#eeeaff"/>
+    <path d="M125 70l9 9 19-21" fill="none" stroke="#6d5ce7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="139" y="124" text-anchor="middle" class="label">Clean and insert</text>
+    <text x="139" y="150" text-anchor="middle" class="small">Vocabulary · Accessibility · paste</text>
+  </g>
+
+  <rect x="44" y="370" width="1112" height="120" rx="18" fill="#fffefa" stroke="#dedad0" stroke-width="1.5"/>
+  <rect x="64" y="391" width="170" height="28" rx="14" fill="#f7e9e3"/>
+  <circle cx="81" cy="405" r="4" fill="#cf6b4c"/>
+  <text x="93" y="409" class="eyebrow" fill="#a84e35">OPTIONAL CLOUD</text>
+  <text x="64" y="454" class="label">Prompt-polish shortcut</text>
+  <text x="284" y="434" class="small">Cleaned transcript only</text>
+  <text x="284" y="456" class="small">Microphone audio never leaves the Mac</text>
+  <path class="line" d="M530 431H607"/>
+  <rect x="626" y="399" width="198" height="62" rx="15" fill="#f7e9e3"/>
+  <text x="725" y="426" text-anchor="middle" class="label">Kimi rewrites</text>
+  <text x="725" y="447" text-anchor="middle" class="small">explicit action</text>
+  <path class="line" d="M843 431H920"/>
+  <rect x="939" y="399" width="192" height="62" rx="15" fill="#eeeaff"/>
+  <text x="1035" y="426" text-anchor="middle" class="label">Insert at cursor</text>
+  <text x="1035" y="447" text-anchor="middle" class="small">same destination</text>
+</svg>

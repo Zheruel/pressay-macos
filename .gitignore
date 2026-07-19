@@ -4,5 +4,12 @@
 DerivedData/
 tmp/
 LocalFlow.app/
+*.app/
+*.dmg
+*.dSYM/
+*.xcarchive/
 *.xcuserstate
 *.xccheckout
+.env
+.env.*
+.claude/settings.local.json
