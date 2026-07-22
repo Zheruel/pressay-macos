@@ -65,6 +65,28 @@ The shipping design is:
 2. Apply curated and learned vocabulary rules without asking a model to reinterpret the sentence.
 3. Keep the optional Structured Dictation pass deterministic too — punctuation, paragraphs, and lists, never a rewrite.
 
+## Structuring bake-off
+
+Before Structured Dictation shipped, `PressayBench structure` replayed a 438-clip private corpus through two candidates: the deterministic `TranscriptStructurer` rules and a formatting-only on-device Foundation Models prompt (words must be preserved verbatim; only punctuation, paragraphs, and bullets may change).
+
+| Candidate | Clips changed | Fabricated words | Dropped words | Errors | Median latency |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Rules | 93 / 438 | 0 | 0 | 0 | 0 ms |
+| On-device LLM | 26 / 438 | 7 clips | 9 clips | 7 (guardrail/decoding) | 582 ms |
+
+Even under a strictly formatting-scoped prompt, the language model completed a truncated dictation with invented words ("Maybe we could also talk about the" → "…the response in the next meeting."), silently dropped words on nine clips, and refused seven benign clips outright — while structuring fewer clips than the rules. That settled the choice: Structured Dictation is rule-based, and a fine-tuned local model was not pursued because it would have to beat a zero-defect, zero-latency baseline at its own game.
+
+## Vocabulary tuner precision
+
+`PressayBench tune-eval` replayed 680 transcripts (997 candidate terms) through the legacy and fixed deterministic matchers, with hand labels over every proposed rule:
+
+| Variant | Proposed rules | Precision |
+| --- | ---: | ---: |
+| Legacy matcher | 20 | 94% (learned `codebase → Codex`) |
+| Fixed matcher | 15 | 100% |
+
+The fixed matcher (larger English stop list, minimum phonetic key length 4, recurrence scaled to phonetic distance) kept every genuinely useful rule — including `CloudMD → CLAUDE.md` and `codecs → Codex` — while rejecting the ordinary-word rewrites the legacy matcher had learned on real machines (`mix → macOS`, `correction → Markdown`, `colleagues → Codex`).
+
 ## Reproducing the harness
 
 `PressayBench` is included in the Swift package. Create your own local manifest rather than committing recordings:
