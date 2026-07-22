@@ -74,6 +74,17 @@ final class TranscriptStructurerTests: XCTestCase {
         XCTAssertTrue(structured.contains(". And then"), "expected a repaired sentence break: \(structured)")
     }
 
+    func testRunOnAfterParagraphSplitIsRepairedAndIdempotent() {
+        // Corpus-found regression: a punctuated first half followed by an
+        // "Also" paragraph whose long unpunctuated tail hides an "and then".
+        // The break decision must be local to the connector, or the first
+        // pass (whole text) and second pass (split paragraph) disagree.
+        let text = "The parser crashes when the input is empty. I think the tokenizer is at fault. Also look at the other reports and maybe the price of rebuilding the whole module from scratch given what we know and then in general write me a concise clear report about it"
+        let once = TranscriptStructurer.structure(text)
+        XCTAssertTrue(once.contains(". And then"), "expected a repaired break: \(once)")
+        XCTAssertEqual(TranscriptStructurer.structure(once), once)
+    }
+
     func testIdempotentOnFixtures() {
         for text in fixtures() {
             let once = TranscriptStructurer.structure(text)

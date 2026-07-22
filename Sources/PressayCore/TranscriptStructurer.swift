@@ -99,23 +99,38 @@ public enum TranscriptStructurer {
     // MARK: - Punctuation repair
 
     /// Connectors that reliably open a fresh spoken sentence. Deliberately
-    /// short — "also" and "then" appear mid-sentence far too often.
+    /// short — "also" and "then" appear mid-sentence far too often. A comma
+    /// before the connector never matches: the speaker already punctuated.
     private static let breakConnectors = try? NSRegularExpression(
         pattern: #"(?i)([a-z0-9])[ \t]+(and then|okay so|so then|anyway|by the way)\b"#
     )
 
-    /// Only fires on near-punctuationless text (< 1 terminal mark per 40
-    /// words); Whisper output normally has punctuation and skips this.
+    /// Words a run must stretch past the previous punctuation before a
+    /// connector earns an inserted break. Measured locally per connector so
+    /// the decision is identical whether the text is seen whole or as an
+    /// already-split paragraph — that keeps structuring idempotent.
+    private static let minimumRunWords = 15
+
+    /// Breaks up punctuationless run-ons (Parakeet-style output) at strong
+    /// connectors; punctuated Whisper output is left alone.
     private static func repairPunctuation(in text: String) -> String {
-        let words = wordCount(of: text)
-        guard words >= 20 else { return text }
-        let marks = text.filter { ".!?".contains($0) }.count
-        guard marks < max(1, words / 40), let regex = breakConnectors else { return text }
-        return regex.stringByReplacingMatches(
-            in: text,
-            range: NSRange(text.startIndex..., in: text),
-            withTemplate: "$1. $2"
-        )
+        guard let regex = breakConnectors else { return text }
+        var result = text
+        let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result))
+        for match in matches.reversed() {
+            guard let whole = Range(match.range, in: result),
+                  let lead = Range(match.range(at: 1), in: result),
+                  let connector = Range(match.range(at: 2), in: result) else { continue }
+            let prefix = result[..<connector.lowerBound]
+            let lastMark = prefix.lastIndex { ".!?,;:".contains($0) }
+            let runStart = lastMark.map { prefix.index(after: $0) } ?? prefix.startIndex
+            let runWords = prefix[runStart...].split(whereSeparator: \.isWhitespace).count
+            guard runWords >= minimumRunWords else { continue }
+            result.replaceSubrange(
+                whole, with: result[lead] + ". " + result[connector]
+            )
+        }
+        return result
     }
 
     // MARK: - Sentence segmentation
