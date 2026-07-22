@@ -7,23 +7,23 @@ final class AppSettings: ObservableObject {
     private enum Key {
         static let holdKey = "holdKey"
         static let holdKeyCode = "holdKeyCode"
-        static let polishHoldKeyCode = "polishHoldKeyCode"
         static let language = "language"
         static let asrModel = "asrModel"
-        static let polishModel = "polishModel"
+        static let structuredDictation = "structuredDictation"
         static let vocabulary = "vocabulary"
         static let onboardingComplete = "onboardingComplete"
         static let hasUsedDictation = "hasUsedDictation"
+        /// Vibe Mode (removed) persisted these; cleared once at init.
+        static let retired = ["polishHoldKeyCode", "polishModel"]
     }
 
     private let defaults: UserDefaults
     private var isRollingBackLaunchAtLogin = false
 
     @Published var holdKey: HoldKey { didSet { defaults.set(holdKey.keyCode, forKey: Key.holdKeyCode) } }
-    @Published var polishHoldKey: HoldKey { didSet { defaults.set(polishHoldKey.keyCode, forKey: Key.polishHoldKeyCode) } }
     @Published var language: TranscriptionLanguage { didSet { defaults.set(language.rawValue, forKey: Key.language) } }
     @Published var asrModel: ASRModel { didSet { defaults.set(asrModel.rawValue, forKey: Key.asrModel) } }
-    @Published var polishModel: PolishModel { didSet { defaults.set(polishModel.rawValue, forKey: Key.polishModel) } }
+    @Published var structuredDictation: Bool { didSet { defaults.set(structuredDictation, forKey: Key.structuredDictation) } }
     @Published var vocabularySource: String { didSet { defaults.set(vocabularySource, forKey: Key.vocabulary) } }
     @Published var onboardingComplete: Bool { didSet { defaults.set(onboardingComplete, forKey: Key.onboardingComplete) } }
     @Published var hasUsedDictation: Bool { didSet { defaults.set(hasUsedDictation, forKey: Key.hasUsedDictation) } }
@@ -58,12 +58,10 @@ final class AppSettings: ObservableObject {
         holdKey = Self.readHoldKey(
             defaults, codeKey: Key.holdKeyCode, legacyKey: Key.holdKey, fallback: .rightOption
         )
-        polishHoldKey = Self.readHoldKey(
-            defaults, codeKey: Key.polishHoldKeyCode, legacyKey: nil, fallback: .rightCommand
-        )
         language = TranscriptionLanguage(rawValue: defaults.string(forKey: Key.language) ?? "") ?? .auto
         asrModel = Self.readASRModel(defaults)
-        polishModel = PolishModel(rawValue: defaults.string(forKey: Key.polishModel) ?? "") ?? .k3
+        structuredDictation = defaults.bool(forKey: Key.structuredDictation)
+        for key in Key.retired { defaults.removeObject(forKey: key) }
         let storedVocabulary = defaults.string(forKey: Key.vocabulary)
         if let storedVocabulary, CuratedVocabulary.replaceableDefaults.contains(storedVocabulary) {
             vocabularySource = CuratedVocabulary.source

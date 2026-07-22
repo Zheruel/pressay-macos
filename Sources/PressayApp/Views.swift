@@ -262,7 +262,7 @@ private struct GeneralSettingsView: View {
                         Spacer()
                         KeyCaptureButton(
                             key: $settings.holdKey,
-                            reservedKey: { coordinator.settings.polishHoldKey },
+                            reservedKey: { nil },
                             onChange: { coordinator.restartHotkey() },
                             onCaptureActive: coordinator.keyCaptureActive
                         )
@@ -270,35 +270,12 @@ private struct GeneralSettingsView: View {
 
                     Divider()
 
-                    HStack(spacing: 14) {
+                    Toggle(isOn: $settings.structuredDictation) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Vibe Mode shortcut").font(.body.weight(.medium))
-                            Text("Hold to dictate; Kimi rewrites it into a vibe-coding brief")
+                            Text("Structured dictation").font(.body.weight(.medium))
+                            Text("Add punctuation, paragraphs, and lists to longer dictations — on-device")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        KeyCaptureButton(
-                            key: $settings.polishHoldKey,
-                            reservedKey: { coordinator.settings.holdKey },
-                            onChange: { coordinator.restartHotkey() },
-                            onCaptureActive: coordinator.keyCaptureActive
-                        )
-                    }
-
-                    Divider()
-
-                    HStack(spacing: 14) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Vibe Mode model").font(.body.weight(.medium))
-                            Text(settings.polishModel.caption)
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Picker("", selection: $settings.polishModel) {
-                            ForEach(PolishModel.allCases) { Text($0.displayName).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 200)
                     }
 
                     Divider()
@@ -413,7 +390,7 @@ private struct GeneralSettingsView: View {
                 }
 
                 SettingsCard(title: "Kimi cloud features", systemImage: "sparkles.rectangle.stack") {
-                    Text("Optional. A Kimi API key unlocks two features: the Vibe Mode shortcut (Kimi rewrites your dictation into a vibe-coding brief before inserting) and periodic vocabulary review (Kimi checks new names found in your transcripts). Without a key, dictation and tuning stay fully on-device.")
+                    Text("Optional. A Kimi API key lets Pressay periodically ask Kimi to review new names found in your transcripts and suggest vocabulary fixes. Without a key, dictation and tuning stay fully on-device.")
                         .font(.callout).foregroundStyle(.secondary)
                     HStack {
                         SecureField("sk-kimi-…", text: $apiKeyDraft)
@@ -600,7 +577,7 @@ private struct DictionarySettingsView: View {
                         .pointerStyle(.link)
                         .font(.caption)
                 }
-                Text("\(settings.vocabularyEntries.count) terms (incl. \(learned.records.count) learned) · used for casing cleanup and polish validation")
+                Text("\(settings.vocabularyEntries.count) terms (incl. \(learned.records.count) learned) · used for casing cleanup")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -938,11 +915,10 @@ private struct HistoryView: View {
     }
 
     private func metaLine(_ record: DictationRecord) -> String {
-        var parts = [
+        let parts = [
             record.createdAt.formatted(.relative(presentation: .named)),
             record.totalLatency.formatted(.number.precision(.fractionLength(2))) + "s",
         ]
-        if record.usedLanguageModel { parts.append("✨") }
         return parts.joined(separator: " · ")
     }
 

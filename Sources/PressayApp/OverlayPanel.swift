@@ -2,49 +2,24 @@ import AppKit
 import PressayCore
 import SwiftUI
 
-/// Visual identity of the active workflow: dictation keeps the purple→blue
-/// voice gradient; prompt polish is amber→pink with a "Polishing…" caption so
-/// the multi-second cloud call reads as intentional.
+/// Visual identity of the recording overlay: the purple→blue voice gradient.
 enum OverlayStyle {
     case dictation
-    case promptPolish
 
     var gradient: LinearGradient {
-        switch self {
-        case .dictation:
-            LinearGradient(
-                colors: [
-                    Color(red: 0.63, green: 0.42, blue: 1),
-                    Color(red: 0.48, green: 0.82, blue: 1),
-                ],
-                startPoint: .bottom,
-                endPoint: .top
-            )
-        case .promptPolish:
-            LinearGradient(
-                colors: [
-                    Color(red: 1, green: 0.62, blue: 0.26),
-                    Color(red: 1, green: 0.4, blue: 0.62),
-                ],
-                startPoint: .bottom,
-                endPoint: .top
-            )
-        }
+        LinearGradient(
+            colors: [
+                Color(red: 0.63, green: 0.42, blue: 1),
+                Color(red: 0.48, green: 0.82, blue: 1),
+            ],
+            startPoint: .bottom,
+            endPoint: .top
+        )
     }
 
-    var glowColor: Color {
-        switch self {
-        case .dictation: .indigo
-        case .promptPolish: .orange
-        }
-    }
+    var glowColor: Color { .indigo }
 
-    var processingLabel: String? {
-        switch self {
-        case .dictation: nil
-        case .promptPolish: "Vibing…"
-        }
-    }
+    var processingLabel: String? { nil }
 }
 
 @MainActor
