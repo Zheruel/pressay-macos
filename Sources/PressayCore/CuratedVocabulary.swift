@@ -45,6 +45,8 @@ package enum CuratedVocabulary {
     JSON <= j s o n
     .env <= dot env
     package.json <= package json
+    CLAUDE.md <= claude md, cloud md
+    AGENTS.md <= agents md
     """
 
     /// Exact stock defaults from earlier builds; only these are migrated.

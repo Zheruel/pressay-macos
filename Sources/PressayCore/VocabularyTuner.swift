@@ -83,12 +83,37 @@ public enum VocabularyTuner {
         return 2
     }
 
+    /// Gates for the deterministic matcher. `.fixed` is the shipping default;
+    /// `.legacy` reproduces the pre-fix behavior so the bench can replay both
+    /// side by side; `.exact` is the per-dictation profile where a single
+    /// sighting is all the evidence there will ever be.
+    public struct DetConfig: Sendable {
+        /// Shortest phonetic key eligible for matching. Three-consonant keys
+        /// ("mix" → MKS) collide with anchors ("macOS" → MKS) too easily.
+        public var minimumKeyLength: Int
+        /// Caps the length-based tolerance table; 0 means exact keys only.
+        public var toleranceCap: Int
+        /// Fuzzier matches need more recurrence: `count >= distance + 1`.
+        public var scalesEvidenceWithDistance: Bool
+
+        public static let legacy = DetConfig(
+            minimumKeyLength: 3, toleranceCap: 2, scalesEvidenceWithDistance: false
+        )
+        public static let fixed = DetConfig(
+            minimumKeyLength: 4, toleranceCap: 2, scalesEvidenceWithDistance: true
+        )
+        public static let exact = DetConfig(
+            minimumKeyLength: 4, toleranceCap: 0, scalesEvidenceWithDistance: true
+        )
+    }
+
     /// Collision-ties between two anchors are skipped, and bigrams of ordinary
     /// words ("commit code") require exact phrase keys — they collide with
     /// anchors at distance 1, which unigrams ("entropic") are allowed.
     public static func deterministicRules(
         candidates: [TunerCandidate],
-        anchors: [String]
+        anchors: [String],
+        config: DetConfig = .fixed
     ) -> [LearnedRule] {
         let anchorKeys = anchors.map { ($0, PhoneticKey.key($0)) }
         let anchorFolds = Set(anchors.map { $0.lowercased() })
@@ -97,14 +122,19 @@ public enum VocabularyTuner {
             let fold = candidate.term.lowercased()
             guard !anchorFolds.contains(fold) else { continue }
             let key = PhoneticKey.key(candidate.term)
-            guard key.count >= 3 else { continue }
+            guard key.count >= config.minimumKeyLength else { continue }
             let distances = anchorKeys
                 .map { (anchor: $0.0, distance: PhoneticKey.distance(key, $0.1)) }
                 .sorted { $0.distance < $1.distance }
             guard let best = distances.first,
                   distances.count < 2 || distances[1].distance > best.distance else { continue }
-            let limit = candidate.term.contains(" ") ? 0 : tolerance(forKeyLength: key.count)
+            let limit = candidate.term.contains(" ")
+                ? 0
+                : min(tolerance(forKeyLength: key.count), config.toleranceCap)
             guard best.distance <= limit else { continue }
+            if config.scalesEvidenceWithDistance {
+                guard candidate.count >= best.distance + 1 else { continue }
+            }
             rules.append(LearnedRule(
                 heard: candidate.term,
                 preferred: best.anchor,
@@ -115,13 +145,14 @@ public enum VocabularyTuner {
         return rules
     }
 
-    /// Single-transcript rules for the dictation path: one occurrence is
-    /// enough evidence because the phonetic gates carry the safety, not
-    /// recurrence.
+    /// Single-transcript rules for the dictation path. One sighting is the
+    /// only evidence available here, so only exact phonetic keys qualify;
+    /// fuzzy mishearings wait for the daily pass, where recurrence across the
+    /// 30-day history can meet the distance-scaled evidence bar.
     public static func incrementalRules(for text: String, anchors: [String]) -> [LearnedRule] {
         let fresh = candidates(in: [text], minimumCount: 1, anchors: anchors)
         guard !fresh.isEmpty else { return [] }
-        return deterministicRules(candidates: fresh, anchors: anchors)
+        return deterministicRules(candidates: fresh, anchors: anchors, config: .exact)
     }
 
     /// LLM findings are accepted only when the correction lands on an anchor

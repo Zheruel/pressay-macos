@@ -20,6 +20,7 @@ final class LearnedVocabularyStore: ObservableObject {
         static let lastDetRun = "vocabularyTuner.lastDetRun"
         static let lastK3Run = "vocabularyTuner.lastK3Run"
         static let seenCandidates = "vocabularyTuner.seenCandidates"
+        static let schemaVersion = "vocabularyTuner.schemaVersion"
     }
 
     @Published private(set) var records: [Record] = []
@@ -105,6 +106,21 @@ final class LearnedVocabularyStore: ObservableObject {
             records = decoded
         }
         blocklist = Set(defaults.stringArray(forKey: Key.blocklist) ?? [])
+        migrateIfNeeded()
+    }
+
+    private func migrateIfNeeded() {
+        guard defaults.integer(forKey: Key.schemaVersion) < LearnedRuleMigration.schemaVersion else {
+            return
+        }
+        let surviving = records.filter { LearnedRuleMigration.survivesV1(source: $0.source) }
+        if surviving.count != records.count {
+            records = surviving
+            persist()
+        }
+        // Rebuild det rules from history on next launch instead of in 24h.
+        defaults.removeObject(forKey: Key.lastDetRun)
+        defaults.set(LearnedRuleMigration.schemaVersion, forKey: Key.schemaVersion)
     }
 
     private func persist() {
