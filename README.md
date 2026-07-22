@@ -27,7 +27,7 @@ It is deliberately not an always-listening assistant. There is no account, telem
 
 - **Quality first.** Whisper Large V3 Turbo is the calibrated default; language can be fixed for more reliable short clips.
 - **Fast local inference.** `transcribe.cpp` runs GGUF models through ggml and Metal, with the model and Metal pipeline warmed before the first dictation.
-- **Two intentional gears.** Right Option inserts faithful text. Right Command activates Vibe Mode and turns natural speech into an agent-ready brief.
+- **Optional structure.** A Structured Dictation toggle adds punctuation, paragraphs, and bullet lists to longer dictations — deterministically, on-device.
 - **Cursor-first UX.** A clipboard-preserving synthetic paste handles native, web, and Electron editors; direct Accessibility replacement is the fallback.
 - **Learns your vocabulary.** A curated coding glossary, user rules, and local phonetic learning preserve repository names, products, acronyms, and casing.
 - **Private by default.** Microphone audio never leaves the Mac. Standard dictation text stays local. No captured application context is retained.
@@ -41,29 +41,20 @@ It is deliberately not an always-listening assistant. There is no account, telem
 | Shortcut | Default | Result | Network |
 | --- | --- | --- | --- |
 | Dictate | Right Option | Faithful transcript with deterministic cleanup | None after model download |
-| Vibe Mode | Right Command | Kimi rewrites the cleaned transcript into a first-person work order | Cleaned text is sent to Kimi |
 | Escape | Escape while recording | Cancels without inserting | None |
 
-Both hold keys are configurable. Pressay captures the destination before its nonactivating overlay appears, so the result returns to the right app and selection.
+The hold key is configurable. Pressay captures the destination before its nonactivating overlay appears, so the result returns to the right app and selection.
 
-## Vibe Mode: Ramble in. Brief out.
+## Structured Dictation
 
-Standard dictation is for fidelity. Vibe Mode is the deliberate second gear for moments when you know what you want but say it as a stream of consciousness. Hold Right Command by default, ramble, self-correct, and think out loud; Pressay turns the result into a first-person work order for an AI coding agent.
+Longer dictations read better with sentences, paragraphs, and lists. The **Structured dictation** toggle in Settings applies a deterministic structuring pass after the normal cleanup:
 
-<p align="center">
-  <img src="docs/assets/vibe-mode.svg" width="100%" alt="Vibe Mode transcribes and cleans speech locally, then uses Kimi K3 to turn a rambling pull-request instruction into a concise brief that preserves the deployment boundary">
-</p>
+- Repairs missing terminal punctuation on near-punctuationless transcripts.
+- Splits sentences with abbreviation and identifier guards (`e.g.`, `node.js`, `3.5` never split).
+- Turns spoken enumerations ("first… second… finally…") into `-` bullet lists.
+- Breaks paragraphs at discourse markers ("also", "by the way", "moving on") and caps paragraph length.
 
-Vibe Mode has its own amber-to-pink overlay and **Vibing…** state so the slower generative step always feels intentional:
-
-- It writes in your first-person voice: direct instruction first, then your goal, boundaries, and requested deliverable.
-- It merges redundant thoughts and removes fillers, false starts, and superseded corrections without answering the prompt.
-- It is instructed to preserve facts, names, technical identifiers, numbers, URLs, negations, constraints, and uncertainty.
-- It knows when there is nothing to improve: a fragment such as `SwiftData` remains `SwiftData`.
-
-Audio, transcription, cleanup, and vocabulary learning remain local. Only the deterministically cleaned transcript is sent to Kimi using an API key stored in the macOS keychain. Kimi K3 is the calibrated default at roughly eight seconds; K2.7 and K2.7 HighSpeed are also selectable in Settings. If the rewrite fails, Pressay inserts nothing and saves the local transcript to History for recovery.
-
-See [Vibe Mode in depth](docs/vibe-mode.md) for the model matrix, exact trust boundary, failure behavior, and four real before/after examples from the shipped v1.1 calibration set.
+It never reorders, adds, or removes the words you spoke — the spoken ordinal markers of a list are the only thing it drops — and it never touches short dictations or terminal apps. Everything runs on-device with zero added latency; the toggle is off by default.
 
 ## The configuration we ship
 
@@ -75,7 +66,7 @@ Pressay has one quality-first default instead of exposing a wall of decoder knob
 | ASR | Whisper Large V3 Turbo Q8 GGUF via `transcribe.cpp` | Best transcript quality on the development corpus with much lower latency than the previous WhisperKit path |
 | Language | Automatic by default; fixed language available | Automatic is flexible; fixing a language skips detection and helps short clips |
 | Cleanup | Deterministic text and vocabulary pipeline | Predictable, quick, and preserves protected tokens |
-| Vibe Mode | Separate Kimi shortcut; K3 default | Rewriting is useful, but it should never silently replace faithful dictation |
+| Structure | Optional deterministic structuring pass | Readability without an LLM rewriting what was said |
 | Fast alternative | Parakeet TDT 0.6B v3 F16 | Near-instant on long clips; weaker on very short fragments in our testing |
 
 ### ASR latency
@@ -96,14 +87,14 @@ We replayed 31 real dictations through four guarded on-device language-model pro
   <img src="docs/assets/polish-safety.svg" width="100%" alt="Protected-token validator pass rate for four on-device language model cleanup variants">
 </p>
 
-Pressay therefore keeps its normal path deterministic and makes generative prompt rewriting a separate, deliberate action. Read the [benchmark notes](docs/benchmarks.md) for the corpus, method, limitations, and sanitized data.
+Pressay therefore keeps the whole dictation path deterministic — including the optional structuring pass, which only adds punctuation, paragraph breaks, and bullets. Read the [benchmark notes](docs/benchmarks.md) for the corpus, method, limitations, and sanitized data.
 
 ## Privacy model
 
 | Data | Standard dictation | Optional Kimi features | Retention |
 | --- | --- | --- | --- |
 | Microphone audio | Processed locally | Never sent | 7 days by default |
-| Transcript | Stored locally | Vibe Mode sends cleaned text | 30 days by default |
+| Transcript | Stored locally | Never sent | 30 days by default |
 | Vocabulary candidates | Learned locally | Periodic review may send candidate terms and short transcript excerpts | Local learned rules follow history retention |
 | Text around the cursor | Read transiently during Accessibility target capture | Never sent | Never stored |
 | Telemetry or analytics | None | None | Never collected |
@@ -205,8 +196,10 @@ make app
 `PressayBench` can replay a private calibration manifest without checking audio or transcripts into Git:
 
 ```bash
-swift run PressayBench asr --manifest /path/to/manifest.json --out /path/to/results
-swift run PressayBench polish --manifest /path/to/manifest.json --out /path/to/results
+swift run PressayBench manifest-from-audio --manifest /path/to/manifest.json
+swift run PressayBench asr --manifest /path/to/manifest.json
+swift run PressayBench structure --manifest /path/to/manifest.json
+swift run PressayBench tune-eval --timeline /path/to/timeline.json
 ```
 
 Keep benchmark audio, transcripts, API keys, and generated results outside the repository. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.

@@ -63,21 +63,21 @@ The shipping design is:
 
 1. Use deterministic cleanup for every standard dictation.
 2. Apply curated and learned vocabulary rules without asking a model to reinterpret the sentence.
-3. Put generative prompt rewriting behind a different shortcut and visible state.
-4. Send only cleaned text—not audio—when the user invokes that optional Kimi mode.
+3. Keep the optional Structured Dictation pass deterministic too — punctuation, paragraphs, and lists, never a rewrite.
 
 ## Reproducing the harness
 
 `PressayBench` is included in the Swift package. Create your own local manifest rather than committing recordings:
 
 ```bash
-swift run PressayBench asr \
-  --manifest /absolute/path/manifest.json \
-  --out /absolute/path/results
+swift run PressayBench manifest-from-audio \
+  --manifest /absolute/path/manifest.json
 
-swift run PressayBench polish \
-  --manifest /absolute/path/manifest.json \
-  --out /absolute/path/results
+swift run PressayBench asr \
+  --manifest /absolute/path/manifest.json
+
+swift run PressayBench structure \
+  --manifest /absolute/path/manifest.json
 ```
 
 The manifest schema is represented by `ManifestEntry` in [`Sources/PressayBench/Bench.swift`](../Sources/PressayBench/Bench.swift). Keep paths absolute, use the same clips for every engine, warm each model before timing, and manually correct reference transcripts before calculating error rates.
