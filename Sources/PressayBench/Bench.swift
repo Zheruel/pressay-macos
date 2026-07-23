@@ -464,6 +464,19 @@ struct Bench {
         }
         print("tune-eval: \(texts.count) texts -> \(candidates.count) candidates")
 
+        // Full candidate dump for external judges (e.g. replaying the K3
+        // prompt through another model): term, count, excerpt per line.
+        if let dumpPath = options["candidates-out"] {
+            struct CandidateDump: Codable {
+                let term: String
+                let count: Int
+                let excerpt: String
+            }
+            let dump = candidates.map { CandidateDump(term: $0.term, count: $0.count, excerpt: $0.excerpt) }
+            try JSONEncoder.bench.encode(dump, to: URL(fileURLWithPath: dumpPath))
+            print("wrote \(dumpPath) (\(dump.count) candidates)")
+        }
+
         func ruleMap(_ rules: [LearnedRule]) -> [String: String] {
             Dictionary(rules.map { ($0.heard.lowercased(), $0.preferred) }) { first, _ in first }
         }
