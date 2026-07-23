@@ -35,7 +35,7 @@ It is deliberately not an always-listening assistant. There is no account, telem
 ## How it works
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" width="100%" alt="Pressay architecture: audio is recorded, transcribed, cleaned and inserted locally; an optional prompt shortcut sends only cleaned text to Kimi">
+  <img src="docs/assets/architecture.svg" width="100%" alt="Pressay architecture: audio is recorded, transcribed, cleaned, optionally structured, and inserted locally; only the optional vocabulary review sends candidate terms to Kimi">
 </p>
 
 | Shortcut | Default | Result | Network |
@@ -48,6 +48,10 @@ The hold key is configurable. Pressay captures the destination before its nonact
 ## Structured Dictation
 
 Longer dictations read better with sentences, paragraphs, and lists. The **Structured dictation** toggle in Settings applies a deterministic structuring pass after the normal cleanup:
+
+<p align="center">
+  <img src="docs/assets/structured-dictation.svg" width="100%" alt="A rambling raw transcript is deterministically formatted on-device: spoken enumerations become a bullet list, capitalization is repaired, and the topic shift becomes a new paragraph, with every spoken word preserved">
+</p>
 
 - Repairs missing terminal punctuation on near-punctuationless transcripts.
 - Splits sentences with abbreviation and identifier guards (`e.g.`, `node.js`, `3.5` never split).

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">Structured Dictation before and after</title>
+  <desc id="desc">A rambling raw transcript is deterministically formatted on-device: punctuation and capitalization repaired, spoken enumerations become a bullet list, and topics become paragraphs. Every spoken word is preserved.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0 0 8 4 0 8Z" fill="#99958c"/>
+    </marker>
+    <style>
+      .title{font:600 26px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1c1c1a}
+      .label{font:600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1c1c1a}
+      .small{font:450 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#6d6a63}
+      .eyebrow{font:650 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:1.6px;fill:#77736a}
+      .body{font:450 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#3a3833}
+      .bodydim{font:450 15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#8a867c}
+      .card{fill:#fffefa;stroke:#dedad0;stroke-width:1.5}
+      .line{stroke:#aaa69d;stroke-width:1.6;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1200" height="560" rx="26" fill="#f6f3ec"/>
+  <rect x="44" y="38" width="132" height="28" rx="14" fill="#e9e4ff"/>
+  <circle cx="61" cy="52" r="4" fill="#6d5ce7"/>
+  <text x="73" y="56" class="eyebrow" fill="#5949c7">ON-DEVICE</text>
+  <text x="44" y="103" class="title">Speak it messy. Read it clean.</text>
+  <text x="1156" y="99" text-anchor="end" class="small">Deterministic rules · 0 ms · every word preserved</text>
+
+  <g transform="translate(44 135)">
+    <rect class="card" width="500" height="370" rx="18"/>
+    <rect x="24" y="24" width="60" height="26" rx="13" fill="#f1efe9"/>
+    <text x="37" y="41" class="eyebrow">RAW</text>
+    <text x="24" y="88" class="bodydim">okay, two things. first of all, we should test the</text>
+    <text x="24" y="114" class="bodydim">parser on empty input because it crashes. second</text>
+    <text x="24" y="140" class="bodydim">of all, can you rerun the benchmarks against the</text>
+    <text x="24" y="166" class="bodydim">stored baseline? after that we can probably ship</text>
+    <text x="24" y="192" class="bodydim">it. also update the changelog before the release</text>
+    <text x="24" y="218" class="bodydim">goes out to everyone</text>
+    <text x="24" y="282" class="small">One wall of text, buried enumeration</text>
+  </g>
+
+  <path class="line" d="M560 320H624"/>
+
+  <g transform="translate(656 135)">
+    <rect class="card" width="500" height="370" rx="18"/>
+    <rect x="24" y="24" width="118" height="26" rx="13" fill="#eeeaff"/>
+    <text x="37" y="41" class="eyebrow" fill="#5949c7">STRUCTURED</text>
+    <text x="24" y="88" class="body">Okay, two things.</text>
+    <text x="24" y="122" class="body"><tspan fill="#6d5ce7" font-weight="600">-</tspan>  We should test the parser on empty input</text>
+    <text x="41" y="146" class="body">because it crashes.</text>
+    <text x="24" y="178" class="body"><tspan fill="#6d5ce7" font-weight="600">-</tspan>  Can you rerun the benchmarks against the</text>
+    <text x="41" y="202" class="body">stored baseline?</text>
+    <text x="24" y="236" class="body">After that we can probably ship it.</text>
+    <text x="24" y="282" class="body">Also update the changelog before the release</text>
+    <text x="24" y="306" class="body">goes out to everyone.</text>
+    <text x="24" y="348" class="small">Bullets · capitalization · paragraph at the topic shift</text>
+  </g>
+</svg>
