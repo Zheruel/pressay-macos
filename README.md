@@ -193,6 +193,8 @@ make test
 make app
 ```
 
+CI runs the test suite and a full bundle build (assembly, ad-hoc signing, `codesign --verify`) on every pull request. Pushing a `vX.Y.Z` tag that matches the `Config/Info.plist` version triggers the release workflow, which publishes the DMG as a GitHub release.
+
 `PressayBench` can replay a private calibration manifest without checking audio or transcripts into Git:
 
 ```bash

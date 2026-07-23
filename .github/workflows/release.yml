@@ -1,0 +1,47 @@
+name: Release
+
+# Pushing a version tag (v1.2.0) tests, packages, and publishes the DMG as a
+# GitHub release. Runner keychains have no signing identity, so the artifact
+# is ad-hoc signed — same caveat as building from source (see README).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  release:
+    name: Build and publish DMG
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Verify tag matches the app version
+        run: |
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Config/Info.plist)"
+          if [[ "${GITHUB_REF_NAME}" != "v${VERSION}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match Info.plist version ${VERSION}" >&2
+            exit 1
+          fi
+
+      - name: Run tests
+        run: xcrun swift test --disable-sandbox
+
+      - name: Package DMG
+        run: ./scripts/package-dmg.sh
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Pressay ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            .build/Pressay-*.dmg
