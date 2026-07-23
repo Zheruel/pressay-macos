@@ -17,6 +17,10 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 - The Kimi vocabulary judge only receives candidates within phonetic reach of a known term — a ~60% cut in judge tokens with no measured loss of true corrections.
 - `CLAUDE.md` and `AGENTS.md` joined the curated vocabulary so mishearings like "CloudMD" resolve to the right term.
 
+### Fixed
+
+- Dictation history now actually persists across launches. The history database previously used SwiftData's shared `default.store` in Application Support, where a name collision with another app's store made every launch silently fall back to in-memory history — losing records, and with them the vocabulary tuner's learning window, on every restart. The store now lives at `Application Support/Pressay/History.store`.
+
 ### Removed
 
 - Vibe Mode. The second hold key, the Kimi rewrite step, and the model picker are gone; dictated text is never sent to the cloud. The Kimi API key now powers only the optional vocabulary review.
