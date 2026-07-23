@@ -197,6 +197,9 @@ struct SettingsRootView: View {
             }
             .navigationSplitViewColumnWidth(min: 170, ideal: 190)
             .background(.ultraThinMaterial)
+            // The sidebar is the whole navigation; collapsing it just strands
+            // the user, so drop the automatic toggle button.
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             switch selection ?? .general {
             case .general:
