@@ -21,7 +21,7 @@ Pressay is a native, hold-to-talk dictation app built for people who communicate
 It is deliberately not an always-listening assistant. There is no account, telemetry, subscription, or cloud transcription.
 
 > [!IMPORTANT]
-> Pressay 1.1 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
+> Pressay 1.2 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
 
 ## Why Pressay
 
