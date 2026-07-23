@@ -167,9 +167,36 @@ final class VocabularyTunerTests: XCTestCase {
         XCTAssertEqual(rules.map(\.preferred), ["CLAUDE.md"])
     }
 
+    func testJudgeWorthyKeepsAcousticNeighborsAndDropsFarTerms() {
+        // Corpus-measured: distance cap 2 keeps 25/26 true LLM-judge finds
+        // while dropping ~60% of candidates (guaranteed rejections).
+        let candidates = [
+            "CloudCode", "TLDA", "Sona Cloud", "SornCloud", "Kimmy",
+            "Polymarket", "Buenos Aires", "Fjordvik",
+        ].map { TunerCandidate(term: $0, count: 1, excerpt: "x") }
+        let worthy = Set(
+            VocabularyTuner.judgeWorthy(candidates: candidates, anchors: anchors + ["SonarCloud", "CLAUDE.md"])
+                .map(\.term)
+        )
+        for kept in ["CloudCode", "TLDA", "Sona Cloud", "SornCloud", "Kimmy"] {
+            XCTAssertTrue(worthy.contains(kept), "\(kept) is in acoustic range of an anchor")
+        }
+        for dropped in ["Polymarket", "Buenos Aires"] {
+            XCTAssertFalse(worthy.contains(dropped), "\(dropped) has no anchor in range")
+        }
+    }
+
     func testMigrationDropsDetRulesAndKeepsK3() {
         XCTAssertFalse(LearnedRuleMigration.survivesV1(source: LearnedRule.Source.det.rawValue))
         XCTAssertTrue(LearnedRuleMigration.survivesV1(source: LearnedRule.Source.k3.rawValue))
+    }
+
+    func testRetentionExpiresOnlyLongUnusedRules() {
+        let now = Date()
+        let day: TimeInterval = 24 * 3_600
+        XCTAssertFalse(LearnedRuleRetention.isExpired(lastSeen: now.addingTimeInterval(-29 * day), now: now))
+        XCTAssertFalse(LearnedRuleRetention.isExpired(lastSeen: now.addingTimeInterval(-89 * day), now: now))
+        XCTAssertTrue(LearnedRuleRetention.isExpired(lastSeen: now.addingTimeInterval(-91 * day), now: now))
     }
 
     func testTokensKeepIdentifiersWhole() {

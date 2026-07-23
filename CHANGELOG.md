@@ -13,6 +13,8 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 ### Changed
 
 - The automatic vocabulary tuner is far more conservative: its English stop list grew from ~1,100 to ~13,800 words, fuzzy phonetic matches now require recurrence proportional to their distance, and the per-dictation learning path only accepts exact phonetic matches. This stops it from rewriting ordinary words (previously learned false positives like "mix → macOS" and "correction → Markdown" are purged by a one-time migration; correct Kimi-reviewed rules are kept).
+- Learned words now persist while you keep using them: the daily pass refreshes a rule whenever its mishearing reappears, and only rules unused for ~3 months expire. Previously, deterministic rules silently vanished with the 30-day transcript window.
+- The Kimi vocabulary judge only receives candidates within phonetic reach of a known term — a ~60% cut in judge tokens with no measured loss of true corrections.
 - `CLAUDE.md` and `AGENTS.md` joined the curated vocabulary so mishearings like "CloudMD" resolve to the right term.
 
 ### Removed

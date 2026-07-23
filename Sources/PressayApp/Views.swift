@@ -654,7 +654,7 @@ private struct DictionarySettingsView: View {
             }
 
             Divider().padding(.top, 6)
-            Text("Rules expire with the 30-day transcript window · deleted rules are never re-learned")
+            Text("Learned words stay while you keep using them; unused rules expire after ~3 months · deleted rules are never re-learned")
                 .font(.caption).foregroundStyle(.tertiary)
                 .padding(.top, 8)
         }

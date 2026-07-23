@@ -13,3 +13,16 @@ public enum LearnedRuleMigration {
         source != LearnedRule.Source.det.rawValue
     }
 }
+
+/// Usage-based lifetime for learned rules. A learned word is part of the
+/// user's current vocabulary and stays as long as it keeps appearing in
+/// transcripts; only genuinely abandoned words age out. Deliberately much
+/// longer than the 30-day transcript window — history retention is a privacy
+/// setting, not a vocabulary one.
+public enum LearnedRuleRetention {
+    public static let unusedLifetime: TimeInterval = 90 * 24 * 3_600
+
+    public static func isExpired(lastSeen: Date, now: Date = .now) -> Bool {
+        now.timeIntervalSince(lastSeen) > unusedLifetime
+    }
+}

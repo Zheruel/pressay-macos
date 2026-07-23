@@ -155,6 +155,23 @@ public enum VocabularyTuner {
         return deterministicRules(candidates: fresh, anchors: anchors, config: .exact)
     }
 
+    /// Candidates worth sending to the LLM judge: within phonetic reach of
+    /// some anchor. A finding can only be accepted when `meant` is an anchor,
+    /// so terms with no anchor in acoustic range (project names, foreign
+    /// words, jargon) are guaranteed rejections — sending them wastes tokens.
+    public static func judgeWorthy(
+        candidates: [TunerCandidate],
+        anchors: [String],
+        maxDistance: Int = 2
+    ) -> [TunerCandidate] {
+        let anchorKeys = anchors.map { PhoneticKey.key($0) }
+        return candidates.filter { candidate in
+            let key = PhoneticKey.key(candidate.term)
+            guard !key.isEmpty else { return false }
+            return anchorKeys.contains { PhoneticKey.distance(key, $0) <= maxDistance }
+        }
+    }
+
     /// LLM findings are accepted only when the correction lands on an anchor
     /// term (curated, user-added, or previously learned).
     public static func anchorFilteredRules(
