@@ -3,7 +3,8 @@ import Foundation
 /// Deterministic structuring for dictated prose: terminal punctuation,
 /// sentence capitalization, spoken enumerations as bullet lists, and
 /// paragraph breaks. Runs after `DeterministicPromptCleaner.clean` and only
-/// rearranges presentation — it never reorders, adds, or removes words, so
+/// rearranges presentation — apart from dropping the spoken ordinal markers
+/// of a detected list, it never reorders, adds, or removes words, so
 /// `ProtectedTokenValidator` always passes on its output.
 public enum TranscriptStructurer {
     public struct Options: Sendable {
@@ -225,6 +226,29 @@ public enum TranscriptStructurer {
         "must", "needs", "has", "had", "might", "may",
     ]
 
+    /// Bare "last"/"next" followed by a temporal noun are ordinary prose
+    /// ("Last week…", "Next time we should…"), not enumeration markers;
+    /// treating them as continuers would strip a real word from the text.
+    private static let temporalFollowers: Set<String> = [
+        "week", "weekend", "month", "year", "time", "night", "morning",
+        "evening", "day", "few", "couple",
+    ]
+
+    private static func isTemporalProse(_ sentence: String, marker: String) -> Bool {
+        guard marker == "last" || marker == "next" else { return false }
+        var rest = String(sentence.dropFirst(marker.count))
+        while let first = rest.first, first.isWhitespace { rest.removeFirst() }
+        // A comma or colon after the marker is discourse use ("Next, do X").
+        if rest.first == "," || rest.first == ":" { return false }
+        guard let follower = firstWord(in: rest) else { return false }
+        return temporalFollowers.contains(follower)
+    }
+
+    private static func continuerMarker(in sentence: String) -> String? {
+        guard let marker = leadingMarker(in: sentence, among: listContinuers) else { return nil }
+        return isTemporalProse(sentence, marker: marker) ? nil : marker
+    }
+
     private static func detectLists(in sentences: [String]) -> [Segment] {
         var segments: [Segment] = []
         var index = 0
@@ -241,12 +265,12 @@ public enum TranscriptStructurer {
             var items = [[sentences[index]]]
             var lookahead = index + 1
             while lookahead < sentences.count {
-                if leadingMarker(in: sentences[lookahead], among: listContinuers) != nil {
+                if continuerMarker(in: sentences[lookahead]) != nil {
                     items.append([sentences[lookahead]])
                     lookahead += 1
                 } else if items.last!.count == 1,
                           lookahead + 1 < sentences.count,
-                          leadingMarker(in: sentences[lookahead + 1], among: listContinuers) != nil {
+                          continuerMarker(in: sentences[lookahead + 1]) != nil {
                     items[items.count - 1].append(sentences[lookahead])
                     lookahead += 1
                 } else {
@@ -284,7 +308,9 @@ public enum TranscriptStructurer {
 
     private static func stripMarker(_ marker: String, from sentence: String) -> String {
         var rest = String(sentence.dropFirst(marker.count))
-        var punctuated = false
+        // Markers like "one," carry their comma; it marks discourse use just
+        // as a comma after the marker does.
+        var punctuated = marker.hasSuffix(",")
         while let first = rest.first, first == "," || first == ":" || first.isWhitespace {
             punctuated = punctuated || first == "," || first == ":"
             rest.removeFirst()

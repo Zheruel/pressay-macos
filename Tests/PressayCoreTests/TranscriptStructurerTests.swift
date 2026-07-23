@@ -66,6 +66,29 @@ final class TranscriptStructurerTests: XCTestCase {
         XCTAssertTrue(structured.contains("- Step two should be the actual refactor once we agree."), structured)
     }
 
+    func testCommaOrdinalMarkersStripBeforeAuxiliaries() {
+        // "One," ends in a comma, so it is discourse use and strips even when
+        // the next word is an auxiliary — same shape as "First of all, is…".
+        let text = "I have two questions about the release. One, is this even supported by the runtime? Two, can we actually ship it this week?"
+        let structured = TranscriptStructurer.structure(text)
+        XCTAssertTrue(structured.contains("- Is this even supported by the runtime?"), structured)
+        XCTAssertTrue(structured.contains("- Can we actually ship it this week?"), structured)
+    }
+
+    func testTemporalLastAndNextAreNotListContinuers() {
+        // "Last week's…" / "Next time…" are prose, not enumeration markers;
+        // treating them as continuers dropped the word "Last"/"Next".
+        let last = "First, update the manifest and rerun everything. Last week's numbers were bad anyway so we should compare against the new baseline."
+        let lastStructured = TranscriptStructurer.structure(last)
+        XCTAssertFalse(lastStructured.contains("- Week's"), lastStructured)
+        XCTAssertTrue(lastStructured.contains("Last week's numbers"), lastStructured)
+
+        let next = "First, update the manifest and rerun everything today. Next time we should automate this whole flow so nobody forgets the steps."
+        let nextStructured = TranscriptStructurer.structure(next)
+        XCTAssertFalse(nextStructured.contains("- Time"), nextStructured)
+        XCTAssertTrue(nextStructured.contains("Next time we should automate"), nextStructured)
+    }
+
     func testBareThenRunsDoNotBecomeLists() {
         let text = "We start the recorder when the key goes down. Then we stop it on release. Then we transcribe the clip and insert the text into the field."
         XCTAssertFalse(TranscriptStructurer.structure(text).contains("- "))

@@ -397,7 +397,9 @@ struct Bench {
                 format: "%-6@ changed %d/%d · validator failures %d · idempotency failures %d · errors %d · median latency %.0f ms",
                 candidate as NSString, changed, mine.count,
                 validatorFailures, idempotencyFailures, errors,
-                median(mine.map(\.latency)) * 1000
+                // Error rows carry a placeholder latency of 0; keep them out
+                // of the median so failures don't flatter the speed number.
+                median(mine.filter { $0.error == nil }.map(\.latency)) * 1000
             ))
         }
 

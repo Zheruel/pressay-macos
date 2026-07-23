@@ -262,7 +262,6 @@ private struct GeneralSettingsView: View {
                         Spacer()
                         KeyCaptureButton(
                             key: $settings.holdKey,
-                            reservedKey: { nil },
                             onChange: { coordinator.restartHotkey() },
                             onCaptureActive: coordinator.keyCaptureActive
                         )

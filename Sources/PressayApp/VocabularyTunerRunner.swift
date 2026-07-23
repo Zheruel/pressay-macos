@@ -138,7 +138,7 @@ final class VocabularyTunerRunner: ObservableObject {
     private func runK3(fresh: [TunerCandidate], anchors: [String], apiKey: String, settings: AppSettings) {
         guard status != .running else { return }
         status = .running
-        // Close the 3-day gate at attempt start: gating on success would retry
+        // Close the date gate at attempt start: gating on success would retry
         // the network judge after every dictation while the key is bad, the
         // network is down, or dictations arrive faster than the round trip.
         settings.learnedVocabulary.lastK3Run = .now

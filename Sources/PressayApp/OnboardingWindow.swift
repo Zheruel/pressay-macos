@@ -173,7 +173,6 @@ struct OnboardingView: View {
                 ) {
                     KeyCaptureButton(
                         key: $settings.holdKey,
-                        reservedKey: { nil },
                         onChange: { coordinator.restartHotkey() },
                         onCaptureActive: coordinator.keyCaptureActive
                     )
