@@ -50,6 +50,22 @@ final class TranscriptStructurerTests: XCTestCase {
         XCTAssertTrue(structured.contains("- We could ship a CLI."))
     }
 
+    func testFirstOfAllEnumerationsBecomeLists() {
+        let text = "I would love to make this a model selection I can do in the settings. First of all, is this even supported by the runtime? Second of all, how can I actually do this without breaking anything?"
+        let structured = TranscriptStructurer.structure(text)
+        XCTAssertTrue(structured.contains("- Is this even supported by the runtime?"), structured)
+        XCTAssertTrue(structured.contains("- How can I actually do this"), structured)
+    }
+
+    func testOrdinalSubjectsKeepTheirMarkerText() {
+        // "Step one" is the grammatical subject; stripping it would leave
+        // "Should definitely be…". The item keeps its full sentence.
+        let text = "Here is how I want to tackle the whole migration project. Step one should definitely be just evaluate and report. Step two should be the actual refactor once we agree."
+        let structured = TranscriptStructurer.structure(text)
+        XCTAssertTrue(structured.contains("- Step one should definitely be just evaluate and report."), structured)
+        XCTAssertTrue(structured.contains("- Step two should be the actual refactor once we agree."), structured)
+    }
+
     func testBareThenRunsDoNotBecomeLists() {
         let text = "We start the recorder when the key goes down. Then we stop it on release. Then we transcribe the clip and insert the text into the field."
         XCTAssertFalse(TranscriptStructurer.structure(text).contains("- "))

@@ -207,12 +207,22 @@ public enum TranscriptStructurer {
 
     /// Explicit openers a spoken enumeration starts with; a run of bare
     /// "then/next" sentences alone never becomes a list.
-    private static let listStarters = ["first", "firstly", "number one", "one,", "step one"]
+    private static let listStarters = [
+        "first", "firstly", "first of all", "number one", "one,", "step one",
+    ]
     private static let listContinuers = [
-        "second", "secondly", "third", "thirdly", "fourth", "fourthly", "fifth",
-        "next", "then", "and then", "finally", "lastly", "last", "number two",
-        "number three", "number four", "number five", "step two", "step three",
-        "two,", "three,", "four,", "five,",
+        "second", "secondly", "second of all", "third", "thirdly", "third of all",
+        "fourth", "fourthly", "fifth", "next", "then", "and then", "finally",
+        "lastly", "last", "number two", "number three", "number four",
+        "number five", "step two", "step three", "two,", "three,", "four,",
+        "five,",
+    ]
+
+    /// When the ordinal is the grammatical subject ("Step one should be…"),
+    /// stripping it breaks the sentence; the item keeps its full text.
+    private static let markerSubjectFollowers: Set<String> = [
+        "is", "are", "was", "were", "should", "will", "would", "can", "could",
+        "must", "needs", "has", "had", "might", "may",
     ]
 
     private static func detectLists(in sentences: [String]) -> [Segment] {
@@ -224,19 +234,32 @@ public enum TranscriptStructurer {
                 index += 1
                 continue
             }
-            var run = [sentences[index]]
+            // Each item is a marker sentence, optionally absorbing one plain
+            // follow-up sentence when another marker comes right after it —
+            // "First of all, is X supported? I know they had resources on
+            // that. Second of all, …" keeps the middle sentence in item one.
+            var items = [[sentences[index]]]
             var lookahead = index + 1
-            while lookahead < sentences.count,
-                  leadingMarker(in: sentences[lookahead], among: listContinuers) != nil {
-                run.append(sentences[lookahead])
-                lookahead += 1
-            }
-            if run.count >= 2 {
-                let items = run.map { sentence -> String in
-                    let marker = leadingMarker(in: sentence, among: listStarters + listContinuers)!
-                    return capitalizeSentenceStart(stripMarker(marker, from: sentence))
+            while lookahead < sentences.count {
+                if leadingMarker(in: sentences[lookahead], among: listContinuers) != nil {
+                    items.append([sentences[lookahead]])
+                    lookahead += 1
+                } else if items.last!.count == 1,
+                          lookahead + 1 < sentences.count,
+                          leadingMarker(in: sentences[lookahead + 1], among: listContinuers) != nil {
+                    items[items.count - 1].append(sentences[lookahead])
+                    lookahead += 1
+                } else {
+                    break
                 }
-                segments.append(.list(items))
+            }
+            if items.count >= 2 {
+                let rendered = items.map { item -> String in
+                    let marker = leadingMarker(in: item[0], among: listStarters + listContinuers)!
+                    let head = capitalizeSentenceStart(stripMarker(marker, from: item[0]))
+                    return ([head] + item.dropFirst()).joined(separator: " ")
+                }
+                segments.append(.list(rendered))
                 index = lookahead
             } else {
                 segments.append(.sentence(sentences[index]))
@@ -248,22 +271,39 @@ public enum TranscriptStructurer {
 
     private static func leadingMarker(in sentence: String, among markers: [String]) -> String? {
         let fold = sentence.lowercased()
-        return markers.first { marker in
+        // Longest match wins so "first of all" is not consumed as "first".
+        return markers.filter { marker in
             guard fold.hasPrefix(marker) else { return false }
             if marker.hasSuffix(",") { return true }
             // Word boundary: "then" must not match "then-branch" or "theory".
             let after = fold.index(fold.startIndex, offsetBy: marker.count)
             return after == fold.endIndex || fold[after] == "," || fold[after] == ":"
                 || fold[after].isWhitespace
-        }
+        }.max { $0.count < $1.count }
     }
 
     private static func stripMarker(_ marker: String, from sentence: String) -> String {
         var rest = String(sentence.dropFirst(marker.count))
+        var punctuated = false
         while let first = rest.first, first == "," || first == ":" || first.isWhitespace {
+            punctuated = punctuated || first == "," || first == ":"
             rest.removeFirst()
         }
-        return rest.isEmpty ? sentence : rest
+        guard !rest.isEmpty else { return sentence }
+        // Unpunctuated marker + auxiliary means the marker is the sentence's
+        // subject ("Step one should be…"); a comma marks pure discourse use
+        // ("First of all, is this supported?"), which always strips.
+        if !punctuated, let follower = firstWord(in: rest),
+           markerSubjectFollowers.contains(follower) {
+            return sentence
+        }
+        return rest
+    }
+
+    private static func firstWord(in text: String) -> String? {
+        text.split(whereSeparator: { !$0.isLetter })
+            .first
+            .map { String($0).lowercased() }
     }
 
     // MARK: - Paragraphing
