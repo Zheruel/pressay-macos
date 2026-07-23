@@ -161,44 +161,60 @@ private struct CompactHistoryRow: View {
     }
 }
 
+/// Hand-built two-pane shell instead of NavigationSplitView: the sidebar is
+/// the whole navigation, so it must not collapse, float as a glass panel, or
+/// carry toolbar chrome — a flat tinted column with a hairline against the
+/// detail pane reads as one construction.
 struct SettingsRootView: View {
     @ObservedObject var coordinator: AppCoordinator
-    @State private var selection: SettingsSection? = .general
+    @State private var selection: SettingsSection = .general
 
     var body: some View {
-        NavigationSplitView {
-            VStack(spacing: 0) {
-                HStack(spacing: 11) {
-                    Image(nsImage: PressayBrand.appIcon)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 38, height: 38)
-                        .shadow(color: .indigo.opacity(0.16), radius: 7, y: 3)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Pressay").font(.headline)
-                        Text(coordinator.modelReady ? "Ready · On-device" : "Preparing local model")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-                .padding(.bottom, 12)
+        HStack(spacing: 0) {
+            sidebar
+            Divider().ignoresSafeArea()
+            detail
+        }
+        .frame(minWidth: 780, minHeight: 560)
+    }
 
-                Divider()
-
-                List(SettingsSection.allCases, selection: $selection) { section in
-                    Label(section.title, systemImage: section.systemImage)
-                        .tag(section)
-                        .pointerStyle(.link)
-                }
-                .listStyle(.sidebar)
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                Image(nsImage: PressayBrand.appIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+                Text("Pressay").font(.title3.weight(.semibold))
+                Spacer(minLength: 0)
             }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190)
-            .background(.ultraThinMaterial)
-        } detail: {
-            switch selection ?? .general {
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+
+            VStack(spacing: 2) {
+                ForEach(SettingsSection.allCases) { section in
+                    SidebarNavItem(section: section, isSelected: selection == section) {
+                        selection = section
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+
+            Spacer(minLength: 0)
+        }
+        // Clears the traffic lights in the transparent title bar.
+        .padding(.top, 56)
+        .frame(width: 206)
+        .frame(maxHeight: .infinity)
+        // A whisper darker than the window background — enough to read as a
+        // rail, not enough to read as a different surface.
+        .background(Color.black.opacity(0.09))
+        .ignoresSafeArea()
+    }
+
+    private var detail: some View {
+        Group {
+            switch selection {
             case .general:
                 GeneralSettingsView(coordinator: coordinator)
             case .dictionary:
@@ -207,7 +223,45 @@ struct SettingsRootView: View {
                 HistoryView(coordinator: coordinator)
             }
         }
-        .frame(minWidth: 780, minHeight: 560)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Scroll views span the window's full height so their indicators run
+        // edge to edge instead of floating below the invisible title bar.
+        .ignoresSafeArea(.container, edges: .top)
+    }
+}
+
+private struct SidebarNavItem: View {
+    let section: SettingsSection
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: section.systemImage)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 18)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                Text(section.title)
+                    .font(.callout.weight(isSelected ? .medium : .regular))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(
+                    isSelected
+                        ? Color.primary.opacity(0.09)
+                        : hovering ? Color.primary.opacity(0.05) : .clear
+                )
+        )
+        .onHover { hovering = $0 }
+        .pointerStyle(.link)
     }
 }
 
@@ -262,7 +316,6 @@ private struct GeneralSettingsView: View {
                         Spacer()
                         KeyCaptureButton(
                             key: $settings.holdKey,
-                            reservedKey: { coordinator.settings.polishHoldKey },
                             onChange: { coordinator.restartHotkey() },
                             onCaptureActive: coordinator.keyCaptureActive
                         )
@@ -270,35 +323,12 @@ private struct GeneralSettingsView: View {
 
                     Divider()
 
-                    HStack(spacing: 14) {
+                    Toggle(isOn: $settings.structuredDictation) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Vibe Mode shortcut").font(.body.weight(.medium))
-                            Text("Hold to dictate; Kimi rewrites it into a vibe-coding brief")
+                            Text("Structured dictation").font(.body.weight(.medium))
+                            Text("Add punctuation, paragraphs, and lists to longer dictations — on-device")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        KeyCaptureButton(
-                            key: $settings.polishHoldKey,
-                            reservedKey: { coordinator.settings.holdKey },
-                            onChange: { coordinator.restartHotkey() },
-                            onCaptureActive: coordinator.keyCaptureActive
-                        )
-                    }
-
-                    Divider()
-
-                    HStack(spacing: 14) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Vibe Mode model").font(.body.weight(.medium))
-                            Text(settings.polishModel.caption)
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Picker("", selection: $settings.polishModel) {
-                            ForEach(PolishModel.allCases) { Text($0.displayName).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 200)
                     }
 
                     Divider()
@@ -413,7 +443,7 @@ private struct GeneralSettingsView: View {
                 }
 
                 SettingsCard(title: "Kimi cloud features", systemImage: "sparkles.rectangle.stack") {
-                    Text("Optional. A Kimi API key unlocks two features: the Vibe Mode shortcut (Kimi rewrites your dictation into a vibe-coding brief before inserting) and periodic vocabulary review (Kimi checks new names found in your transcripts). Without a key, dictation and tuning stay fully on-device.")
+                    Text("Optional. A Kimi API key lets Pressay periodically ask Kimi to review new names found in your transcripts and suggest vocabulary fixes. Without a key, dictation and tuning stay fully on-device.")
                         .font(.callout).foregroundStyle(.secondary)
                     HStack {
                         SecureField("sk-kimi-…", text: $apiKeyDraft)
@@ -451,8 +481,8 @@ private struct GeneralSettingsView: View {
             }
             .frame(maxWidth: 680, alignment: .leading)
             .padding(28)
+            .padding(.top, 18)
         }
-        .background(.background)
         .onAppear {
             permissions.startMonitoring()
             settings.refreshLaunchAtLogin()
@@ -600,14 +630,14 @@ private struct DictionarySettingsView: View {
                         .pointerStyle(.link)
                         .font(.caption)
                 }
-                Text("\(settings.vocabularyEntries.count) terms (incl. \(learned.records.count) learned) · used for casing cleanup and polish validation")
+                Text("\(settings.vocabularyEntries.count) terms (incl. \(learned.records.count) learned) · used for casing cleanup")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: 680, alignment: .leading)
             .padding(28)
+            .padding(.top, 18)
         }
-        .background(.background)
         .sheet(isPresented: $addingEntry) {
             AddDictionaryEntrySheet { preferred, aliases in
                 addEntry(preferred: preferred, aliases: aliases)
@@ -677,7 +707,7 @@ private struct DictionarySettingsView: View {
             }
 
             Divider().padding(.top, 6)
-            Text("Rules expire with the 30-day transcript window · deleted rules are never re-learned")
+            Text("Learned words stay while you keep using them; unused rules expire after ~3 months · deleted rules are never re-learned")
                 .font(.caption).foregroundStyle(.tertiary)
                 .padding(.top, 8)
         }
@@ -891,8 +921,8 @@ private struct HistoryView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
                 SettingsPageHeader(
                     title: "History",
                     subtitle: "Recent prompts stored only on this Mac"
@@ -903,6 +933,18 @@ private struct HistoryView: View {
             }
             Text("Text expires after 30 days, audio after 7 days.")
                 .font(.caption).foregroundStyle(.secondary)
+
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search prompts", text: $searchText)
+                    .textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(.quinary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.top, 8)
+
             List(filteredRecords) { record in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.referenceText).lineLimit(3)
@@ -928,9 +970,12 @@ private struct HistoryView: View {
                         .pointerStyle(.link)
                 }
             }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
         }
+        .frame(maxWidth: 760)
         .padding(28)
-        .searchable(text: $searchText, prompt: "Search prompts")
+        .padding(.top, 18)
         .confirmationDialog("Delete all local history and audio?", isPresented: $showingDeleteAll) {
             Button("Delete all", role: .destructive) { try? history.deleteAll() }
                 .pointerStyle(.link)
@@ -938,11 +983,10 @@ private struct HistoryView: View {
     }
 
     private func metaLine(_ record: DictationRecord) -> String {
-        var parts = [
+        let parts = [
             record.createdAt.formatted(.relative(presentation: .named)),
             record.totalLatency.formatted(.number.precision(.fractionLength(2))) + "s",
         ]
-        if record.usedLanguageModel { parts.append("✨") }
         return parts.joined(separator: " · ")
     }
 

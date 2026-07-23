@@ -150,35 +150,6 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     public var supportsLanguageHint: Bool { self != .parakeetV3 }
 }
 
-/// The Kimi model behind Vibe Mode. Raw values are the coding-API model IDs.
-public enum PolishModel: String, CaseIterable, Codable, Sendable, Identifiable {
-    case k27 = "kimi-for-coding"
-    case k27Highspeed = "kimi-for-coding-highspeed"
-    case k3 = "k3"
-
-    public var id: String { rawValue }
-
-    public var displayName: String {
-        switch self {
-        case .k27: "Kimi K2.7"
-        case .k27Highspeed: "Kimi K2.7 HighSpeed"
-        case .k3: "Kimi K3"
-        }
-    }
-
-    public var caption: String {
-        switch self {
-        case .k27: "Balanced · ~10s"
-        case .k27Highspeed: "Fast · uses 3× plan quota"
-        case .k3: "Best briefs · ~8s · recommended"
-        }
-    }
-
-    public var timeout: TimeInterval {
-        self == .k3 ? 60 : 45
-    }
-}
-
 /// Language configuration for Whisper decoding. `auto` lets the model detect
 /// the language per audio window; the fixed cases force a language token,
 /// which skips the detection pass and cannot misfire on short clips.
@@ -323,22 +294,6 @@ public struct DictationContext: Codable, Sendable {
         self.leadingText = String(leadingText.suffix(500))
         self.trailingText = String(trailingText.prefix(500))
         self.vocabulary = vocabulary
-    }
-}
-
-public struct PolishResult: Codable, Sendable {
-    public let text: String
-    public let usedLanguageModel: Bool
-    public let processingTime: TimeInterval
-
-    public init(
-        text: String,
-        usedLanguageModel: Bool,
-        processingTime: TimeInterval
-    ) {
-        self.text = text
-        self.usedLanguageModel = usedLanguageModel
-        self.processingTime = processingTime
     }
 }
 

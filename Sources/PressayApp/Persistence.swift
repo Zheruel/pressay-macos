@@ -65,7 +65,20 @@ final class HistoryStore: ObservableObject {
     private let retention = RetentionPolicy()
 
     init(inMemory: Bool = false) throws {
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: inMemory)
+        // An explicit store URL inside the app's own directory: the shared
+        // Application Support default.store is a namespace collision waiting
+        // to happen (and did — another app's store there made every launch
+        // fall back to in-memory history).
+        let configuration: ModelConfiguration
+        if inMemory {
+            configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        } else {
+            let directory = FileManager.default
+                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appending(path: "Pressay", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            configuration = ModelConfiguration(url: directory.appending(path: "History.store"))
+        }
         container = try ModelContainer(for: DictationRecord.self, configurations: configuration)
         context = ModelContext(container)
         try refresh()

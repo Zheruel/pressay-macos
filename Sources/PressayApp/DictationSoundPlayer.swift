@@ -5,7 +5,6 @@ final class DictationSoundPlayer {
     enum Cue: Hashable {
         case begin
         case release
-        case polishRelease
         case learned
         case cancel
         case error
@@ -14,7 +13,6 @@ final class DictationSoundPlayer {
             switch self {
             case .begin: 0.135
             case .release: 0.135
-            case .polishRelease: 0.165
             case .learned: 0.28
             case .cancel: 0.065
             case .error: 0.115
@@ -126,9 +124,6 @@ final class DictationSoundPlayer {
         let specification: (startFrequency: Double, endFrequency: Double, gain: Double) = switch cue {
         case .begin: (720, 890, 0.055)
         case .release: (790, 640, 0.045)
-        // Rising sweep, unlike the falling dictation release, so the ear knows
-        // a longer cloud polish is starting.
-        case .polishRelease: (640, 960, 0.045)
         case .learned: (880, 1320, 0.035)
         case .cancel: (540, 470, 0.036)
         case .error: (430, 330, 0.042)

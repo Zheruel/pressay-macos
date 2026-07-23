@@ -2,6 +2,29 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-07-23
+
+### Added
+
+- Structured Dictation: deterministically adds punctuation, sentence capitalization, bullet lists for spoken enumerations, and paragraph breaks to longer dictations — on-device, with no LLM and no added latency. On by default (corpus-validated as word-preserving); switch it off in Settings.
+- A vocabulary-tuner evaluation harness (`PressayBench tune-eval`) that replays the corpus through the legacy matcher, the fixed matcher, and the optional Kimi judge so their precision can be compared on real data.
+- `PressayBench structure` and `manifest-from-audio` subcommands for replaying the audio corpus through the structuring candidates with a transcription cache.
+
+### Changed
+
+- The automatic vocabulary tuner is far more conservative: its English stop list grew from ~1,100 to ~13,800 words, fuzzy phonetic matches now require recurrence proportional to their distance, and the per-dictation learning path only accepts exact phonetic matches. This stops it from rewriting ordinary words (previously learned false positives like "mix → macOS" and "correction → Markdown" are purged by a one-time migration; correct Kimi-reviewed rules are kept).
+- Learned words now persist while you keep using them: the daily pass refreshes a rule whenever its mishearing reappears, and only rules unused for ~3 months expire. Previously, deterministic rules silently vanished with the 30-day transcript window.
+- The Kimi vocabulary judge only receives candidates within phonetic reach of a known term — a ~60% cut in judge tokens with no measured loss of true corrections.
+- `CLAUDE.md` and `AGENTS.md` joined the curated vocabulary so mishearings like "CloudMD" resolve to the right term.
+
+### Fixed
+
+- Dictation history now actually persists across launches. The history database previously used SwiftData's shared `default.store` in Application Support, where a name collision with another app's store made every launch silently fall back to in-memory history — losing records, and with them the vocabulary tuner's learning window, on every restart. The store now lives at `Application Support/Pressay/History.store`.
+
+### Removed
+
+- Vibe Mode. The second hold key, the Kimi rewrite step, and the model picker are gone; dictated text is never sent to the cloud. The Kimi API key now powers only the optional vocabulary review.
+
 ## [1.1.0] - 2026-07-19
 
 ### Added

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="540" viewBox="0 0 1200 540" role="img" aria-labelledby="title desc">
   <title id="title">Pressay local-first dictation architecture</title>
-  <desc id="desc">Audio is captured, transcribed, cleaned and inserted locally. A separate optional shortcut sends only cleaned text to Kimi for prompt rewriting.</desc>
+  <desc id="desc">Audio is captured, transcribed, cleaned, optionally structured, and inserted locally. Only the optional vocabulary review sends candidate terms to Kimi.</desc>
   <defs>
     <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
       <path d="M0 0 8 4 0 8Z" fill="#99958c"/>
@@ -62,22 +62,26 @@
     <circle cx="139" cy="70" r="30" fill="#eeeaff"/>
     <path d="M125 70l9 9 19-21" fill="none" stroke="#6d5ce7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
     <text x="139" y="124" text-anchor="middle" class="label">Clean and insert</text>
-    <text x="139" y="150" text-anchor="middle" class="small">Vocabulary · Accessibility · paste</text>
+    <text x="139" y="150" text-anchor="middle" class="small">Vocabulary · structure · paste</text>
   </g>
 
-  <rect x="44" y="370" width="1112" height="120" rx="18" fill="#fffefa" stroke="#dedad0" stroke-width="1.5"/>
-  <rect x="64" y="391" width="170" height="28" rx="14" fill="#f7e9e3"/>
-  <circle cx="81" cy="405" r="4" fill="#cf6b4c"/>
-  <text x="93" y="409" class="eyebrow" fill="#a84e35">OPTIONAL CLOUD</text>
-  <text x="64" y="454" class="label">Prompt-polish shortcut</text>
-  <text x="284" y="434" class="small">Cleaned transcript only</text>
-  <text x="284" y="456" class="small">Microphone audio never leaves the Mac</text>
-  <path class="line" d="M530 431H607"/>
-  <rect x="626" y="399" width="198" height="62" rx="15" fill="#f7e9e3"/>
-  <text x="725" y="426" text-anchor="middle" class="label">Kimi rewrites</text>
-  <text x="725" y="447" text-anchor="middle" class="small">explicit action</text>
-  <path class="line" d="M843 431H920"/>
-  <rect x="939" y="399" width="192" height="62" rx="15" fill="#eeeaff"/>
-  <text x="1035" y="426" text-anchor="middle" class="label">Insert at cursor</text>
-  <text x="1035" y="447" text-anchor="middle" class="small">same destination</text>
+  <rect x="44" y="370" width="540" height="120" rx="18" fill="#fffefa" stroke="#dedad0" stroke-width="1.5"/>
+  <rect x="64" y="391" width="170" height="28" rx="14" fill="#e9e4ff"/>
+  <circle cx="81" cy="405" r="4" fill="#6d5ce7"/>
+  <text x="93" y="409" class="eyebrow" fill="#5949c7">ON-DEVICE OPTION</text>
+  <text x="64" y="454" class="label">Structured dictation</text>
+  <text x="64" y="476" class="small">Punctuation · paragraphs · lists — deterministic, 0 ms</text>
+  <rect x="404" y="399" width="160" height="62" rx="15" fill="#eeeaff"/>
+  <text x="484" y="426" text-anchor="middle" class="label">Toggle</text>
+  <text x="484" y="447" text-anchor="middle" class="small">on by default</text>
+
+  <rect x="616" y="370" width="540" height="120" rx="18" fill="#fffefa" stroke="#dedad0" stroke-width="1.5"/>
+  <rect x="636" y="391" width="170" height="28" rx="14" fill="#f7e9e3"/>
+  <circle cx="653" cy="405" r="4" fill="#cf6b4c"/>
+  <text x="665" y="409" class="eyebrow" fill="#a84e35">OPTIONAL CLOUD</text>
+  <text x="636" y="454" class="label">Vocabulary review</text>
+  <text x="636" y="476" class="small">Candidate terms only — audio and transcripts stay local</text>
+  <rect x="976" y="399" width="160" height="62" rx="15" fill="#f7e9e3"/>
+  <text x="1056" y="426" text-anchor="middle" class="label">Kimi judge</text>
+  <text x="1056" y="447" text-anchor="middle" class="small">needs API key</text>
 </svg>

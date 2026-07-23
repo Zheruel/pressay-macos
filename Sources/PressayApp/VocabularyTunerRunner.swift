@@ -2,7 +2,9 @@ import Foundation
 import PressayCore
 
 /// Background vocabulary tuning: the deterministic matcher passes daily; the
-/// Kimi judge runs with a key, ≥3 new unseen candidates, and a 3-day gap.
+/// Kimi judge runs with a key, ≥3 new judge-worthy candidates, and a 1-day
+/// gap. Only candidates within phonetic reach of an anchor are sent to the
+/// judge — anything else is a guaranteed rejection and wasted tokens.
 @MainActor
 final class VocabularyTunerRunner: ObservableObject {
     enum Status: Equatable {
@@ -60,16 +62,32 @@ final class VocabularyTunerRunner: ObservableObject {
         let texts = history.records.map(\.rawTranscript)
         guard !texts.isEmpty else { return }
         let anchors = Self.anchors(settings: settings)
+        let heardTerms = Set(settings.learnedVocabulary.records.map { $0.heard.lowercased() })
         Task.detached(priority: .utility) { [weak self] in
             let candidates = VocabularyTuner.candidates(in: texts, minimumCount: 1, anchors: anchors)
+            // Which learned heard terms still occur in the window: keeps
+            // their rules alive (substring match over the raw transcripts;
+            // rawTranscript is pre-correction, so active mishearings recur).
+            let windowText = texts.joined(separator: "\n").lowercased()
+            let seenHeard = heardTerms.filter { windowText.contains($0) }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 if detDue {
-                    runDeterministic(candidates: candidates, anchors: anchors, settings: settings)
+                    runDeterministic(
+                        candidates: candidates, anchors: anchors,
+                        heardTermsInWindow: seenHeard, settings: settings
+                    )
                 }
                 guard k3Due, let apiKey = KimiAPIKeyStore.read() else { return }
                 let recurring = candidates.filter { $0.count >= 2 }
-                let fresh = freshCandidates(recurring, settings: settings)
+                // Acoustic pre-filter: only candidates within phonetic reach
+                // of an anchor can ever be accepted, so only those spend
+                // judge tokens. Filtered-out terms stay unseen — a future
+                // anchor can bring them into range.
+                let fresh = VocabularyTuner.judgeWorthy(
+                    candidates: freshCandidates(recurring, settings: settings),
+                    anchors: anchors
+                )
                 if fresh.count >= k3Floor {
                     runK3(fresh: fresh, anchors: anchors, apiKey: apiKey, settings: settings)
                 }
@@ -92,7 +110,12 @@ final class VocabularyTunerRunner: ObservableObject {
         return store.mergeRules(fresh, source: .det)
     }
 
-    private func runDeterministic(candidates: [TunerCandidate], anchors: [String], settings: AppSettings) {
+    private func runDeterministic(
+        candidates: [TunerCandidate],
+        anchors: [String],
+        heardTermsInWindow: Set<String>,
+        settings: AppSettings
+    ) {
         let store = settings.learnedVocabulary
         let k3Heard = Set(
             store.records
@@ -101,7 +124,7 @@ final class VocabularyTunerRunner: ObservableObject {
         )
         let rules = VocabularyTuner.deterministicRules(candidates: candidates, anchors: anchors)
             .filter { !k3Heard.contains($0.heard.lowercased()) }
-        store.replaceRules(rules, source: .det)
+        store.applyDailyPass(detRules: rules, heardTermsInWindow: heardTermsInWindow)
         store.lastDetRun = .now
     }
 
@@ -115,7 +138,7 @@ final class VocabularyTunerRunner: ObservableObject {
     private func runK3(fresh: [TunerCandidate], anchors: [String], apiKey: String, settings: AppSettings) {
         guard status != .running else { return }
         status = .running
-        // Close the 3-day gate at attempt start: gating on success would retry
+        // Close the date gate at attempt start: gating on success would retry
         // the network judge after every dictation while the key is bad, the
         // network is down, or dictations arrive faster than the round trip.
         settings.learnedVocabulary.lastK3Run = .now

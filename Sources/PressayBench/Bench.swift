@@ -5,7 +5,8 @@ import PressayPostProcessing
 import PressayTranscription
 
 // PressayBench — dev-only evaluation harness.
-// Subcommands: asr | polish | overhead | vocab | tune (see --help via each).
+// Subcommands: asr | structure | overhead | vocab | tune | tune-eval |
+// manifest-from-audio (see the usage errors of each for options).
 
 struct ManifestEntry: Codable {
     let id: String
@@ -30,17 +31,17 @@ struct ASRRow: Codable {
     let error: String?
 }
 
-struct PolishRow: Codable {
+struct StructureRow: Codable {
     let id: String
     let duration: TimeInterval
-    let variant: String
+    let candidate: String
     let latency: TimeInterval
-    let accepted: Bool
-    let reason: String
-    let storedUsedLM: Bool
-    let rawChars: Int
-    let candidateChars: Int
-    let changeRatio: Double
+    let changed: Bool
+    let idempotent: Bool
+    let validatorPassed: Bool
+    let paragraphs: Int
+    let bulletLines: Int
+    let error: String?
 }
 
 struct TimelineEntry: Codable {
@@ -65,26 +66,32 @@ struct Bench {
         setvbuf(stdout, nil, _IOLBF, 0)
         let args = Array(CommandLine.arguments.dropFirst())
         guard let command = args.first else {
-            throw BenchError.usage("expected subcommand: asr | polish | kimi-polish | overhead | vocab | tune")
+            throw BenchError.usage("expected subcommand: asr | structure | overhead | vocab | tune | tune-eval | manifest-from-audio")
         }
         let options = parseOptions(Array(args.dropFirst()))
         let manifestURL = URL(fileURLWithPath: options["manifest"] ?? ".build/bench/manifest.json")
-        let entries = try JSONDecoder().decode([ManifestEntry].self, from: Data(contentsOf: manifestURL))
         let outDir = manifestURL.deletingLastPathComponent()
+        // Manifest-free subcommands must run before decoding: manifest-from-audio
+        // exists to create the file the others read.
+        func entries() throws -> [ManifestEntry] {
+            try JSONDecoder().decode([ManifestEntry].self, from: Data(contentsOf: manifestURL))
+        }
 
         switch command {
         case "asr":
-            try await runASR(entries: entries, options: options, outDir: outDir)
-        case "polish":
-            try await runPolish(entries: entries, options: options, outDir: outDir)
-        case "kimi-polish":
-            try await runKimiPolish(entries: entries, options: options, outDir: outDir)
+            try await runASR(entries: entries(), options: options, outDir: outDir)
+        case "structure":
+            try await runStructure(entries: entries(), options: options, outDir: outDir)
         case "overhead":
-            try runOverhead(entries: entries, outDir: outDir)
+            try runOverhead(entries: entries(), outDir: outDir)
         case "vocab":
-            try runVocab(entries: entries, outDir: outDir)
+            try runVocab(entries: entries(), outDir: outDir)
         case "tune":
             try await runTune(options: options)
+        case "tune-eval":
+            try await runTuneEval(options: options, outDir: outDir)
+        case "manifest-from-audio":
+            try runManifestFromAudio(options: options, manifestURL: manifestURL)
         default:
             throw BenchError.usage("unknown subcommand \(command)")
         }
@@ -232,101 +239,175 @@ struct Bench {
         print("wrote \(url.path)")
     }
 
-    // MARK: - Polish replay
+    // MARK: - Manifest from audio
 
-    static func runPolish(entries: [ManifestEntry], options: [String: String], outDir: URL) async throws {
-        let minDuration = TimeInterval(options["min-duration"] ?? "25") ?? 25
-        let ids = (options["ids"] ?? "").split(separator: ",").map(String.init)
-        let clips = entries
-            .filter { $0.duration >= minDuration }
-            .filter { clip in ids.isEmpty || ids.contains(where: { clip.id.hasPrefix($0) }) }
-            .sorted { $0.duration > $1.duration }
+    /// Builds a manifest straight from the stored audio clips. Raw transcripts
+    /// stay empty; `structure` fills them from its transcription cache.
+    static func runManifestFromAudio(options: [String: String], manifestURL: URL) throws {
+        let audioDir = URL(fileURLWithPath: options["audio-dir"]
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appending(path: "Pressay/Audio").path)
+        let files = try FileManager.default
+            .contentsOfDirectory(at: audioDir, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "caf" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        guard !files.isEmpty else {
+            throw BenchError.usage("no .caf clips in \(audioDir.path)")
+        }
+        var entries: [ManifestEntry] = []
+        for file in files {
+            let audioFile = try AVAudioFile(forReading: file)
+            let duration = Double(audioFile.length) / audioFile.processingFormat.sampleRate
+            entries.append(ManifestEntry(
+                id: file.deletingPathExtension().lastPathComponent,
+                duration: duration,
+                asrLatency: 0, polishLatency: 0, totalLatency: 0,
+                rawTranscript: "", polishedText: "", usedLanguageModel: false,
+                audio: file.path, targetBundleID: nil
+            ))
+        }
+        try FileManager.default.createDirectory(
+            at: manifestURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try JSONEncoder.bench.encode(entries, to: manifestURL)
+        print("wrote \(manifestURL.path): \(entries.count) clips from \(audioDir.path)")
+    }
+
+    // MARK: - Structuring bake-off
+
+    /// Runs the structuring candidates side by side over the corpus: "rules"
+    /// (TranscriptStructurer, always) and "apple" (on-device FoundationModels
+    /// formatter, `--with-apple 1`). Transcripts come from the manifest's
+    /// stored rawTranscript or, when empty, from transcribing the clip once
+    /// into structure-transcripts.json so iteration on the rules is instant.
+    /// Output: review.md (side-by-side blocks) + structure-results.json.
+    static func runStructure(entries: [ManifestEntry], options: [String: String], outDir: URL) async throws {
+        let minDuration = TimeInterval(options["min-duration"] ?? "0") ?? 0
+        let maxClips = Int(options["max-clips"] ?? "0") ?? 0
+        let withApple = options["with-apple"] == "1"
+        let showAll = options["all"] == "1"
+        let language = options["language"] ?? "en"
+
+        var clips = entries.filter { $0.duration >= minDuration }
+        if maxClips > 0 { clips = Array(clips.prefix(maxClips)) }
+
+        // Phase A: a transcript for every clip, cached across runs.
+        let cacheURL = outDir.appending(path: "structure-transcripts.json")
+        var cache = (try? JSONDecoder().decode(
+            [String: String].self, from: Data(contentsOf: cacheURL)
+        )) ?? [:]
+        var transcriber: GGMLTranscriber?
+        var texts: [(entry: ManifestEntry, text: String)] = []
+        for clip in clips {
+            if !clip.rawTranscript.isEmpty {
+                texts.append((clip, clip.rawTranscript))
+            } else if let cached = cache[clip.id] {
+                texts.append((clip, cached))
+            } else if let audio = clip.audio, FileManager.default.fileExists(atPath: audio) {
+                if transcriber == nil {
+                    let engine = GGMLTranscriber(model: .whisperTurboGGML, language: language)
+                    try await engine.prepare()
+                    transcriber = engine
+                    print("transcribing uncached clips…")
+                }
+                let transcript = try await transcriber!.transcribe(
+                    AudioClip(samples: try loadSamples(audio))
+                )
+                cache[clip.id] = transcript.text
+                try JSONEncoder.bench.encode(cache, to: cacheURL)
+                texts.append((clip, transcript.text))
+                print(String(format: "  %5.1fs  %@", clip.duration, String(clip.id.prefix(8))))
+            }
+        }
+        print("structure bake-off: \(texts.count) transcripts (\(withApple ? "rules + apple" : "rules only"))")
+
+        // Phase B: candidates over the cleaned transcripts.
         let vocabulary = VocabularyParser.parse(CuratedVocabulary.source)
         let terms = vocabulary.map(\.preferred)
         let validator = ProtectedTokenValidator()
+        let polisher = withApple ? ApplePromptPolisher(mode: .structure) : nil
+        if let polisher {
+            print("apple availability: \(await polisher.availabilityDescription)")
+        }
 
-        // Prompt variants: "shipping" is the production prompt (rewrite into an
-        // agent prompt); the "light" family reframes the task as copyediting to
-        // probe whether that eliminates hallucination and dropped sentences.
-        let configurations: [(name: String, mode: PolisherMode, rules: [String], suffix: String)] = [
-            ("shipping", .shipping, [], ""),
-            ("light", .light, [], ""),
-            ("light-fewshot", .light, [], """
+        var rows: [StructureRow] = []
+        var review = "# Structuring bake-off review\n"
+        for (clip, raw) in texts {
+            let cleaned = DeterministicPromptCleaner.clean(raw, vocabulary: vocabulary)
 
+            var outputs: [(candidate: String, text: String, latency: TimeInterval, error: String?)] = []
+            let rulesStarted = ContinuousClock.now
+            let ruled = TranscriptStructurer.structure(cleaned)
+            outputs.append(("rules", ruled, rulesStarted.duration(to: .now).seconds, nil))
 
-            Examples:
-            Dictation: "SwiftData"
-            Output: "SwiftData"
-            Dictation: "um so the the parser crashes when the input is empty, can you fix that"
-            Output: "The parser crashes when the input is empty, can you fix that?"
-            Dictation: "In the authentication module replace the retry loop with exponential backoff."
-            Output: "In the authentication module replace the retry loop with exponential backoff."
-            """),
-            ("light-plain", .lightPlain, [], ""),
-        ]
-
-        var rows: [PolishRow] = []
-        for (variant, mode, rules, suffix) in configurations {
-            let polisher = ApplePromptPolisher(mode: mode, extraRules: rules, instructionsSuffix: suffix)
-            if rows.isEmpty {
-                print("polish replay: \(clips.count) clips, availability: \(await polisher.availabilityDescription)")
-            }
-            for clip in clips {
-                let deterministic = DeterministicPromptCleaner.clean(
-                    clip.rawTranscript, vocabulary: vocabulary
-                )
-                let candidateDir = outDir.appending(path: "polish")
-                try? FileManager.default.createDirectory(at: candidateDir, withIntermediateDirectories: true)
-                try? deterministic.write(
-                    to: candidateDir.appending(path: "source_\(clip.id).txt"),
-                    atomically: true, encoding: .utf8
-                )
-                let context = DictationContext(
-                    targetBundleID: clip.targetBundleID,
-                    vocabulary: terms
-                )
+            if let polisher {
                 await polisher.prewarm()
                 let started = ContinuousClock.now
                 do {
-                    let candidate = try await polisher.polish(deterministic, context: context)
-                    let latency = started.duration(to: ContinuousClock.now).seconds
-                    let validation = validator.validate(
-                        source: deterministic, candidate: candidate, vocabulary: terms
+                    let candidate = try await polisher.polish(
+                        cleaned, context: DictationContext(targetBundleID: nil, vocabulary: terms)
                     )
-                    try? candidate.write(
-                        to: candidateDir.appending(path: "\(variant)_\(clip.id).txt"),
-                        atomically: true, encoding: .utf8
-                    )
-                    rows.append(PolishRow(
-                        id: clip.id, duration: clip.duration, variant: variant,
-                        latency: latency, accepted: validation.isValid,
-                        reason: validation.reason ?? "ok",
-                        storedUsedLM: clip.usedLanguageModel,
-                        rawChars: deterministic.count, candidateChars: candidate.count,
-                        changeRatio: wordChangeRatio(deterministic, candidate)
-                    ))
-                    print(String(
-                        format: "  %-14@ %5.1fs -> %5.3fs accepted=%@ storedLM=%@",
-                        variant as NSString, clip.duration, latency,
-                        (validation.isValid ? "Y" : "N") as NSString,
-                        (clip.usedLanguageModel ? "Y" : "N") as NSString
-                    ))
+                    outputs.append(("apple", candidate, started.duration(to: .now).seconds, nil))
                 } catch {
-                    rows.append(PolishRow(
-                        id: clip.id, duration: clip.duration, variant: variant,
-                        latency: 0, accepted: false, reason: "error: \(error.localizedDescription)",
-                        storedUsedLM: clip.usedLanguageModel,
-                        rawChars: deterministic.count, candidateChars: 0,
-                        changeRatio: -1
-                    ))
-                    print("  \(variant) \(clip.duration)s -> error: \(error.localizedDescription)")
+                    outputs.append(("apple", cleaned, 0, String(describing: error)))
+                }
+            }
+
+            var anyChanged = false
+            for output in outputs {
+                let validation = validator.validate(
+                    source: cleaned, candidate: output.text, vocabulary: terms
+                )
+                let idempotent = output.candidate != "rules"
+                    || TranscriptStructurer.structure(output.text) == output.text
+                let changed = output.text != cleaned
+                anyChanged = anyChanged || changed
+                rows.append(StructureRow(
+                    id: clip.id, duration: clip.duration, candidate: output.candidate,
+                    latency: output.latency, changed: changed, idempotent: idempotent,
+                    validatorPassed: validation.isValid,
+                    paragraphs: output.text.components(separatedBy: "\n\n").count,
+                    bulletLines: output.text.components(separatedBy: "\n")
+                        .filter { $0.hasPrefix("- ") }.count,
+                    error: output.error
+                ))
+            }
+
+            if anyChanged || showAll {
+                review += "\n---\n\n## \(clip.id.prefix(8)) · \(String(format: "%.1f", clip.duration))s\n"
+                review += "\n**RAW (cleaned)**\n\n```\n\(cleaned)\n```\n"
+                for output in outputs {
+                    let label = output.candidate.uppercased()
+                    if let error = output.error {
+                        review += "\n**\(label)** — error: \(error)\n"
+                    } else {
+                        review += "\n**\(label)**\n\n```\n\(output.text)\n```\n"
+                    }
                 }
             }
         }
 
-        let url = outDir.appending(path: "polish-results.json")
-        try JSONEncoder.bench.encode(rows, to: url)
-        print("wrote \(url.path)")
+        for candidate in Set(rows.map(\.candidate)).sorted() {
+            let mine = rows.filter { $0.candidate == candidate }
+            let changed = mine.filter(\.changed).count
+            let validatorFailures = mine.filter { !$0.validatorPassed }.count
+            let idempotencyFailures = mine.filter { !$0.idempotent }.count
+            let errors = mine.filter { $0.error != nil }.count
+            print(String(
+                format: "%-6@ changed %d/%d · validator failures %d · idempotency failures %d · errors %d · median latency %.0f ms",
+                candidate as NSString, changed, mine.count,
+                validatorFailures, idempotencyFailures, errors,
+                // Error rows carry a placeholder latency of 0; keep them out
+                // of the median so failures don't flatter the speed number.
+                median(mine.filter { $0.error == nil }.map(\.latency)) * 1000
+            ))
+        }
+
+        let reviewURL = outDir.appending(path: "review.md")
+        try review.write(to: reviewURL, atomically: true, encoding: .utf8)
+        let resultsURL = outDir.appending(path: "structure-results.json")
+        try JSONEncoder.bench.encode(rows, to: resultsURL)
+        print("wrote \(reviewURL.path) and \(resultsURL.path)")
     }
 
     // MARK: - Kimi prompt-polish template iteration
@@ -341,118 +422,140 @@ struct Bench {
         return key
     }
 
-    struct KimiPolishRow: Codable {
-        let id: String
-        let duration: TimeInterval
-        let template: String
-        let latency: TimeInterval
-        let rawChars: Int
-        let outChars: Int
-        let error: String?
-    }
+    // MARK: - Tuner variant evaluation
 
-    /// Replays cleaned historical transcripts through Kimi K2.7 HighSpeed with
-    /// one or more candidate templates so the polish prompt can be iterated
-    /// before it ships. Templates come from a JSON object {name: template},
-    /// where each template contains a {text} placeholder.
-    static func runKimiPolish(entries: [ManifestEntry], options: [String: String], outDir: URL) async throws {
-        guard let apiKey = kimiAPIKey() else {
-            throw BenchError.usage("KIMI_API_KEY not set and no key in the keychain (dev.localflow.app / kimi-api-key)")
+    /// Replays the corpus through the tuner variants so their proposals can be
+    /// hand-labeled and compared:
+    ///   det-legacy   the pre-fix deterministic matcher (regression witness)
+    ///   det-fixed    the shipping matcher (DetConfig.fixed)
+    ///   k3           the Kimi judge over all candidates (--with-kimi 1)
+    ///   k3-residual  the Kimi judge over candidates det-fixed left unresolved
+    ///                — its marginal contribution, the number that decides
+    ///                whether the LLM stage earns its keep.
+    /// Texts come from --asr-results (rep-1 rows), --timeline, or the
+    /// structure cache; --include-seen 1 adds the app's seenCandidates.
+    /// --labels file.tsv ("heard<TAB>good|bad") prints per-variant precision.
+    static func runTuneEval(options: [String: String], outDir: URL) async throws {
+        var texts: [String] = []
+        if let path = options["asr-results"] {
+            let rows = try JSONDecoder().decode([ASRRow].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+            texts += rows.filter { $0.rep == 1 && $0.error == nil }.map(\.text)
         }
-        let minDuration = TimeInterval(options["min-duration"] ?? "0") ?? 0
-        let ids = (options["ids"] ?? "").split(separator: ",").map(String.init)
-        let clips = entries
-            .filter { $0.duration >= minDuration }
-            .filter { clip in ids.isEmpty || ids.contains(where: { clip.id.hasPrefix($0) }) }
-            .sorted { $0.duration > $1.duration }
+        if let path = options["timeline"] {
+            let rows = try JSONDecoder().decode([TimelineEntry].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+            texts += rows.map(\.text)
+        }
+        if options["use-structure-cache"] == "1" {
+            let cacheURL = outDir.appending(path: "structure-transcripts.json")
+            let cache = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: cacheURL))
+            texts += cache.values
+        }
+        guard !texts.isEmpty else {
+            throw BenchError.usage("tune-eval needs texts: --asr-results, --timeline, or --use-structure-cache 1")
+        }
 
-        let templatesURL = URL(fileURLWithPath: options["templates"] ?? outDir.appending(path: "kimi-polish-templates.json").path)
-        var templates: [String: String]
-        if let data = try? Data(contentsOf: templatesURL) {
-            templates = try JSONDecoder().decode([String: String].self, from: data)
-        } else {
-            templates = ["default": KimiPromptPolishClient.defaultTemplate]
-            print("no templates file at \(templatesURL.path); using the built-in default template")
+        let anchors = VocabularyParser.parse(CuratedVocabulary.source).map(\.preferred)
+        var candidates = VocabularyTuner.candidates(in: texts, minimumCount: 1, anchors: anchors)
+        if options["include-seen"] == "1" {
+            let seen = UserDefaults(suiteName: "dev.localflow.app")?
+                .stringArray(forKey: "vocabularyTuner.seenCandidates") ?? []
+            let known = Set(candidates.map { $0.term.lowercased() })
+            candidates += seen
+                .filter { !known.contains($0.lowercased()) }
+                .map { TunerCandidate(term: $0, count: 1, excerpt: "(seenCandidates)") }
         }
-        if let filter = options["variants"] {
-            let wanted = Set(filter.split(separator: ",").map(String.init))
-            templates = templates.filter { wanted.contains($0.key) }
-        }
-        // Comma-separated model IDs; result rows and output files are keyed
-        // by "model+template" when more than one of either is in play.
-        let models = (options["model"] ?? KimiPromptPolishClient.model)
-            .split(separator: ",").map(String.init)
-        // --effort low|high|max sends reasoning_effort; --thinking off sends
-        // thinking:{type:disabled} (K2.x routes to K2.6 per Kimi docs).
-        var reasoning = KimiReasoning.standard
-        if options["effort"] != nil, options["thinking"] == "off" {
-            throw BenchError.usage("--effort and --thinking off are mutually exclusive")
-        }
-        if let effort = options["effort"] { reasoning = .effort(effort) }
-        if options["thinking"] == "off" { reasoning = .thinkingDisabled }
-        let bodySuffix = (options["effort"].map { "-effort-\($0)" } ?? "")
-            + (options["thinking"] == "off" ? "-nothink" : "")
-        print("kimi-polish: \(clips.count) clips × \(templates.count) templates × models \(models) reasoning=\(reasoning)")
+        print("tune-eval: \(texts.count) texts -> \(candidates.count) candidates")
 
-        let vocabulary = VocabularyParser.parse(CuratedVocabulary.source)
-        let client = KimiPromptPolishClient()
-        let candidateDir = outDir.appending(path: "kimi-polish")
-        try? FileManager.default.createDirectory(at: candidateDir, withIntermediateDirectories: true)
-
-        var rows: [KimiPolishRow] = []
-        for model in models {
-            for (name, template) in templates.sorted(by: { $0.key < $1.key }) {
-                let label = "\(model)_\(name)" + bodySuffix
-                for clip in clips {
-                    let cleaned = DeterministicPromptCleaner.clean(clip.rawTranscript, vocabulary: vocabulary)
-                    try? cleaned.write(
-                        to: candidateDir.appending(path: "source_\(clip.id).txt"),
-                        atomically: true, encoding: .utf8
-                    )
-                    let started = ContinuousClock.now
-                    do {
-                        let output = try await client.polish(
-                            cleaned, template: template, model: model, apiKey: apiKey,
-                            timeout: 180, reasoning: reasoning
-                        )
-                        let latency = started.duration(to: .now).seconds
-                        try? output.write(
-                            to: candidateDir.appending(path: "\(label)_\(clip.id).txt"),
-                            atomically: true, encoding: .utf8
-                        )
-                        rows.append(KimiPolishRow(
-                            id: clip.id, duration: clip.duration, template: label,
-                            latency: latency, rawChars: cleaned.count, outChars: output.count,
-                            error: nil
-                        ))
-                        print(String(
-                            format: "  %-36@ %5.1fs -> %5.2fs %4d -> %4d chars  %@",
-                            label as NSString, clip.duration, latency, cleaned.count, output.count,
-                            String(clip.id.prefix(8)) as NSString
-                        ))
-                    } catch {
-                        rows.append(KimiPolishRow(
-                            id: clip.id, duration: clip.duration, template: label,
-                            latency: 0, rawChars: cleaned.count, outChars: 0,
-                            error: String(describing: error)
-                        ))
-                        print("  \(label) \(clip.id.prefix(8)) -> error: \(error)")
-                    }
-                }
+        // Full candidate dump for external judges (e.g. replaying the K3
+        // prompt through another model): term, count, excerpt per line.
+        if let dumpPath = options["candidates-out"] {
+            struct CandidateDump: Codable {
+                let term: String
+                let count: Int
+                let excerpt: String
             }
+            let dump = candidates.map { CandidateDump(term: $0.term, count: $0.count, excerpt: $0.excerpt) }
+            try JSONEncoder.bench.encode(dump, to: URL(fileURLWithPath: dumpPath))
+            print("wrote \(dumpPath) (\(dump.count) candidates)")
         }
 
-        let url = outDir.appending(path: "kimi-polish-results.json")
-        try JSONEncoder.bench.encode(rows, to: url)
-        print("wrote \(url.path)")
-    }
+        func ruleMap(_ rules: [LearnedRule]) -> [String: String] {
+            Dictionary(rules.map { ($0.heard.lowercased(), $0.preferred) }) { first, _ in first }
+        }
+        let legacy = ruleMap(VocabularyTuner.deterministicRules(
+            candidates: candidates, anchors: anchors, config: .legacy
+        ))
+        let fixed = ruleMap(VocabularyTuner.deterministicRules(
+            candidates: candidates, anchors: anchors, config: .fixed
+        ))
 
-    /// Word-level edit distance normalized by length (0 = verbatim, 1 = fully rewritten).
-    static func wordChangeRatio(_ a: String, _ b: String) -> Double {
-        let wa = Array(a.split(whereSeparator: \.isWhitespace))
-        let wb = Array(b.split(whereSeparator: \.isWhitespace))
-        guard !wa.isEmpty || !wb.isEmpty else { return 0 }
-        return Double(EditDistance.between(wa, wb)) / Double(max(wa.count, wb.count))
+        var k3: [String: String] = [:]
+        var k3Residual: [String: String] = [:]
+        if options["with-kimi"] == "1" {
+            guard let key = kimiAPIKey() else {
+                throw BenchError.usage("KIMI_API_KEY not set and no key in the keychain")
+            }
+            let client = KimiTunerClient()
+            let counts = Dictionary(candidates.map { ($0.term, $0.count) }) { first, _ in first }
+            func judge(_ subset: [TunerCandidate]) async throws -> [String: String] {
+                guard !subset.isEmpty else { return [:] }
+                let findings = try await client.judge(candidates: subset, anchors: anchors, apiKey: key)
+                return ruleMap(VocabularyTuner.anchorFilteredRules(
+                    findings: findings.map { ($0.heard, $0.meant) },
+                    anchors: anchors,
+                    counts: counts
+                ))
+            }
+            k3 = try await judge(candidates)
+            k3Residual = try await judge(candidates.filter { fixed[$0.term.lowercased()] == nil })
+        }
+
+        // Review artifact: every candidate any variant proposed a rule for.
+        var lines = ["heard\tproposed\tcount\texcerpt\tdet-legacy\tdet-fixed\tk3\tk3-residual"]
+        var proposedTerms: [String] = []
+        for candidate in candidates {
+            let fold = candidate.term.lowercased()
+            let proposals = [legacy[fold], fixed[fold], k3[fold], k3Residual[fold]]
+            guard let proposed = proposals.compactMap({ $0 }).first else { continue }
+            proposedTerms.append(fold)
+            lines.append([
+                candidate.term,
+                proposed,
+                String(candidate.count),
+                candidate.excerpt.replacingOccurrences(of: "\t", with: " "),
+                legacy[fold] != nil ? "Y" : "N",
+                fixed[fold] != nil ? "Y" : "N",
+                k3[fold] != nil ? "Y" : "N",
+                k3Residual[fold] != nil ? "Y" : "N",
+            ].joined(separator: "\t"))
+        }
+        let reviewURL = outDir.appending(path: "tune-eval-review.tsv")
+        try lines.joined(separator: "\n").write(to: reviewURL, atomically: true, encoding: .utf8)
+        print(lines.joined(separator: "\n"))
+        print("\nwrote \(reviewURL.path) (\(proposedTerms.count) proposed rules)")
+
+        if let labelsPath = options["labels"] {
+            let labelLines = try String(contentsOf: URL(fileURLWithPath: labelsPath), encoding: .utf8)
+                .split(separator: "\n")
+            var labels: [String: Bool] = [:]
+            for line in labelLines {
+                let parts = line.split(separator: "\t")
+                guard parts.count >= 2 else { continue }
+                labels[parts[0].lowercased()] = parts[1].trimmingCharacters(in: .whitespaces) == "good"
+            }
+            print("\nprecision over \(labels.count) labeled terms:")
+            for (name, variant) in [("det-legacy", legacy), ("det-fixed", fixed), ("k3", k3), ("k3-residual", k3Residual)] {
+                let judged = variant.keys.compactMap { labels[$0] }
+                guard !judged.isEmpty else {
+                    print("  \(name): no labeled proposals")
+                    continue
+                }
+                let good = judged.filter { $0 }.count
+                print(String(format: "  %-11@ %d/%d good (%.0f%%)", name as NSString, good, judged.count, 100 * Double(good) / Double(judged.count)))
+            }
+            let unique = k3Residual.keys.filter { labels[$0] == true && fixed[$0] == nil && legacy[$0] == nil }
+            print("  true rules unique to k3: \(unique.count)\(unique.isEmpty ? "" : " — \(unique.sorted().joined(separator: ", "))")")
+        }
     }
 
     // MARK: - Vocabulary tuner acceptance

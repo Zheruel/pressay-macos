@@ -63,21 +63,45 @@ The shipping design is:
 
 1. Use deterministic cleanup for every standard dictation.
 2. Apply curated and learned vocabulary rules without asking a model to reinterpret the sentence.
-3. Put generative prompt rewriting behind a different shortcut and visible state.
-4. Send only cleaned text—not audio—when the user invokes that optional Kimi mode.
+3. Keep the optional Structured Dictation pass deterministic too — punctuation, paragraphs, and lists, never a rewrite.
+
+## Structuring bake-off
+
+Before Structured Dictation shipped, `PressayBench structure` replayed a 438-clip private corpus through two candidates: the deterministic `TranscriptStructurer` rules and a formatting-only on-device Foundation Models prompt (words must be preserved verbatim; only punctuation, paragraphs, and bullets may change).
+
+| Candidate | Clips changed | Fabricated words | Dropped words | Errors | Median latency |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Rules | 93 / 438 | 0 | 0 | 0 | 0 ms |
+| On-device LLM | 26 / 438 | 7 clips | 9 clips | 7 (guardrail/decoding) | 582 ms |
+
+Even under a strictly formatting-scoped prompt, the language model completed a truncated dictation with invented words ("Maybe we could also talk about the" → "…the response in the next meeting."), silently dropped words on nine clips, and refused seven benign clips outright — while structuring fewer clips than the rules. That settled the choice: Structured Dictation is rule-based, and a fine-tuned local model was not pursued because it would have to beat a zero-defect, zero-latency baseline at its own game.
+
+## Vocabulary tuner precision
+
+`PressayBench tune-eval` replayed 680 transcripts (997 candidate terms) through the legacy and fixed deterministic matchers, with hand labels over every proposed rule:
+
+| Variant | Proposed rules | Precision |
+| --- | ---: | ---: |
+| Legacy matcher | 20 | 94% (learned `codebase → Codex`) |
+| Fixed matcher | 15 | 100% |
+
+The fixed matcher (larger English stop list, minimum phonetic key length 4, recurrence scaled to phonetic distance) kept every genuinely useful rule — including `CloudMD → CLAUDE.md` and `codecs → Codex` — while rejecting the ordinary-word rewrites the legacy matcher had learned on real machines (`mix → macOS`, `correction → Markdown`, `colleagues → Codex`).
+
+A frontier-LLM replay of the judge prompt over the same 997 candidates confirmed the two-tier design: the LLM contributed real rules the deterministic tier structurally cannot act on — ambiguity ties (`CloudCode` is phonetic distance 1 to both `Claude Code` and `CLAUDE.md`), too-short keys (`TLDA → TL;DR`), and distance-2 variants (`Sona Cloud`, `SornCloud`, `Sunr cloud → SonarCloud`) — while the anchor filter discarded 149 of its 184 raw findings as junk. The judgment tier earns its keep, but only behind that filter.
 
 ## Reproducing the harness
 
 `PressayBench` is included in the Swift package. Create your own local manifest rather than committing recordings:
 
 ```bash
-swift run PressayBench asr \
-  --manifest /absolute/path/manifest.json \
-  --out /absolute/path/results
+swift run PressayBench manifest-from-audio \
+  --manifest /absolute/path/manifest.json
 
-swift run PressayBench polish \
-  --manifest /absolute/path/manifest.json \
-  --out /absolute/path/results
+swift run PressayBench asr \
+  --manifest /absolute/path/manifest.json
+
+swift run PressayBench structure \
+  --manifest /absolute/path/manifest.json
 ```
 
 The manifest schema is represented by `ManifestEntry` in [`Sources/PressayBench/Bench.swift`](../Sources/PressayBench/Bench.swift). Keep paths absolute, use the same clips for every engine, warm each model before timing, and manually correct reference transcripts before calculating error rates.

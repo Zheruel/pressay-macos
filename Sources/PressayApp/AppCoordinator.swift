@@ -20,33 +20,22 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
 
     private let recorder = AudioRecorder()
     private let hotkey = HotkeyMonitor()
-    private let polishHotkey = HotkeyMonitor()
     private let accessibility = AccessibilityBridge()
     private let overlay = OverlayPanelController()
     private let sounds = DictationSoundPlayer()
     private var transcriber: any SpeechTranscriber
-    private let kimiPolisher = KimiPromptPolishClient()
     private let logger = Logger(subsystem: "dev.localflow.app", category: "pipeline")
     private var stateMachine = DictationStateMachine()
     private var target: CapturedTarget?
     private var processingTask: Task<Void, Never>?
     /// The monitor that started the active session — only its release/cancel
-    /// may end the session. The workflow is derived from it so the two can
-    /// never disagree.
+    /// may end the session.
     private var activeMonitor: HotkeyMonitor?
-    private var currentMode: DictationMode {
-        activeMonitor === polishHotkey ? .promptPolish : .dictation
-    }
     /// Engine captured at key press so a model swap mid-session cannot hand
     /// the clip to a new, unprepared engine.
     private var sessionEngine: (any SpeechTranscriber)?
     /// Invalidates stale prepare completions after a model swap.
     private var prepareGeneration = 0
-
-    enum DictationMode {
-        case dictation
-        case promptPolish
-    }
     private lazy var onboardingWindow = OnboardingWindowController(coordinator: self)
     private lazy var settingsWindow = SettingsWindowController(coordinator: self)
 
@@ -62,7 +51,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
         transcriber = Self.makeTranscriber(for: settings.asrModel, language: settings.language)
         hotkey.delegate = self
-        polishHotkey.delegate = self
         tunerRunner.onLearned = { [weak self] rules in
             self?.celebrateLearnedRules(rules)
         }
@@ -83,7 +71,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                     restartHotkey()
                 } else {
                     hotkey.stop()
-                    polishHotkey.stop()
                 }
             }
         }
@@ -117,11 +104,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         try? FileManager.default.moveItem(at: old, to: new)
     }
 
-    /// Suspends both hold-key monitors while a KeyCaptureButton is recording a
-    /// new binding; restartHotkey() resumes them.
+    /// Suspends the hold-key monitor while a KeyCaptureButton is recording a
+    /// new binding; restartHotkey() resumes it.
     func suspendHotkeys() {
         hotkey.stop()
-        polishHotkey.stop()
     }
 
     /// Single wiring point for KeyCaptureButton so every capture site gets the
@@ -134,18 +120,11 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     func restartHotkey() {
         guard permissions.inputMonitoringGranted else {
             hotkey.stop()
-            polishHotkey.stop()
             return
         }
         do {
             try hotkey.start(holdKey: settings.holdKey)
-            if settings.polishHoldKey == settings.holdKey {
-                polishHotkey.stop()
-                lastError = "Vibe Mode is off: both features use the same key"
-            } else {
-                try polishHotkey.start(holdKey: settings.polishHoldKey)
-                lastError = nil
-            }
+            lastError = nil
         } catch {
             lastError = error.localizedDescription
         }
@@ -235,9 +214,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
         guard stateMachine.begin() else {
             if stateMachine.phase == .processing {
-                overlay.showError(currentMode == .promptPolish
-                    ? "Still working on the previous dictation"
-                    : "Still processing the previous dictation")
+                overlay.showError("Still processing the previous dictation")
             }
             return
         }
@@ -250,7 +227,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             Thread.sleep(forTimeInterval: sounds.beginCaptureDelay)
             try recorder.start()
             target = accessibility.capture(vocabulary: settings.vocabularyTerms)
-            overlay.showRecording(style: currentMode == .promptPolish ? .promptPolish : .dictation)
+            overlay.showRecording(style: .dictation)
             settings.hasUsedDictation = true
         } catch {
             stateMachine.fail(error.localizedDescription)
@@ -270,14 +247,13 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 resetAfterNonResult()
                 return
             }
-            sounds.play(currentMode == .promptPolish ? .polishRelease : .release)
+            sounds.play(.release)
             overlay.showProcessing()
             let captured = target ?? accessibility.capture(vocabulary: settings.vocabularyTerms)
             let target = accessibility.refreshInsertionTarget(captured)
-            let mode = currentMode
             let engine = sessionEngine ?? transcriber
             processingTask = Task { [weak self] in
-                await self?.process(raw, target: target, mode: mode, engine: engine)
+                await self?.process(raw, target: target, engine: engine)
             }
         } catch PressayError.recordingTooShort {
             resetAfterNonResult()
@@ -325,7 +301,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private func process(
         _ raw: AudioRecorder.RawCapture,
         target: CapturedTarget,
-        mode: DictationMode,
         engine: any SpeechTranscriber
     ) async {
         let releasedAt = Date()
@@ -365,74 +340,19 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 vocabulary: settings.vocabularyEntries,
                 capitalizeFirstWord: !isTerminal
             )
-            var polish = PolishResult(
-                text: deterministic,
-                usedLanguageModel: false,
-                processingTime: 0
-            )
-
-            if mode == .promptPolish {
-                let polishStarted = Date()
-                do {
-                    guard let apiKey = KimiAPIKeyStore.read(), !apiKey.isEmpty else {
-                        throw PressayError.modelUnavailable(
-                            "Add a Kimi API key in Settings to use Vibe Mode"
-                        )
-                    }
-                    let polishModel = settings.polishModel
-                    // Outer budget exceeds the request timeout so a response
-                    // landing at the buzzer isn't discarded by the wrapper.
-                    let candidate = try await Timeout.run(for: .seconds(polishModel.timeout + 5)) { [kimiPolisher] in
-                        try await kimiPolisher.polish(
-                            deterministic,
-                            model: polishModel.rawValue,
-                            apiKey: apiKey,
-                            timeout: polishModel.timeout
-                        )
-                    }
-                    let validation = ProtectedTokenValidator().validate(
-                        source: deterministic,
-                        candidate: candidate,
-                        vocabulary: settings.vocabularyTerms
-                    )
-                    if !validation.isValid {
-                        // Deliberate rewrites legitimately restructure text, so
-                        // this is a log-only signal, never a gate.
-                        logger.info("Prompt polish faithfulness note: \(validation.reason ?? "-", privacy: .public)")
-                    }
-                    polish = PolishResult(
-                        text: candidate,
-                        usedLanguageModel: true,
-                        processingTime: Date().timeIntervalSince(polishStarted)
-                    )
-                } catch {
-                    // Deliberate mode inserts nothing on failure; the transcript
-                    // stays recoverable from History.
-                    let record = DictationRecord(
-                        id: recordID,
-                        duration: clip.duration,
-                        targetBundleID: target.bundleID,
-                        engine: engineName,
-                        rawTranscript: transcript.text,
-                        polishedText: deterministic,
-                        asrLatency: transcript.processingTime,
-                        polishLatency: Date().timeIntervalSince(polishStarted),
-                        totalLatency: Date().timeIntervalSince(releasedAt),
-                        audioPath: audioURL?.path,
-                        usedLanguageModel: false
-                    )
-                    try? history.add(record)
-                    logger.error("Prompt polish failed: \(error.localizedDescription, privacy: .public)")
-                    fail(error, message: "Vibe Mode failed — transcript saved to History")
-                    return
-                }
+            var finalText = deterministic
+            var structureLatency: TimeInterval = 0
+            if settings.structuredDictation, !isTerminal {
+                let structureStarted = Date()
+                finalText = TranscriptStructurer.structure(deterministic)
+                structureLatency = Date().timeIntervalSince(structureStarted)
             }
 
             guard !Task.isCancelled else {
                 cleanUpCancelledProcessing()
                 return
             }
-            let insertion = await accessibility.insert(polish.text, into: target)
+            let insertion = await accessibility.insert(finalText, into: target)
             let insertionLatency = Date().timeIntervalSince(releasedAt)
             let record = DictationRecord(
                 id: recordID,
@@ -440,12 +360,12 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 targetBundleID: target.bundleID,
                 engine: engineName,
                 rawTranscript: transcript.text,
-                polishedText: polish.text,
+                polishedText: finalText,
                 asrLatency: transcript.processingTime,
-                polishLatency: polish.processingTime,
+                polishLatency: structureLatency,
                 totalLatency: insertionLatency,
                 audioPath: audioURL?.path,
-                usedLanguageModel: polish.usedLanguageModel
+                usedLanguageModel: false
             )
             do {
                 try history.add(record)

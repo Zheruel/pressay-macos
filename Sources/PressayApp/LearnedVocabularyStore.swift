@@ -2,8 +2,9 @@ import Foundation
 import PressayCore
 
 /// Vocabulary rules the tuner derived from transcripts, with a blocklist for
-/// deleted rules. Full-recompute semantics: rules whose evidence ages out of
-/// the 30-day transcript window expire.
+/// deleted rules. Rules persist as long as their heard term keeps appearing
+/// in transcripts; the daily pass refreshes `lastSeenAt` and expires rules
+/// unused for `LearnedRuleRetention.unusedLifetime`.
 @MainActor
 final class LearnedVocabularyStore: ObservableObject {
     struct Record: Codable, Equatable, Sendable {
@@ -12,6 +13,11 @@ final class LearnedVocabularyStore: ObservableObject {
         let count: Int
         let source: String
         let learnedAt: Date
+        /// Optional so records persisted before the field existed decode;
+        /// they fall back to `learnedAt`.
+        var lastSeenAt: Date?
+
+        var effectiveLastSeen: Date { lastSeenAt ?? learnedAt }
     }
 
     private enum Key {
@@ -20,6 +26,7 @@ final class LearnedVocabularyStore: ObservableObject {
         static let lastDetRun = "vocabularyTuner.lastDetRun"
         static let lastK3Run = "vocabularyTuner.lastK3Run"
         static let seenCandidates = "vocabularyTuner.seenCandidates"
+        static let schemaVersion = "vocabularyTuner.schemaVersion"
     }
 
     @Published private(set) var records: [Record] = []
@@ -51,21 +58,43 @@ final class LearnedVocabularyStore: ObservableObject {
         records.map { VocabularyParser.Entry(preferred: $0.preferred, aliases: [$0.heard]) }
     }
 
-    /// Replaces one source's rules, keeping the other source's and the
-    /// blocklist. A kept record whose heard term reappears in the incoming
-    /// set is dropped — `heard` is the identity everywhere (SwiftUI row IDs,
-    /// remove(), the blocklist), so two sources must never both own it.
-    func replaceRules(_ rules: [LearnedRule], source: LearnedRule.Source) {
-        let incoming = rules.filter { !blocklist.contains($0.heard.lowercased()) }
-        let incomingHeard = Set(incoming.map { $0.heard.lowercased() })
-        let kept = records.filter {
-            $0.source != source.rawValue
-                && !incomingHeard.contains($0.heard.lowercased())
-                && !blocklist.contains($0.heard.lowercased())
+    /// Daily-pass semantics: incoming det rules insert or refresh; every
+    /// existing rule whose heard term still occurs in the transcript window
+    /// gets `lastSeenAt` bumped; rules unused past the retention lifetime
+    /// expire. `heard` is the identity everywhere (SwiftUI row IDs, remove(),
+    /// the blocklist), so an incoming heard term takes over its record.
+    func applyDailyPass(detRules: [LearnedRule], heardTermsInWindow: Set<String>, now: Date = .now) {
+        let incoming = detRules.filter { !blocklist.contains($0.heard.lowercased()) }
+        let incomingByHeard = Dictionary(
+            incoming.map { ($0.heard.lowercased(), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var updated: [Record] = []
+        for record in records where !blocklist.contains(record.heard.lowercased()) {
+            let fold = record.heard.lowercased()
+            if let rule = incomingByHeard[fold] {
+                updated.append(Record(
+                    heard: record.heard, preferred: rule.preferred, count: rule.count,
+                    source: record.source, learnedAt: record.learnedAt, lastSeenAt: now
+                ))
+            } else if heardTermsInWindow.contains(fold) {
+                var bumped = record
+                bumped.lastSeenAt = now
+                updated.append(bumped)
+            } else if !LearnedRuleRetention.isExpired(lastSeen: record.effectiveLastSeen, now: now) {
+                updated.append(record)
+            }
         }
-        records = kept + incoming.map {
-            Record(heard: $0.heard, preferred: $0.preferred, count: $0.count, source: source.rawValue, learnedAt: .now)
-        }
+        let known = Set(updated.map { $0.heard.lowercased() })
+        updated += incoming
+            .filter { !known.contains($0.heard.lowercased()) }
+            .map {
+                Record(
+                    heard: $0.heard, preferred: $0.preferred, count: $0.count,
+                    source: LearnedRule.Source.det.rawValue, learnedAt: now, lastSeenAt: now
+                )
+            }
+        records = updated
         persist()
     }
 
@@ -83,7 +112,10 @@ final class LearnedVocabularyStore: ObservableObject {
             !incomingHeard.contains($0.heard.lowercased()) && !blocklist.contains($0.heard.lowercased())
         }
         records = kept + incoming.map {
-            Record(heard: $0.heard, preferred: $0.preferred, count: $0.count, source: source.rawValue, learnedAt: .now)
+            Record(
+                heard: $0.heard, preferred: $0.preferred, count: $0.count,
+                source: source.rawValue, learnedAt: .now, lastSeenAt: .now
+            )
         }
         persist()
         return incoming.filter { !knownHeard.contains($0.heard.lowercased()) }
@@ -105,6 +137,21 @@ final class LearnedVocabularyStore: ObservableObject {
             records = decoded
         }
         blocklist = Set(defaults.stringArray(forKey: Key.blocklist) ?? [])
+        migrateIfNeeded()
+    }
+
+    private func migrateIfNeeded() {
+        guard defaults.integer(forKey: Key.schemaVersion) < LearnedRuleMigration.schemaVersion else {
+            return
+        }
+        let surviving = records.filter { LearnedRuleMigration.survivesV1(source: $0.source) }
+        if surviving.count != records.count {
+            records = surviving
+            persist()
+        }
+        // Rebuild det rules from history on next launch instead of in 24h.
+        defaults.removeObject(forKey: Key.lastDetRun)
+        defaults.set(LearnedRuleMigration.schemaVersion, forKey: Key.schemaVersion)
     }
 
     private func persist() {

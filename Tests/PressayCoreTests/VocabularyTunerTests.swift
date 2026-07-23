@@ -90,17 +90,113 @@ final class VocabularyTunerTests: XCTestCase {
         XCTAssertTrue(VocabularyTuner.isCandidateTerm("Rumpod"))
     }
 
-    func testIncrementalRulesLearnFromSingleOccurrence() {
-        let rules = VocabularyTuner.incrementalRules(
+    func testIncrementalRulesRequireExactPhoneticKeys() {
+        // Distance-0 mishearings still learn from a single dictation.
+        let exact = VocabularyTuner.incrementalRules(
+            for: "something like Whisperflow but local",
+            anchors: ["Wispr Flow", "RunPod"]
+        )
+        XCTAssertEqual(exact.map(\.heard), ["Whisperflow"])
+        XCTAssertEqual(exact.map(\.preferred), ["Wispr Flow"])
+
+        // Distance-1 ("Rumpod" → RunPod) is real but needs recurrence; the
+        // daily pass learns it, the single-sighting path must not.
+        XCTAssertTrue(VocabularyTuner.incrementalRules(
             for: "Can you check the Rumpod dashboard for me?",
             anchors: ["RunPod", "Claude Code"]
-        )
-        XCTAssertEqual(rules.map(\.heard), ["Rumpod"])
-        XCTAssertEqual(rules.map(\.preferred), ["RunPod"])
+        ).isEmpty)
         XCTAssertTrue(VocabularyTuner.incrementalRules(
             for: "Make the design darker and clone the repository",
             anchors: ["Docker", "Claude"]
         ).isEmpty)
+    }
+
+    // MARK: - Regression: false positives learned on real machines
+
+    func testOrdinaryEnglishWordsAreNeverCandidates() {
+        // Each of these was live in a user's learned rules: mix → macOS,
+        // mockups → macOS, correction → Markdown, colleagues → Codex.
+        for word in ["mix", "mockups", "mockup", "correction", "colleagues"] {
+            XCTAssertFalse(VocabularyTuner.isCandidateTerm(word), "\(word) is ordinary English")
+        }
+        let texts = [
+            "Let's mix the correction into the mockups my colleagues made.",
+            "Another mix of correction notes for the mockups from colleagues.",
+        ]
+        let candidates = VocabularyTuner.candidates(in: texts, anchors: anchors)
+        XCTAssertTrue(candidates.isEmpty, "unexpected candidates: \(candidates.map(\.term))")
+        XCTAssertTrue(VocabularyTuner.deterministicRules(candidates: candidates, anchors: anchors).isEmpty)
+    }
+
+    func testShortPhoneticKeysCannotMatchEvenAsForcedCandidates() {
+        // Defense in depth: even if the word list misses a term, a
+        // three-consonant key ("mix" → MKS ≡ macOS) must not match.
+        let forced = [TunerCandidate(term: "mix", count: 5, excerpt: "x")]
+        XCTAssertTrue(VocabularyTuner.deterministicRules(candidates: forced, anchors: anchors).isEmpty)
+        XCTAssertEqual(
+            VocabularyTuner.deterministicRules(candidates: forced, anchors: anchors, config: .legacy)
+                .map(\.preferred),
+            ["macOS"],
+            "legacy config must reproduce the regression class the fix targets"
+        )
+    }
+
+    func testFuzzyMatchesNeedRecurrenceScaledEvidence() {
+        let once = [TunerCandidate(term: "Entropic", count: 1, excerpt: "x")]
+        let twice = [TunerCandidate(term: "Entropic", count: 2, excerpt: "x")]
+        XCTAssertTrue(VocabularyTuner.deterministicRules(candidates: once, anchors: anchors).isEmpty)
+        XCTAssertEqual(
+            VocabularyTuner.deterministicRules(candidates: twice, anchors: anchors).map(\.preferred),
+            ["Anthropic"]
+        )
+        // Distance-0 promotes from a single sighting.
+        let exactOnce = [TunerCandidate(term: "Whisperflow", count: 1, excerpt: "x")]
+        XCTAssertEqual(
+            VocabularyTuner.deterministicRules(candidates: exactOnce, anchors: anchors).map(\.preferred),
+            ["Wispr Flow"]
+        )
+    }
+
+    func testCloudMDMatchesClaudeMarkdownFileWhenAnchored() {
+        // "CloudMD" is a mishearing of "CLAUDE.md"; with the file in the
+        // anchors it exact-matches there instead of snapping to Claude Code.
+        let rules = VocabularyTuner.deterministicRules(
+            candidates: [TunerCandidate(term: "CloudMD", count: 1, excerpt: "x")],
+            anchors: anchors + ["CLAUDE.md"]
+        )
+        XCTAssertEqual(rules.map(\.preferred), ["CLAUDE.md"])
+    }
+
+    func testJudgeWorthyKeepsAcousticNeighborsAndDropsFarTerms() {
+        // Corpus-measured: distance cap 2 keeps 25/26 true LLM-judge finds
+        // while dropping ~60% of candidates (guaranteed rejections).
+        let candidates = [
+            "CloudCode", "TLDA", "Sona Cloud", "SornCloud", "Kimmy",
+            "Polymarket", "Buenos Aires", "Fjordvik",
+        ].map { TunerCandidate(term: $0, count: 1, excerpt: "x") }
+        let worthy = Set(
+            VocabularyTuner.judgeWorthy(candidates: candidates, anchors: anchors + ["SonarCloud", "CLAUDE.md"])
+                .map(\.term)
+        )
+        for kept in ["CloudCode", "TLDA", "Sona Cloud", "SornCloud", "Kimmy"] {
+            XCTAssertTrue(worthy.contains(kept), "\(kept) is in acoustic range of an anchor")
+        }
+        for dropped in ["Polymarket", "Buenos Aires"] {
+            XCTAssertFalse(worthy.contains(dropped), "\(dropped) has no anchor in range")
+        }
+    }
+
+    func testMigrationDropsDetRulesAndKeepsK3() {
+        XCTAssertFalse(LearnedRuleMigration.survivesV1(source: LearnedRule.Source.det.rawValue))
+        XCTAssertTrue(LearnedRuleMigration.survivesV1(source: LearnedRule.Source.k3.rawValue))
+    }
+
+    func testRetentionExpiresOnlyLongUnusedRules() {
+        let now = Date()
+        let day: TimeInterval = 24 * 3_600
+        XCTAssertFalse(LearnedRuleRetention.isExpired(lastSeen: now.addingTimeInterval(-29 * day), now: now))
+        XCTAssertFalse(LearnedRuleRetention.isExpired(lastSeen: now.addingTimeInterval(-89 * day), now: now))
+        XCTAssertTrue(LearnedRuleRetention.isExpired(lastSeen: now.addingTimeInterval(-91 * day), now: now))
     }
 
     func testTokensKeepIdentifiersWhole() {
