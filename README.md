@@ -58,7 +58,7 @@ Longer dictations read better with sentences, paragraphs, and lists. The **Struc
 - Turns spoken enumerations ("first… second… finally…") into `-` bullet lists.
 - Breaks paragraphs at discourse markers ("also", "by the way", "moving on") and caps paragraph length.
 
-It never reorders, adds, or removes the words you spoke — the spoken ordinal markers of a list are the only thing it drops — and it never touches short dictations or terminal apps. Everything runs on-device with zero added latency; the toggle is off by default.
+It never reorders, adds, or removes the words you spoke — the spoken ordinal markers of a list are the only thing it drops — and it never touches short dictations or terminal apps. Everything runs on-device with zero added latency; it is on by default and can be switched off in Settings.
 
 ## The configuration we ship
 

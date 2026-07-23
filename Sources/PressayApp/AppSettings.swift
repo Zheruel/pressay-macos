@@ -60,7 +60,9 @@ final class AppSettings: ObservableObject {
         )
         language = TranscriptionLanguage(rawValue: defaults.string(forKey: Key.language) ?? "") ?? .auto
         asrModel = Self.readASRModel(defaults)
-        structuredDictation = defaults.bool(forKey: Key.structuredDictation)
+        // Default on: corpus-validated as word-preserving, and it only ever
+        // activates on longer dictations (15+ words, never terminals).
+        structuredDictation = defaults.object(forKey: Key.structuredDictation) as? Bool ?? true
         for key in Key.retired { defaults.removeObject(forKey: key) }
         let storedVocabulary = defaults.string(forKey: Key.vocabulary)
         if let storedVocabulary, CuratedVocabulary.replaceableDefaults.contains(storedVocabulary) {

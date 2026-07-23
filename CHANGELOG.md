@@ -6,7 +6,7 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 
 ### Added
 
-- Structured Dictation: an on/off toggle that deterministically adds punctuation, sentence capitalization, bullet lists for spoken enumerations, and paragraph breaks to longer dictations — on-device, with no LLM and no added latency.
+- Structured Dictation: deterministically adds punctuation, sentence capitalization, bullet lists for spoken enumerations, and paragraph breaks to longer dictations — on-device, with no LLM and no added latency. On by default (corpus-validated as word-preserving); switch it off in Settings.
 - A vocabulary-tuner evaluation harness (`PressayBench tune-eval`) that replays the corpus through the legacy matcher, the fixed matcher, and the optional Kimi judge so their precision can be compared on real data.
 - `PressayBench structure` and `manifest-from-audio` subcommands for replaying the audio corpus through the structuring candidates with a transcription cache.
 
