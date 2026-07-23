@@ -161,47 +161,58 @@ private struct CompactHistoryRow: View {
     }
 }
 
+/// Hand-built two-pane shell instead of NavigationSplitView: the sidebar is
+/// the whole navigation, so it must not collapse, float as a glass panel, or
+/// carry toolbar chrome — a flat tinted column with a hairline against the
+/// detail pane reads as one construction.
 struct SettingsRootView: View {
     @ObservedObject var coordinator: AppCoordinator
-    @State private var selection: SettingsSection? = .general
+    @State private var selection: SettingsSection = .general
 
     var body: some View {
-        NavigationSplitView {
-            VStack(spacing: 0) {
-                HStack(spacing: 11) {
-                    Image(nsImage: PressayBrand.appIcon)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 38, height: 38)
-                        .shadow(color: .indigo.opacity(0.16), radius: 7, y: 3)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Pressay").font(.headline)
-                        Text(coordinator.modelReady ? "Ready · On-device" : "Preparing local model")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-                .padding(.bottom, 12)
+        HStack(spacing: 0) {
+            sidebar
+            Divider().ignoresSafeArea()
+            detail
+        }
+        .frame(minWidth: 780, minHeight: 560)
+    }
 
-                Divider()
-
-                List(SettingsSection.allCases, selection: $selection) { section in
-                    Label(section.title, systemImage: section.systemImage)
-                        .tag(section)
-                        .pointerStyle(.link)
-                }
-                .listStyle(.sidebar)
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                Image(nsImage: PressayBrand.appIcon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+                Text("Pressay").font(.title3.weight(.semibold))
+                Spacer(minLength: 0)
             }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190)
-            .background(.ultraThinMaterial)
-            // The sidebar is the whole navigation; collapsing it just strands
-            // the user, so drop the automatic toggle button.
-            .toolbar(removing: .sidebarToggle)
-        } detail: {
-            switch selection ?? .general {
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+
+            VStack(spacing: 2) {
+                ForEach(SettingsSection.allCases) { section in
+                    SidebarNavItem(section: section, isSelected: selection == section) {
+                        selection = section
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+
+            Spacer(minLength: 0)
+        }
+        // Clears the traffic lights in the transparent title bar.
+        .padding(.top, 56)
+        .frame(width: 206)
+        .frame(maxHeight: .infinity)
+        .background(Color(nsColor: .underPageBackgroundColor))
+        .ignoresSafeArea()
+    }
+
+    private var detail: some View {
+        Group {
+            switch selection {
             case .general:
                 GeneralSettingsView(coordinator: coordinator)
             case .dictionary:
@@ -210,7 +221,45 @@ struct SettingsRootView: View {
                 HistoryView(coordinator: coordinator)
             }
         }
-        .frame(minWidth: 780, minHeight: 560)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Scroll views span the window's full height so their indicators run
+        // edge to edge instead of floating below the invisible title bar.
+        .ignoresSafeArea(.container, edges: .top)
+    }
+}
+
+private struct SidebarNavItem: View {
+    let section: SettingsSection
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: section.systemImage)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 18)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+                Text(section.title)
+                    .font(.callout.weight(isSelected ? .medium : .regular))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 7)
+                .fill(
+                    isSelected
+                        ? Color.primary.opacity(0.09)
+                        : hovering ? Color.primary.opacity(0.05) : .clear
+                )
+        )
+        .onHover { hovering = $0 }
+        .pointerStyle(.link)
     }
 }
 
@@ -430,6 +479,7 @@ private struct GeneralSettingsView: View {
             }
             .frame(maxWidth: 680, alignment: .leading)
             .padding(28)
+            .padding(.top, 18)
         }
         .background(.background)
         .onAppear {
@@ -585,6 +635,7 @@ private struct DictionarySettingsView: View {
             }
             .frame(maxWidth: 680, alignment: .leading)
             .padding(28)
+            .padding(.top, 18)
         }
         .background(.background)
         .sheet(isPresented: $addingEntry) {
@@ -909,6 +960,7 @@ private struct HistoryView: View {
             }
         }
         .padding(28)
+        .padding(.top, 18)
         .searchable(text: $searchText, prompt: "Search prompts")
         .confirmationDialog("Delete all local history and audio?", isPresented: $showingDeleteAll) {
             Button("Delete all", role: .destructive) { try? history.deleteAll() }
