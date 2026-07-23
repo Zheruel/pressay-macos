@@ -21,25 +21,38 @@ cp "$ROOT/Config/Info.plist" "$CONTENTS/Info.plist"
 
 # transcribe.cpp ships as a dynamic framework; the binary references it via
 # @rpath, so it must be embedded and reachable from Contents/Frameworks.
-# Depending on the SwiftPM version that extracted the artifact, the framework
-# arrives either with its canonical Versions/Current symlink layout intact
-# (fresh CI checkouts) or with symlinks resolved into real directories, which
-# codesign rejects as ambiguous — rebuild the canonical layout in that case.
+# SwiftPM's artifact extraction mangles the framework differently depending
+# on version: canonical symlinks intact, symlinks resolved into a real
+# Versions/A tree, or fully flattened with the payload at the framework root.
+# codesign rejects everything but the canonical layout — rebuild it from
+# whichever payload location exists.
 FRAMEWORK_SOURCE="$ROOT/.build/artifacts/whisper/CTranscribe/TranscribeCpp.xcframework/macos-arm64_x86_64/CTranscribe.framework"
 FRAMEWORK="$CONTENTS/Frameworks/CTranscribe.framework"
 if [[ -L "$FRAMEWORK_SOURCE/Versions/Current" ]]; then
     ditto "$FRAMEWORK_SOURCE" "$FRAMEWORK"
-elif [[ -d "$FRAMEWORK_SOURCE/Versions/A" ]]; then
-    mkdir -p "$FRAMEWORK/Versions"
-    ditto "$FRAMEWORK_SOURCE/Versions/A" "$FRAMEWORK/Versions/A"
+else
+    PAYLOAD="$FRAMEWORK_SOURCE"
+    [[ -d "$FRAMEWORK_SOURCE/Versions/A" ]] && PAYLOAD="$FRAMEWORK_SOURCE/Versions/A"
+    mkdir -p "$FRAMEWORK/Versions/A"
+    for item in CTranscribe Headers Modules Resources; do
+        [[ -e "$PAYLOAD/$item" ]] && ditto "$PAYLOAD/$item" "$FRAMEWORK/Versions/A/$item"
+    done
+    if [[ ! -f "$FRAMEWORK/Versions/A/CTranscribe" ]]; then
+        echo "error: no framework binary under $FRAMEWORK_SOURCE — layout:" >&2
+        find "$FRAMEWORK_SOURCE" -maxdepth 2 >&2
+        exit 1
+    fi
+    # A flat extraction can leave Info.plist at the root; codesign needs it
+    # in Versions/A/Resources.
+    if [[ ! -f "$FRAMEWORK/Versions/A/Resources/Info.plist" && -f "$PAYLOAD/Info.plist" ]]; then
+        mkdir -p "$FRAMEWORK/Versions/A/Resources"
+        cp "$PAYLOAD/Info.plist" "$FRAMEWORK/Versions/A/Resources/Info.plist"
+    fi
     ln -sfn A "$FRAMEWORK/Versions/Current"
     ln -sfn Versions/Current/CTranscribe "$FRAMEWORK/CTranscribe"
     ln -sfn Versions/Current/Headers "$FRAMEWORK/Headers"
     ln -sfn Versions/Current/Modules "$FRAMEWORK/Modules"
     ln -sfn Versions/Current/Resources "$FRAMEWORK/Resources"
-else
-    echo "error: $FRAMEWORK_SOURCE has no Versions payload — was the artifact extracted?" >&2
-    exit 1
 fi
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$CONTENTS/MacOS/Pressay" 2>/dev/null || true
 if [[ -d "$ROOT/Config/Sounds" ]]; then
