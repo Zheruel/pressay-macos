@@ -26,7 +26,13 @@ cp "$ROOT/Config/Info.plist" "$CONTENTS/Info.plist"
 # Versions/A tree, or fully flattened with the payload at the framework root.
 # codesign rejects everything but the canonical layout — rebuild it from
 # whichever payload location exists.
-FRAMEWORK_SOURCE="$ROOT/.build/artifacts/whisper/CTranscribe/TranscribeCpp.xcframework/macos-arm64_x86_64/CTranscribe.framework"
+# SwiftPM copies the framework into the products directory on every build —
+# the one location that is stable across SwiftPM artifact-extraction layouts.
+# The raw artifacts path is only a fallback.
+FRAMEWORK_SOURCE="$ROOT/.build/$CONFIGURATION/CTranscribe.framework"
+if [[ ! -d "$FRAMEWORK_SOURCE" ]]; then
+    FRAMEWORK_SOURCE="$ROOT/.build/artifacts/whisper/CTranscribe/TranscribeCpp.xcframework/macos-arm64_x86_64/CTranscribe.framework"
+fi
 FRAMEWORK="$CONTENTS/Frameworks/CTranscribe.framework"
 if [[ -L "$FRAMEWORK_SOURCE/Versions/Current" ]]; then
     ditto "$FRAMEWORK_SOURCE" "$FRAMEWORK"
