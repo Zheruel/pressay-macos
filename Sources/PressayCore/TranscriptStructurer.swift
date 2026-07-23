@@ -210,9 +210,9 @@ public enum TranscriptStructurer {
     private static let listStarters = ["first", "firstly", "number one", "one,", "step one"]
     private static let listContinuers = [
         "second", "secondly", "third", "thirdly", "fourth", "fourthly", "fifth",
-        "next", "then", "finally", "lastly", "last", "number two", "number three",
-        "number four", "number five", "step two", "step three", "two,", "three,",
-        "four,", "five,",
+        "next", "then", "and then", "finally", "lastly", "last", "number two",
+        "number three", "number four", "number five", "step two", "step three",
+        "two,", "three,", "four,", "five,",
     ]
 
     private static func detectLists(in sentences: [String]) -> [Segment] {
