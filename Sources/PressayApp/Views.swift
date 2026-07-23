@@ -206,7 +206,9 @@ struct SettingsRootView: View {
         .padding(.top, 56)
         .frame(width: 206)
         .frame(maxHeight: .infinity)
-        .background(Color(nsColor: .underPageBackgroundColor))
+        // A whisper darker than the window background — enough to read as a
+        // rail, not enough to read as a different surface.
+        .background(Color.black.opacity(0.09))
         .ignoresSafeArea()
     }
 
@@ -481,7 +483,6 @@ private struct GeneralSettingsView: View {
             .padding(28)
             .padding(.top, 18)
         }
-        .background(.background)
         .onAppear {
             permissions.startMonitoring()
             settings.refreshLaunchAtLogin()
@@ -637,7 +638,6 @@ private struct DictionarySettingsView: View {
             .padding(28)
             .padding(.top, 18)
         }
-        .background(.background)
         .sheet(isPresented: $addingEntry) {
             AddDictionaryEntrySheet { preferred, aliases in
                 addEntry(preferred: preferred, aliases: aliases)
@@ -921,8 +921,8 @@ private struct HistoryView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
                 SettingsPageHeader(
                     title: "History",
                     subtitle: "Recent prompts stored only on this Mac"
@@ -933,6 +933,18 @@ private struct HistoryView: View {
             }
             Text("Text expires after 30 days, audio after 7 days.")
                 .font(.caption).foregroundStyle(.secondary)
+
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search prompts", text: $searchText)
+                    .textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(.quinary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.top, 8)
+
             List(filteredRecords) { record in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.referenceText).lineLimit(3)
@@ -958,10 +970,12 @@ private struct HistoryView: View {
                         .pointerStyle(.link)
                 }
             }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
         }
+        .frame(maxWidth: 760)
         .padding(28)
         .padding(.top, 18)
-        .searchable(text: $searchText, prompt: "Search prompts")
         .confirmationDialog("Delete all local history and audio?", isPresented: $showingDeleteAll) {
             Button("Delete all", role: .destructive) { try? history.deleteAll() }
                 .pointerStyle(.link)
