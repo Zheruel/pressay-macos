@@ -153,6 +153,19 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         case .whisperTurboGGML, .voxtralMini: true
         }
     }
+
+    /// Whether `text` is an instruct-tuned model's refusal on unintelligible
+    /// audio (e.g. Voxtral's "I'm sorry, I didn't understand.") rather than a
+    /// transcript. Only engines that actually emit these are checked, and only
+    /// when the whole output is short and self-contained, so a longer real
+    /// dictation that merely *starts* with an apology is left untouched.
+    public func isTranscriptionRefusal(_ text: String) -> Bool {
+        guard self == .voxtralMini, text.count <= 64 else { return false }
+        let lower = text.lowercased()
+        return lower.hasPrefix("i'm sorry, i didn't understand")
+            || lower.hasPrefix("i'm sorry, i couldn't understand")
+            || lower.hasPrefix("sorry, i didn't understand")
+    }
 }
 
 /// Language configuration for Whisper decoding. `auto` lets the model detect

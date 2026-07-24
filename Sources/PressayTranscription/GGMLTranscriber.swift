@@ -124,23 +124,13 @@ public actor GGMLTranscriber: SpeechTranscriber {
         // LLM-style engines (Voxtral) occasionally answer near-silent/unclear
         // audio with an assistant refusal instead of a transcript. Treat that
         // as nothing dictated rather than inserting the boilerplate.
-        guard !text.isEmpty, !Self.isAssistantBoilerplate(text) else {
+        guard !text.isEmpty, !asrModel.isTranscriptionRefusal(text) else {
             throw PressayError.emptyTranscript
         }
         return ASRTranscript(
             text: text,
             processingTime: started.duration(to: .now).seconds
         )
-    }
-
-    /// Known assistant-refusal phrasings an instruct-tuned audio model can emit
-    /// on unintelligible input. Matched case-insensitively against the whole
-    /// (short) transcript so real dictation containing these words is untouched.
-    private static func isAssistantBoilerplate(_ text: String) -> Bool {
-        let lower = text.lowercased()
-        return lower.hasPrefix("i'm sorry, i didn't understand")
-            || lower.hasPrefix("i'm sorry, i couldn't understand")
-            || lower.hasPrefix("sorry, i didn't understand")
     }
 }
 
