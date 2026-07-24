@@ -80,6 +80,8 @@ struct Bench {
         switch command {
         case "asr":
             try await runASR(entries: entries(), options: options, outDir: outDir)
+        case "asr-tune":
+            try await runAsrTune(entries: entries(), options: options, outDir: outDir)
         case "structure":
             try await runStructure(entries: entries(), options: options, outDir: outDir)
         case "overhead":
@@ -149,10 +151,11 @@ struct Bench {
         let maxClips = Int(options["max-clips"] ?? "0") ?? 0
         let language = options["language"] ?? "en"
         let ids = (options["ids"] ?? "").split(separator: ",").map(String.init)
-        // --engine whisperTurboGGML (default) | parakeetV3
+        // --engine whisperTurboGGML (default) | voxtralMini
         let engineName = options["engine"] ?? ASRModel.whisperTurboGGML.rawValue
         guard let engine = ASRModel(rawValue: engineName) else {
-            throw BenchError.usage("unknown --engine \(engineName); use whisperTurboGGML or parakeetV3")
+            let valid = ASRModel.allCases.map(\.rawValue).joined(separator: ", ")
+            throw BenchError.usage("unknown --engine \(engineName); use one of: \(valid)")
         }
         let clips = selectClips(entries, minDuration: minDuration, maxClips: maxClips)
             .filter { clip in ids.isEmpty || ids.contains(where: { clip.id.hasPrefix($0) }) }

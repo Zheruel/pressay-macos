@@ -11,6 +11,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     @Published private(set) var modelStatus = "Not loaded"
     @Published private(set) var modelReady = false
     @Published private(set) var modelPreparing = false
+    /// Fractional progress (0…1) while the selected model downloads, or `nil`
+    /// when idle or the size is unknown. Drives the Settings/onboarding bar.
+    @Published private(set) var modelDownloadProgress: Double?
     @Published private(set) var lastError: String?
 
     let settings = AppSettings()
@@ -172,15 +175,23 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 self.modelStatus = status
             }
         }
+        await preparing.setProgressHandler { [weak self] progress in
+            Task { @MainActor in
+                guard let self, generation == self.prepareGeneration else { return }
+                self.modelDownloadProgress = progress
+            }
+        }
         do {
             try await preparing.prepare()
             guard generation == prepareGeneration else { return }
             modelReady = true
             modelStatus = "\(name) ready · local"
+            modelDownloadProgress = nil
             logger.info("Local transcription model is ready")
         } catch {
             guard generation == prepareGeneration else { return }
             modelStatus = "Model unavailable"
+            modelDownloadProgress = nil
             lastError = error.localizedDescription
             logger.error("Model preparation failed: \(error.localizedDescription, privacy: .public)")
         }

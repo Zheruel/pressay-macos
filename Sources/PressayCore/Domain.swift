@@ -114,23 +114,24 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     /// Whisper Large V3 Turbo on the transcribe.cpp ggml/Metal engine —
     /// corpus-validated best transcript quality. The default.
     case whisperTurboGGML = "whisperTurboGGML"
-    /// Parakeet TDT 0.6b v3 — ~5× faster again and stronger on long
-    /// dictations, but unreliable on clips under ~3 seconds.
-    case parakeetV3 = "parakeetV3"
+    /// Voxtral Mini 3B (Q4_K_M) — LLM-style multilingual audio model. Stronger
+    /// on long dictations (punctuation, capitalization, completeness) at the
+    /// cost of a larger download and more memory than Whisper.
+    case voxtralMini = "voxtralMini"
 
     public var id: String { rawValue }
 
     public var displayName: String {
         switch self {
         case .whisperTurboGGML: "Whisper V3 Turbo"
-        case .parakeetV3: "Parakeet v3 (fastest)"
+        case .voxtralMini: "Voxtral Mini 3B"
         }
     }
 
     public var caption: String {
         switch self {
         case .whisperTurboGGML: "Best quality · recommended"
-        case .parakeetV3: "Near-instant; best for longer dictations, weaker under ~3s clips"
+        case .voxtralMini: "Best on long dictations · ~3 GB download · ~5 GB memory"
         }
     }
 
@@ -140,14 +141,31 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         case .whisperTurboGGML:
             (URL(string: "https://huggingface.co/handy-computer/whisper-large-v3-turbo-gguf/resolve/main/whisper-large-v3-turbo-Q8_0.gguf")!,
              "whisper-large-v3-turbo-Q8_0.gguf")
-        case .parakeetV3:
-            (URL(string: "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-F16.gguf")!,
-             "parakeet-tdt-0.6b-v3-F16.gguf")
+        case .voxtralMini:
+            (URL(string: "https://huggingface.co/handy-computer/Voxtral-Mini-3B-2507-GGUF/resolve/main/Voxtral-Mini-3B-2507-Q4_K_M.gguf")!,
+             "Voxtral-Mini-3B-2507-Q4_K_M.gguf")
         }
     }
 
     /// Whether the engine honors a forced decoding language hint.
-    public var supportsLanguageHint: Bool { self != .parakeetV3 }
+    public var supportsLanguageHint: Bool {
+        switch self {
+        case .whisperTurboGGML, .voxtralMini: true
+        }
+    }
+
+    /// Whether `text` is an instruct-tuned model's refusal on unintelligible
+    /// audio (e.g. Voxtral's "I'm sorry, I didn't understand.") rather than a
+    /// transcript. Only engines that actually emit these are checked, and only
+    /// when the whole output is short and self-contained, so a longer real
+    /// dictation that merely *starts* with an apology is left untouched.
+    public func isTranscriptionRefusal(_ text: String) -> Bool {
+        guard self == .voxtralMini, text.count <= 64 else { return false }
+        let lower = text.lowercased()
+        return lower.hasPrefix("i'm sorry, i didn't understand")
+            || lower.hasPrefix("i'm sorry, i couldn't understand")
+            || lower.hasPrefix("sorry, i didn't understand")
+    }
 }
 
 /// Language configuration for Whisper decoding. `auto` lets the model detect

@@ -2,6 +2,21 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-07-24
+
+### Added
+
+- Voxtral Mini 3B as an optional transcription model, selectable in Settings. It is an LLM-style multilingual audio model that is stronger than Whisper on long dictations — noticeably better punctuation, capitalization, and completeness, and it never collapses long passages into an unpunctuated block the way Whisper occasionally does. It downloads on demand (~3 GB) and uses more memory (~5 GB) than Whisper, so Whisper V3 Turbo remains the default; long-form users can opt in. Chosen over Voxtral Small (too large) and cloud APIs (would leave the device) after a corpus evaluation.
+- A download progress bar for models in Settings and onboarding, so the larger Voxtral download shows live percentage instead of an indeterminate spinner. Only the currently selected model is held in memory; switching models frees the previous one.
+
+### Changed
+
+- Voxtral runs with automatic language detection (the app default), which — for an instruct-tuned audio model — is safer than forcing a language: near-silent clips now produce nothing instead of a fabricated sentence. Assistant-style refusals ("I'm sorry, I didn't understand") on unintelligible short audio are treated as empty and never inserted.
+
+### Removed
+
+- Parakeet TDT 0.6B v3 as a selectable model. Despite being the fastest engine, its transcript quality (disfluencies, occasional inserted phrases) was not comparable to Whisper on the development corpus. Anyone who had it selected falls back to Whisper V3 Turbo automatically.
+
 ## [1.2.0] - 2026-07-23
 
 ### Added
@@ -63,5 +78,7 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 - Replaced the previous WhisperKit transcription path with the faster GGUF runtime.
 - Removed automatic on-device LLM rewriting from standard dictation after protected-token testing found meaning-changing edits.
 
+[1.3.0]: https://github.com/Zheruel/pressay-macos/releases/tag/v1.3.0
+[1.2.0]: https://github.com/Zheruel/pressay-macos/releases/tag/v1.2.0
 [1.0.0]: https://github.com/Zheruel/pressay-macos/releases/tag/v1.0.0
 [1.1.0]: https://github.com/Zheruel/pressay-macos/commit/caba3a9

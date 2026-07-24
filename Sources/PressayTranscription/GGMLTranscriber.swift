@@ -11,6 +11,7 @@ public actor GGMLTranscriber: SpeechTranscriber {
     private var session: Session?
     private var preparation: Task<Void, Error>?
     private var statusHandler: (@Sendable (String) -> Void)?
+    private var progressHandler: (@Sendable (Double?) -> Void)?
 
     public init(model: ASRModel, language: String = "en") {
         self.asrModel = model
@@ -25,6 +26,10 @@ public actor GGMLTranscriber: SpeechTranscriber {
 
     public func setStatusHandler(_ handler: @escaping @Sendable (String) -> Void) {
         statusHandler = handler
+    }
+
+    public func setProgressHandler(_ handler: @escaping @Sendable (Double?) -> Void) {
+        progressHandler = handler
     }
 
     public func prepare() async throws {
@@ -52,13 +57,9 @@ public actor GGMLTranscriber: SpeechTranscriber {
 
         if !FileManager.default.fileExists(atPath: destination.path) {
             statusHandler?("Downloading \(asrModel.displayName)…")
-            let (temporary, response) = try await URLSession.shared.download(from: download.url)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-                try? FileManager.default.removeItem(at: temporary)
-                throw PressayError.modelUnavailable("Model download failed for \(asrModel.displayName)")
-            }
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: temporary, to: destination)
+            progressHandler?(nil)
+            try await downloadModel(from: download.url, to: destination)
+            progressHandler?(nil)
         }
 
         statusHandler?("Loading \(asrModel.displayName)…")
@@ -82,6 +83,24 @@ public actor GGMLTranscriber: SpeechTranscriber {
         session = fresh
     }
 
+    /// Streams the GGUF to `destination`, reporting fractional progress through
+    /// `progressHandler`. Uses a download delegate (rather than the plain
+    /// `URLSession.download`) so the large Voxtral artifact shows a live bar.
+    private func downloadModel(from url: URL, to destination: URL) async throws {
+        // `progressHandler` is @Sendable, so the delegate (which fires on the
+        // URLSession queue) can call it directly without hopping to the actor.
+        let onProgress = progressHandler
+        let name = asrModel.displayName
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let delegate = ModelDownloadDelegate(
+                destination: destination, modelName: name,
+                onProgress: onProgress, continuation: continuation)
+            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            delegate.session = session
+            session.downloadTask(with: url).resume()
+        }
+    }
+
     public func transcribe(_ clip: AudioClip) async throws -> ASRTranscript {
         try await prepare()
         guard let session else {
@@ -102,10 +121,90 @@ public actor GGMLTranscriber: SpeechTranscriber {
         // (our Timeout wrapper) bridges to the native abort.
         let transcript = try await activeSession.run(clip.samples, options: options)
         let text = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { throw PressayError.emptyTranscript }
+        // LLM-style engines (Voxtral) occasionally answer near-silent/unclear
+        // audio with an assistant refusal instead of a transcript. Treat that
+        // as nothing dictated rather than inserting the boilerplate.
+        guard !text.isEmpty, !asrModel.isTranscriptionRefusal(text) else {
+            throw PressayError.emptyTranscript
+        }
         return ASRTranscript(
             text: text,
             processingTime: started.duration(to: .now).seconds
         )
+    }
+}
+
+/// Reports fractional download progress for a single model artifact and moves
+/// the finished file into place. `@unchecked Sendable`: its mutable state is
+/// only touched on the URLSession delegate queue (serial) plus a one-shot
+/// `resumed` guard.
+private final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let destination: URL
+    private let modelName: String
+    private let onProgress: (@Sendable (Double?) -> Void)?
+    private let continuation: CheckedContinuation<Void, Error>
+    var session: URLSession?
+    private var resumed = false
+
+    init(
+        destination: URL, modelName: String,
+        onProgress: (@Sendable (Double?) -> Void)?,
+        continuation: CheckedContinuation<Void, Error>
+    ) {
+        self.destination = destination
+        self.modelName = modelName
+        self.onProgress = onProgress
+        self.continuation = continuation
+    }
+
+    func urlSession(
+        _ session: URLSession, downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        if totalBytesExpectedToWrite > 0 {
+            onProgress?(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        } else {
+            onProgress?(nil)
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession, downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        // A non-200 (e.g. 404) still "finishes" with an error body — do not keep it.
+        if let http = downloadTask.response as? HTTPURLResponse, http.statusCode != 200 {
+            finish(.failure(PressayError.modelUnavailable("Model download failed for \(modelName)")))
+            return
+        }
+        // `location` is deleted as soon as this method returns, so move it now.
+        do {
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.moveItem(at: location, to: destination)
+            finish(.success(()))
+        } catch {
+            finish(.failure(error))
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            finish(.failure(error))
+        } else {
+            // Success is normally settled in didFinishDownloadingTo; this is a
+            // no-op guard for the already-resumed case.
+            finish(.success(()))
+        }
+    }
+
+    private func finish(_ result: Result<Void, Error>) {
+        guard !resumed else { return }
+        resumed = true
+        session?.finishTasksAndInvalidate()
+        switch result {
+        case .success: continuation.resume()
+        case .failure(let error): continuation.resume(throwing: error)
+        }
     }
 }

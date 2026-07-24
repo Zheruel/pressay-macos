@@ -1,4 +1,4 @@
-# Pressay 1.0 benchmark notes
+# Pressay benchmark notes
 
 Pressay's defaults came from replaying real voice prompts, not from synthetic one-line demos. This page records the evidence that can be published without exposing anyone's voice or prompt history.
 
@@ -16,6 +16,36 @@ The sanitized aggregate data behind the charts lives in [`docs/benchmarks/result
 | Timing | Warm model; wall-clock inference time; one engine at a time |
 
 The corpus is representative of the app's intended use, but it is not a standardized public benchmark. Results should be treated as product calibration on one machine, not universal model rankings.
+
+## Pressay 1.3 — Voxtral evaluation
+
+For 1.3 we evaluated **Voxtral Mini 3B (Q4_K_M)** — an LLM-style multilingual audio model — against the shipping Whisper V3 Turbo, replaying the same 184-clip corpus through the `transcribe.cpp` engine. Parakeet was dropped in this release (quality not comparable to Whisper), so the shipped choice is Whisper (default) with Voxtral as an opt-in.
+
+### Latency and memory
+
+| Engine | 6.09 s clip | 35.89 s clip | Corpus median | Peak RAM |
+| --- | ---: | ---: | ---: | ---: |
+| Whisper V3 Turbo Q8 | 0.41 s | 0.90 s | 0.42 s | ~1.15 GB |
+| Voxtral Mini 3B Q4_K_M | 0.75 s | 2.41 s | 0.75 s | ~4.8 GB |
+
+Voxtral is roughly 2× slower and needs about 4× the memory (and a ~3 GB download vs ~0.9 GB). Both stay well under a second on typical clips. Higher-precision Voxtral quants (Q8 ≈ 7 GB RAM, BF16 ≈ 10 GB) were not pursued: the extra memory is unreasonable for a background dictation utility, and the failure modes below are behavioral, not precision-related.
+
+### Quality
+
+The corpus splits cleanly by clip length. Short clips (≤ 15 s) are **44% of clips but only ~34% of dictated words**; long clips (> 15 s) are 26% of clips but **~66% of dictated words**.
+
+- **Short clips (≤ 15 s): effectively tied.** Both engines produce good output. Voxtral is slightly *worse* on the very shortest (≤ 2 s): 7 clips returned empty and 1 emitted an assistant-style refusal. Whisper handled those.
+- **Long clips (> 15 s): Voxtral clearly better.** It keeps punctuation, capitalization, and completeness where Whisper intermittently collapses into an unpunctuated lowercase block — Whisper fully collapsed on **7 of 47** clips over 15 s (near-zero capitals and punctuation); Voxtral collapsed on **0**. Voxtral also handled proper nouns better (e.g. "Kimi" vs "Kimmy").
+
+Raw word-for-word accuracy is close on both; the difference is formatting, completeness, and worst-case robustness on long-form dictation.
+
+### Tuning
+
+Voxtral runs greedy decoding and exposes only a `language` lever through the engine (its `pnc`/`itn` toggles are not controllable, and it has no initial-prompt path here). **Automatic language detection is safer than forcing English**: a near-silent clip that fabricated a full sentence under forced-English produced nothing under autodetect, and the 7 short-clip hard-errors became clean empties. Automatic is the app default. Whisper's own knobs were also swept (condition-on-previous-tokens, no-speech threshold, and a vocabulary initial-prompt) — none improved its long-clip collapse, and the prompt was a net negative — so Whisper ships at its defaults.
+
+### Decision
+
+Whisper V3 Turbo remains the default (light, safe on short clips, works on 8 GB Macs). Voxtral Mini is an opt-in for long-form dictation, downloaded on demand with a progress bar; only the selected model is held in memory. The rare Voxtral assistant-refusal on unintelligible short audio is filtered to insert nothing.
 
 ## ASR selection
 
