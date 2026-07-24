@@ -21,11 +21,11 @@ Pressay is a native, hold-to-talk dictation app built for people who communicate
 It is deliberately not an always-listening assistant. There is no account, telemetry, subscription, or cloud transcription.
 
 > [!IMPORTANT]
-> Pressay 1.2 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
+> Pressay 1.3 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
 
 ## Why Pressay
 
-- **Quality first.** Whisper Large V3 Turbo is the calibrated default; language can be fixed for more reliable short clips.
+- **Quality first.** Whisper Large V3 Turbo is the calibrated default; Voxtral Mini 3B is an optional model that is stronger on long dictations. Language auto-detects by default, or can be fixed for more reliable short clips.
 - **Fast local inference.** `transcribe.cpp` runs GGUF models through ggml and Metal, with the model and Metal pipeline warmed before the first dictation.
 - **Optional structure.** A Structured Dictation toggle adds punctuation, paragraphs, and bullet lists to longer dictations — deterministically, on-device.
 - **Cursor-first UX.** A clipboard-preserving synthetic paste handles native, web, and Electron editors; direct Accessibility replacement is the fallback.
@@ -71,17 +71,17 @@ Pressay has one quality-first default instead of exposing a wall of decoder knob
 | Language | Automatic by default; fixed language available | Automatic is flexible; fixing a language skips detection and helps short clips |
 | Cleanup | Deterministic text and vocabulary pipeline | Predictable, quick, and preserves protected tokens |
 | Structure | Optional deterministic structuring pass | Readability without an LLM rewriting what was said |
-| Fast alternative | Parakeet TDT 0.6B v3 F16 | Near-instant on long clips; weaker on very short fragments in our testing |
+| Long-form option | Voxtral Mini 3B Q4 GGUF via `transcribe.cpp` | Stronger punctuation, capitalization, and completeness on long dictations; ~3 GB download and ~5 GB memory, so Whisper stays the default |
 
 ### ASR latency
 
-The chart below replays the same two real recordings through every engine shown. Lower is better.
+The chart below replays the same two real recordings through both shipping engines. Lower is better.
 
 <p align="center">
   <img src="docs/assets/asr-latency.svg" width="100%" alt="ASR latency comparison on shared 6.09 and 35.89 second recordings">
 </p>
 
-On the 35.89-second shared clip, Whisper V3 Turbo through `transcribe.cpp` finished in **0.765 s**, versus **1.569 s** for the previous WhisperKit path. Parakeet v3 finished in **0.215 s**, but speed alone does not make it the default.
+On the 35.89-second shared clip, Whisper V3 Turbo through `transcribe.cpp` finished in **0.90 s**; Voxtral Mini took **2.41 s**. Voxtral is roughly 2× slower — still well under a second on typical clips — and is chosen for transcript quality on long dictations, not speed. Whisper therefore remains the default, and Voxtral is an opt-in for long-form work. See the [benchmark notes](docs/benchmarks.md) for the full comparison.
 
 ### Why normal dictation does not use an LLM
 
@@ -114,7 +114,7 @@ Pinned or corrected history records are retained until you delete them. Delete h
 - Apple Silicon Mac
 - macOS 26+
 - Xcode 26+ with the macOS 26 SDK
-- Around 2 GB of free space for the default model and build artifacts
+- Around 2 GB of free space for the default Whisper model and build artifacts (Voxtral Mini, if selected, needs ~3 GB more and about 5 GB of memory to run)
 
 ```bash
 git clone https://github.com/Zheruel/pressay-macos.git
@@ -221,7 +221,7 @@ Keep benchmark audio, transcripts, API keys, and generated results outside the r
 ## Acknowledgements
 
 - [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) for a unified ggml/Metal speech runtime.
-- [OpenAI Whisper Large V3 Turbo](https://huggingface.co/openai/whisper-large-v3-turbo) and [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) for the speech models.
+- [OpenAI Whisper Large V3 Turbo](https://huggingface.co/openai/whisper-large-v3-turbo) and [Mistral Voxtral Mini 3B](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507) for the speech models.
 - [Freesound](https://freesound.org/) contributor AbdrTar for the CC0 recording cues from which Pressay's earcons are derived.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licensing details.

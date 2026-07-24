@@ -192,7 +192,16 @@ struct OnboardingView: View {
                     detail: coordinator.modelStatus
                 ) {
                     if coordinator.modelPreparing {
-                        ProgressView().controlSize(.small)
+                        if let progress = coordinator.modelDownloadProgress {
+                            HStack(spacing: 8) {
+                                ProgressView(value: progress).frame(width: 90)
+                                Text("\(Int((progress * 100).rounded()))%")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else {
+                            ProgressView().controlSize(.small)
+                        }
                     } else if coordinator.modelReady {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)

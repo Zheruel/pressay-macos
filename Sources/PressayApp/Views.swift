@@ -348,6 +348,23 @@ private struct GeneralSettingsView: View {
                         .onChange(of: settings.asrModel) { _, _ in coordinator.applyASRModel() }
                     }
 
+                    if coordinator.modelPreparing {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if let progress = coordinator.modelDownloadProgress {
+                                HStack(spacing: 10) {
+                                    ProgressView(value: progress)
+                                    Text("\(Int((progress * 100).rounded()))%")
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else {
+                                ProgressView().controlSize(.small)
+                            }
+                            Text(coordinator.modelStatus)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+
                     Divider()
 
                     HStack(spacing: 14) {

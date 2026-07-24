@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc">
   <title id="title">ASR latency on two shared recordings</title>
-  <desc id="desc">Parakeet v3, Whisper V3 Turbo through transcribe.cpp, and the previous WhisperKit path are compared on 6.09 and 35.89 second recordings. Lower is better.</desc>
+  <desc id="desc">Whisper V3 Turbo and Voxtral Mini 3B through transcribe.cpp are compared on 6.09 and 35.89 second recordings. Lower is better; Whisper is faster, Voxtral trades speed for long-form quality.</desc>
   <defs>
     <style>
       .h{font:600 27px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1c1c1a}
@@ -12,41 +12,35 @@
       .group{font:650 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:1.5px;fill:#77736a}
     </style>
   </defs>
-  <rect width="1200" height="620" rx="26" fill="#f6f3ec"/>
+  <rect width="1200" height="500" rx="26" fill="#f6f3ec"/>
   <text x="52" y="61" class="h">Release-to-transcript engine time</text>
   <text x="52" y="89" class="sub">Same recordings · warm models · M5 Pro · lower is better</text>
 
-  <line x1="352" y1="126" x2="352" y2="548" class="grid"/>
-  <line x1="548" y1="126" x2="548" y2="548" class="grid"/>
-  <line x1="744" y1="126" x2="744" y2="548" class="grid"/>
-  <line x1="940" y1="126" x2="940" y2="548" class="grid"/>
-  <line x1="1136" y1="126" x2="1136" y2="548" class="grid"/>
-  <text x="352" y="579" text-anchor="middle" class="tick">0.0 s</text>
-  <text x="548" y="579" text-anchor="middle" class="tick">0.4 s</text>
-  <text x="744" y="579" text-anchor="middle" class="tick">0.8 s</text>
-  <text x="940" y="579" text-anchor="middle" class="tick">1.2 s</text>
-  <text x="1136" y="579" text-anchor="middle" class="tick">1.6 s</text>
+  <line x1="352" y1="112" x2="352" y2="410" class="grid"/>
+  <line x1="548" y1="112" x2="548" y2="410" class="grid"/>
+  <line x1="744" y1="112" x2="744" y2="410" class="grid"/>
+  <line x1="940" y1="112" x2="940" y2="410" class="grid"/>
+  <line x1="1136" y1="112" x2="1136" y2="410" class="grid"/>
+  <text x="352" y="437" text-anchor="middle" class="tick">0.0 s</text>
+  <text x="548" y="437" text-anchor="middle" class="tick">0.6 s</text>
+  <text x="744" y="437" text-anchor="middle" class="tick">1.2 s</text>
+  <text x="940" y="437" text-anchor="middle" class="tick">1.8 s</text>
+  <text x="1136" y="437" text-anchor="middle" class="tick">2.4 s</text>
 
-  <text x="52" y="150" class="group">6.09-SECOND RECORDING</text>
-  <text x="330" y="194" text-anchor="end" class="label">Parakeet v3</text>
-  <rect x="352" y="174" width="28" height="28" rx="6" fill="#3f9f8f"/>
-  <text x="392" y="193" class="value">0.057 s</text>
-  <text x="330" y="244" text-anchor="end" class="label">Whisper · transcribe.cpp</text>
-  <rect x="352" y="224" width="160" height="28" rx="6" fill="#6d5ce7"/>
-  <text x="524" y="243" class="value">0.327 s</text>
-  <text x="330" y="294" text-anchor="end" class="label">Whisper · WhisperKit</text>
-  <rect x="352" y="274" width="277" height="28" rx="6" fill="#aaa69d"/>
-  <text x="641" y="293" class="value">0.566 s</text>
+  <text x="52" y="140" class="group">6.09-SECOND RECORDING</text>
+  <text x="330" y="182" text-anchor="end" class="label">Whisper · transcribe.cpp</text>
+  <rect x="352" y="162" width="135" height="28" rx="6" fill="#6d5ce7"/>
+  <text x="499" y="181" class="value">0.41 s</text>
+  <text x="330" y="228" text-anchor="end" class="label">Voxtral Mini 3B</text>
+  <rect x="352" y="208" width="246" height="28" rx="6" fill="#c9772f"/>
+  <text x="610" y="227" class="value">0.75 s</text>
 
-  <line x1="52" y1="333" x2="1148" y2="333" class="grid"/>
-  <text x="52" y="371" class="group">35.89-SECOND RECORDING</text>
-  <text x="330" y="415" text-anchor="end" class="label">Parakeet v3</text>
-  <rect x="352" y="395" width="105" height="28" rx="6" fill="#3f9f8f"/>
-  <text x="469" y="414" class="value">0.215 s</text>
-  <text x="330" y="465" text-anchor="end" class="label">Whisper · transcribe.cpp</text>
-  <rect x="352" y="445" width="375" height="28" rx="6" fill="#6d5ce7"/>
-  <text x="739" y="464" class="value">0.765 s</text>
-  <text x="330" y="515" text-anchor="end" class="label">Whisper · WhisperKit</text>
-  <rect x="352" y="495" width="769" height="28" rx="6" fill="#aaa69d"/>
-  <text x="1109" y="514" text-anchor="end" class="value" fill="#fffefa">1.569 s</text>
+  <line x1="52" y1="262" x2="1148" y2="262" class="grid"/>
+  <text x="52" y="298" class="group">35.89-SECOND RECORDING</text>
+  <text x="330" y="340" text-anchor="end" class="label">Whisper · transcribe.cpp</text>
+  <rect x="352" y="320" width="295" height="28" rx="6" fill="#6d5ce7"/>
+  <text x="659" y="339" class="value">0.90 s</text>
+  <text x="330" y="386" text-anchor="end" class="label">Voxtral Mini 3B</text>
+  <rect x="352" y="366" width="787" height="28" rx="6" fill="#c9772f"/>
+  <text x="1131" y="385" text-anchor="end" class="value" fill="#fffefa">2.41 s</text>
 </svg>
