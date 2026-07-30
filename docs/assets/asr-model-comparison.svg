@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
   <title id="title">What decided the Pressay 1.4 default</title>
-  <desc id="desc">The three shipping engines replayed through the same 184-clip corpus. Fun-ASR MLT Nano and Voxtral Mini 3B never collapsed a long dictation; Whisper V3 Turbo collapsed 3 of 47. Fun-ASR is also the fastest at a 0.14 second median against Whisper's 0.39 and Voxtral's 1.28.</desc>
+  <desc id="desc">The three shipping engines replayed through the same 184-clip corpus. Fun-ASR MLT Nano and Voxtral Mini 3B never collapsed a long dictation; Whisper V3 Turbo collapsed 3 of 47. Fun-ASR is also the fastest at a 0.14 second median against Whisper's 0.39 and Voxtral's 1.1.</desc>
   <defs>
     <style>
       .h{font:600 27px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#1c1c1a}
@@ -69,6 +69,6 @@
   <text x="582" y="465" class="value">0.39 s</text>
 
   <text x="330" y="509" text-anchor="end" class="label">Voxtral Mini 3B</text>
-  <rect x="352" y="490" width="717" height="28" rx="6" fill="#5949c7"/>
-  <text x="1081" y="509" class="value">1.28 s</text>
+  <rect x="352" y="490" width="616" height="28" rx="6" fill="#5949c7"/>
+  <text x="980" y="509" class="value">1.1 s</text>
 </svg>

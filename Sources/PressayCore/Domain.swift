@@ -125,8 +125,8 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     /// Voxtral Mini 3B (Q4_K_M) — the quality-first option. It matches the
     /// default on technical vocabulary (81% against 86% is two term
     /// occurrences) and punctuates more densely than anything else that is
-    /// also accurate, at 9x the latency and 4x the size. Kept for people who
-    /// would rather wait a second than re-type a product name.
+    /// also accurate, at roughly 8x the latency and 4x the size. Kept for
+    /// people who would rather wait a second than re-type a product name.
     case voxtralMini = "voxtralMini"
 
     public var id: String { rawValue }

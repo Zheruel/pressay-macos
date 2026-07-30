@@ -38,7 +38,7 @@ Final numbers, best configuration per engine, sorted by the metric that decided 
 | Engine | Size | Terms | Collapse | Complete | Lost | punct/caps | Median |
 | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |
 | **Fun-ASR MLT Nano** *(ships, default)* | 691 MB | **86%** | **0/47** | 97.6% | 0 | .049/.090 | **0.14 s** |
-| **Voxtral Mini 3B** *(ships)* | 2.98 GB | 81% | **0/47** | 97.5% | 0 | **.069/.099** | 1.28 s |
+| **Voxtral Mini 3B** *(ships)* | 2.98 GB | 81% | **0/47** | 97.5% | 0 | **.069/.099** | 1.1 s |
 | **Whisper V3 Turbo** *(ships)* | 886 MB | 75% | 3/47 | 96.1% | 0 | .056/.080 | 0.39 s |
 | Whisper Large V3 (full) | 1.67 GB | 73% | 3/47 | 96.1% | 0 | .055/.085 | 0.60 s |
 | Fun-ASR Nano | 850 MB | 60% | 1/47 | 96.9% | 0 | .049/.088 | 0.15 s |
@@ -110,7 +110,11 @@ correct behaviour; those rows are counted as empties, not failures.
 - The collapse definition is stricter than the 1.3 note's "7 of 47"; it reads Whisper Turbo at 3/47.
   The same detector is applied to every engine, so the comparison holds even though the absolute
   number differs from the earlier note.
-- One repetition, one machine, one speaker, English. Latency figures are wall-clock on a warm model.
+- One machine, one speaker, English. Latency is wall-clock on a warm model and drifts up to ~40%
+  across a long benching session as the Mac heats: Whisper's median was measured between 0.35 s and
+  0.55 s, Voxtral's between 0.99 s and 1.28 s. The *ratios* are stable across every run — Fun-ASR
+  came out ~3x faster than Whisper each time — so treat the ordering as the finding and the absolute
+  milliseconds as indicative.
 
 ### Chunking long dictations is a speed win, not just a safety net
 

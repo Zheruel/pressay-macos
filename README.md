@@ -72,7 +72,7 @@ Pressay has one quality-first default instead of exposing a wall of decoder knob
 | Cleanup | Deterministic text and vocabulary pipeline | Predictable, quick, and preserves protected tokens |
 | Structure | Optional deterministic structuring pass | Readability without an LLM rewriting what was said |
 | Multilingual option | Whisper Large V3 Turbo Q8 GGUF via `transcribe.cpp` | 100 languages, and the only engine that chunks long audio inside the runtime |
-| Quality option | Voxtral Mini 3B Q4 GGUF via `transcribe.cpp` | Matches the default on technical vocabulary and punctuates more densely, at 9x the latency and 4x the size; eight languages plus detection |
+| Quality option | Voxtral Mini 3B Q4 GGUF via `transcribe.cpp` | Matches the default on technical vocabulary and punctuates more densely, at about 8x the latency and 4x the size; eight languages plus detection |
 | Long dictations | Split at a silence boundary past 60 s | The context-bound engines cannot take a 100-second clip in one run, and decode token by token — so two short passes beat one long one. Halves the worst-case wait at identical quality, and keeps the chosen model rather than falling back to Whisper, which is the engine that collapses long clips |
 
 ### How the shipping models compare
@@ -90,7 +90,7 @@ The three that ship:
 | --- | ---: | ---: | ---: | ---: |
 | **Fun-ASR MLT Nano** (default) | 691 MB | **0/47** | **86%** | **0.14 s** |
 | Whisper V3 Turbo | 886 MB | 3/47 | 75% | 0.39 s |
-| Voxtral Mini 3B | 2.98 GB | **0/47** | 81% | 1.28 s |
+| Voxtral Mini 3B | 2.98 GB | **0/47** | 81% | 1.1 s |
 
 "Collapse" counts dictations over 15 seconds that came back with no capitals and no punctuation —
 the failure that motivated the 1.3 Voxtral option. Fun-ASR removes it outright while also being the
