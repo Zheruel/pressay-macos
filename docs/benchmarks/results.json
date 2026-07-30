@@ -1,65 +1,262 @@
 {
-  "schemaVersion": 1,
-  "generatedFor": "Pressay 1.0",
-  "measuredOn": "Apple Silicon M5 Pro development Mac",
-  "corpus": {
-    "private": true,
-    "clipCount": 184,
-    "minimumDurationSeconds": 0.54,
-    "maximumDurationSeconds": 103.59,
-    "totalDurationSeconds": 2179.99
+ "schemaVersion": 2,
+ "generatedFor": "Pressay 1.4",
+ "measuredOn": "Apple Silicon M5 Pro development Mac",
+ "corpus": {
+  "private": true,
+  "clipCount": 184,
+  "minimumDurationSeconds": 0.54,
+  "maximumDurationSeconds": 103.59,
+  "totalDurationSeconds": 2179.99
+ },
+ "asrSharedClips": [
+  {
+   "durationSeconds": 6.09,
+   "latencySeconds": {
+    "parakeetV3TranscribeCpp": 0.05741275,
+    "whisperV3TurboTranscribeCpp": 0.326568875,
+    "whisperV3TurboWhisperKit": 0.566128959
+   }
   },
-  "asrSharedClips": [
-    {
-      "durationSeconds": 6.09,
-      "latencySeconds": {
-        "parakeetV3TranscribeCpp": 0.05741275,
-        "whisperV3TurboTranscribeCpp": 0.326568875,
-        "whisperV3TurboWhisperKit": 0.566128959
-      }
-    },
-    {
-      "durationSeconds": 35.89,
-      "latencySeconds": {
-        "parakeetV3TranscribeCpp": 0.214995083,
-        "whisperV3TurboTranscribeCpp": 0.7648425,
-        "whisperV3TurboWhisperKit": 1.568509667
-      }
-    }
-  ],
-  "whisperKitWorkerSweepMedianSeconds": {
-    "1": 0.563784166,
-    "4": 0.560603708,
-    "16": 0.561321625
-  },
-  "whisperKitAutomaticLanguageMedianSeconds": 0.600233833,
-  "onDevicePolishValidator": {
-    "clipCount": 31,
-    "variants": [
-      {
-        "name": "light-fewshot",
-        "accepted": 29,
-        "passRatePercent": 93.5484,
-        "medianLatencySeconds": 0.811201709
-      },
-      {
-        "name": "light",
-        "accepted": 27,
-        "passRatePercent": 87.0968,
-        "medianLatencySeconds": 0.761679208
-      },
-      {
-        "name": "shipping-experiment",
-        "accepted": 21,
-        "passRatePercent": 67.7419,
-        "medianLatencySeconds": 0.812935167
-      },
-      {
-        "name": "light-plain",
-        "accepted": 8,
-        "passRatePercent": 25.8065,
-        "medianLatencySeconds": 0.823561667
-      }
-    ]
+  {
+   "durationSeconds": 35.89,
+   "latencySeconds": {
+    "parakeetV3TranscribeCpp": 0.214995083,
+    "whisperV3TurboTranscribeCpp": 0.7648425,
+    "whisperV3TurboWhisperKit": 1.568509667
+   }
   }
+ ],
+ "whisperKitWorkerSweepMedianSeconds": {
+  "1": 0.563784166,
+  "4": 0.560603708,
+  "16": 0.561321625
+ },
+ "whisperKitAutomaticLanguageMedianSeconds": 0.600233833,
+ "onDevicePolishValidator": {
+  "clipCount": 31,
+  "variants": [
+   {
+    "name": "light-fewshot",
+    "accepted": 29,
+    "passRatePercent": 93.5484,
+    "medianLatencySeconds": 0.811201709
+   },
+   {
+    "name": "light",
+    "accepted": 27,
+    "passRatePercent": 87.0968,
+    "medianLatencySeconds": 0.761679208
+   },
+   {
+    "name": "shipping-experiment",
+    "accepted": 21,
+    "passRatePercent": 67.7419,
+    "medianLatencySeconds": 0.812935167
+   },
+   {
+    "name": "light-plain",
+    "accepted": 8,
+    "passRatePercent": 25.8065,
+    "medianLatencySeconds": 0.823561667
+   }
+  ]
+ },
+ "asrSweep2026_07": {
+  "corpusClips": 184,
+  "longClips": 47,
+  "enginesEvaluated": 13,
+  "metricNotes": {
+   "terms": "canonical spellings as a share of all renderings for Kimi, Claude, Codex, Anthropic, RunPod, SonarCloud, macOS, GitHub",
+   "collapse": "clips over 15s with exactly zero terminal punctuation and zero capitals across 25+ words",
+   "complete": "words produced as a share of the best engine on the same clip; detects silent omission",
+   "lost": "real dictations over 2.7s dropped to an error",
+   "noTrueWER": "the manifest holds no hand-corrected reference, so no word error rate is reported"
+  },
+  "engines": [
+   {
+    "name": "Fun-ASR MLT Nano 2512 Q6_K",
+    "ships": true,
+    "default": true,
+    "sizeMB": 691,
+    "termsPercent": 86,
+    "collapse": 0,
+    "completePercent": 97.6,
+    "lost": 0,
+    "punctPerWord": 0.049,
+    "capsPerWord": 0.09,
+    "medianSeconds": 0.14
+   },
+   {
+    "name": "Voxtral Mini 3B Q4_K_M",
+    "ships": true,
+    "default": false,
+    "sizeMB": 2980,
+    "termsPercent": 81,
+    "collapse": 0,
+    "completePercent": 97.5,
+    "lost": 0,
+    "punctPerWord": 0.069,
+    "capsPerWord": 0.099,
+    "medianSeconds": 1.28
+   },
+   {
+    "name": "Whisper Large V3 Turbo Q8_0",
+    "ships": true,
+    "default": false,
+    "sizeMB": 886,
+    "termsPercent": 75,
+    "collapse": 3,
+    "completePercent": 96.1,
+    "lost": 0,
+    "punctPerWord": 0.056,
+    "capsPerWord": 0.08,
+    "medianSeconds": 0.39
+   },
+   {
+    "name": "Whisper Large V3 Q8_0",
+    "ships": false,
+    "sizeMB": 1670,
+    "termsPercent": 73,
+    "collapse": 3,
+    "completePercent": 96.1,
+    "lost": 0,
+    "punctPerWord": 0.055,
+    "capsPerWord": 0.085,
+    "medianSeconds": 0.6
+   },
+   {
+    "name": "Fun-ASR Nano 2512 Q8_0",
+    "ships": false,
+    "sizeMB": 850,
+    "termsPercent": 60,
+    "collapse": 1,
+    "completePercent": 96.9,
+    "lost": 0,
+    "punctPerWord": 0.049,
+    "capsPerWord": 0.088,
+    "medianSeconds": 0.15
+   },
+   {
+    "name": "Voxtral Mini 4B Realtime Q4_K_M",
+    "ships": false,
+    "sizeMB": 2830,
+    "termsPercent": 58,
+    "collapse": 0,
+    "completePercent": 96.1,
+    "lost": 0,
+    "punctPerWord": 0.073,
+    "capsPerWord": 0.104,
+    "medianSeconds": 1.57
+   },
+   {
+    "name": "Qwen3-ASR 1.7B Q8_0",
+    "ships": false,
+    "sizeMB": 2190,
+    "termsPercent": 57,
+    "collapse": 0,
+    "completePercent": 98.0,
+    "lost": 0,
+    "punctPerWord": 0.063,
+    "capsPerWord": 0.102,
+    "medianSeconds": 0.44
+   },
+   {
+    "name": "Granite Speech 4.1 2B Q8_0",
+    "ships": false,
+    "sizeMB": 2560,
+    "termsPercent": 57,
+    "collapse": 0,
+    "completePercent": 97.0,
+    "lost": 0,
+    "punctPerWord": 0.046,
+    "capsPerWord": 0.083,
+    "medianSeconds": 0.3
+   },
+   {
+    "name": "Parakeet TDT 0.6B v3 F16",
+    "ships": false,
+    "sizeMB": 1300,
+    "termsPercent": 56,
+    "collapse": 0,
+    "completePercent": 99.2,
+    "lost": 0,
+    "punctPerWord": 0.058,
+    "capsPerWord": 0.099,
+    "medianSeconds": 0.06
+   },
+   {
+    "name": "Canary 1B Flash Q8_0",
+    "ships": false,
+    "sizeMB": 1050,
+    "termsPercent": 54,
+    "collapse": 0,
+    "completePercent": 93.8,
+    "lost": 4,
+    "punctPerWord": 0.046,
+    "capsPerWord": 0.08,
+    "medianSeconds": 0.1
+   },
+   {
+    "name": "Canary Qwen 2.5B Q8_0",
+    "ships": false,
+    "sizeMB": 2800,
+    "termsPercent": 53,
+    "collapse": 0,
+    "completePercent": 97.1,
+    "lost": 0,
+    "punctPerWord": 0.037,
+    "capsPerWord": 0.082,
+    "medianSeconds": 0.3
+   },
+   {
+    "name": "Granite Speech 4.1 2B NAR Q8_0",
+    "ships": false,
+    "sizeMB": 2500,
+    "termsPercent": 38,
+    "collapse": 0,
+    "completePercent": 95.5,
+    "lost": 2,
+    "punctPerWord": 0.056,
+    "capsPerWord": 0.0,
+    "medianSeconds": 0.18
+   },
+   {
+    "name": "Parakeet Unified EN 0.6B Q8_0",
+    "ships": false,
+    "sizeMB": 731,
+    "termsPercent": 36,
+    "collapse": 0,
+    "completePercent": 98.0,
+    "lost": 0,
+    "punctPerWord": 0.037,
+    "capsPerWord": 0.085,
+    "medianSeconds": 0.06
+   }
+  ],
+  "quantLadder": [
+   {
+    "quant": "Q6_K",
+    "sizeMB": 691,
+    "termsPercent": 86,
+    "medianSeconds": 0.14,
+    "ships": true
+   },
+   {
+    "quant": "Q8_0",
+    "sizeMB": 891,
+    "termsPercent": 81,
+    "medianSeconds": 0.15,
+    "ships": false
+   },
+   {
+    "quant": "BF16",
+    "sizeMB": 1590,
+    "termsPercent": 81,
+    "medianSeconds": 0.19,
+    "ships": false
+   }
+  ],
+  "quantNote": "Q8_0 and BF16 are identical on 93% of clips and on every aggregate metric; against Q6_K they differ on ~3% of words with no systematic winner."
+ }
 }

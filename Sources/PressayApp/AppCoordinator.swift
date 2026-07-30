@@ -148,7 +148,14 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     /// Swap the local speech model. A dictation already in flight keeps the
     /// engine captured at its key press; new sessions use the new engine.
     func applyASRModel() {
-        transcriber = Self.makeTranscriber(for: settings.asrModel, language: settings.language)
+        // Snap the language to something this engine can actually decode
+        // before building it, so the new transcriber never starts on a hint
+        // the model will reject.
+        let model = settings.asrModel
+        if !model.supportedLanguages.contains(settings.language) {
+            settings.language = model.defaultLanguage
+        }
+        transcriber = Self.makeTranscriber(for: model, language: settings.language)
         modelReady = false
         // A prepare may still be running for the previous engine; bump the
         // generation so its completion cannot mark the new engine ready, and

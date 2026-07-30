@@ -58,8 +58,15 @@ final class AppSettings: ObservableObject {
         holdKey = Self.readHoldKey(
             defaults, codeKey: Key.holdKeyCode, legacyKey: Key.holdKey, fallback: .rightOption
         )
-        language = TranscriptionLanguage(rawValue: defaults.string(forKey: Key.language) ?? "") ?? .auto
-        asrModel = Self.readASRModel(defaults)
+        let model = Self.readASRModel(defaults)
+        asrModel = model
+        // A language stored against a previous model may not exist on this one
+        // (Fun-ASR runs English only; Voxtral covers eight languages).
+        let storedLanguage =
+            TranscriptionLanguage(rawValue: defaults.string(forKey: Key.language) ?? "") ?? .auto
+        language = model.supportedLanguages.contains(storedLanguage)
+            ? storedLanguage
+            : model.defaultLanguage
         // Default on: corpus-validated as word-preserving, and it only ever
         // activates on longer dictations (15+ words, never terminals).
         structuredDictation = defaults.object(forKey: Key.structuredDictation) as? Bool ?? true
@@ -135,10 +142,8 @@ final class AppSettings: ObservableObject {
         vocabularySource = CuratedVocabulary.source
     }
 
-    /// Any unknown stored value (including the retired "whisperKit" case)
-    /// falls back to the default engine.
     private static func readASRModel(_ defaults: UserDefaults) -> ASRModel {
-        ASRModel(rawValue: defaults.string(forKey: Key.asrModel) ?? "") ?? .whisperTurboGGML
+        .migrating(storedRawValue: defaults.string(forKey: Key.asrModel))
     }
 
     /// Reads a key-code-backed hold key, migrating the legacy enum raw-value

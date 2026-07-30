@@ -2,6 +2,25 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-07-30
+
+### Added
+
+- Fun-ASR MLT Nano 2512 (Q6_K) as the new default transcription model, replacing Whisper V3 Turbo in that role. Thirteen engines were replayed through the 184-clip corpus and it led on the measurement that matters most for dictating prompts — correctly transcribed technical terms (86%, against Whisper's 75%) — while also never collapsing a long dictation into an unpunctuated lowercase block (0 of 47, against Whisper's 3), running 2.5× faster, and shipping 195 MB smaller. It runs English-locked with inverse text normalization on; both settings are load-bearing, see below.
+- In-app splitting for long dictations, which is both a correctness fix and a speed one. The context-bound engines previously lost a 100-second dictation outright. Pressay now splits audio over 60 seconds at the quietest point and runs the same engine on each part. Because those engines decode token by token, one long pass costs more than two shorter ones: the worst-case wait fell from 4.71 s to 2.07 s on the default and from 13.27 s to 6.34 s on Voxtral, with transcripts 99.3% identical. 60 s is a measured optimum — below about 40 s the per-call overhead makes long dictations slower again. Falling back to Whisper was rejected deliberately: Whisper is the engine that collapses long clips, so it is the wrong repair for exactly this case.
+- Automatic removal of model files Pressay no longer ships, reclaiming the space used by retired engines on first launch.
+
+### Changed
+
+- The language picker now offers only the languages the selected model can actually decode, and explains why when there is no choice: Fun-ASR is English-only, Voxtral covers eight languages plus detection, Whisper keeps all 19. Switching to a model that cannot decode the current language moves the setting to that model's default rather than failing at dictation time.
+- Fun-ASR is asked for punctuation and inverse text normalization explicitly. It ships with those off and emits verbatim lowercase otherwise; turning ITN on is what took it from 8 collapsed long clips to none. Whisper and Voxtral expose no such toggle and are untouched, keeping the defaults their earlier calibration was measured against.
+- Voxtral Mini 3B is now positioned as the quality-first option rather than the long-form one, and defaults to automatic language detection. On the corpus it matches the new default on technical terms (81% against 86% — two term occurrences) and punctuates more densely than anything else that is also accurate. It costs roughly 8× the latency and 4× the size, which is the only reason it is not the default.
+- Short bursts of a non-Latin script are now discarded for engines that only ever run in English, covering the last case where Fun-ASR invented a foreign sentence for a near-silent clip. Engines that legitimately transcribe those scripts are unaffected.
+
+### Removed
+
+- Whisper V3 Turbo as the *default* (it remains selectable, and is still the only engine covering 100 languages). It has the only long-clip collapse left in the lineup, and it was also measured silently omitting content on 4 of 47 long clips — in one case rendering "That seems like a creative idea that nobody's done before" as "but it's done before".
+
 ## [1.3.0] - 2026-07-24
 
 ### Added
