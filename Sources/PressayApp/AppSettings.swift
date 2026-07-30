@@ -13,6 +13,8 @@ final class AppSettings: ObservableObject {
         static let vocabulary = "vocabulary"
         static let onboardingComplete = "onboardingComplete"
         static let hasUsedDictation = "hasUsedDictation"
+        static let keepMicWarm = "keepMicWarm"
+        static let inputDevice = "inputDeviceUID"
         /// Vibe Mode (removed) persisted these; cleared once at init.
         static let retired = ["polishHoldKeyCode", "polishModel"]
     }
@@ -27,6 +29,9 @@ final class AppSettings: ObservableObject {
     @Published var vocabularySource: String { didSet { defaults.set(vocabularySource, forKey: Key.vocabulary) } }
     @Published var onboardingComplete: Bool { didSet { defaults.set(onboardingComplete, forKey: Key.onboardingComplete) } }
     @Published var hasUsedDictation: Bool { didSet { defaults.set(hasUsedDictation, forKey: Key.hasUsedDictation) } }
+    @Published var keepMicWarm: Bool { didSet { defaults.set(keepMicWarm, forKey: Key.keepMicWarm) } }
+    /// CoreAudio UID of the dictation input, or nil to follow the system default.
+    @Published var inputDeviceUID: String? { didSet { defaults.set(inputDeviceUID, forKey: Key.inputDevice) } }
     @Published private(set) var launchAtLoginError: String?
 
     /// Rules the vocabulary tuner derived from transcripts; merged into every
@@ -80,6 +85,10 @@ final class AppSettings: ObservableObject {
         }
         onboardingComplete = defaults.bool(forKey: Key.onboardingComplete)
         hasUsedDictation = defaults.bool(forKey: Key.hasUsedDictation)
+        // Default on: it removes the cold-start clipping that the window exists
+        // to fix, and it only holds the stream between back-to-back dictations.
+        keepMicWarm = defaults.object(forKey: Key.keepMicWarm) as? Bool ?? true
+        inputDeviceUID = defaults.string(forKey: Key.inputDevice)
         let serviceStatus = SMAppService.mainApp.status
         launchAtLogin = Self.launchAtLoginIsOn(serviceStatus)
         launchAtLoginError = Self.launchAtLoginMessage(for: serviceStatus)

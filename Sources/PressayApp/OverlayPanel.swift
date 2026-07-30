@@ -37,6 +37,18 @@ final class OverlayPanelController {
     private var panel: NSPanel?
     private var dismissTask: Task<Void, Never>?
 
+    /// Key is down but the mic has not delivered audio yet. Acknowledges the
+    /// press immediately so the wait for a cold Bluetooth link doesn't read as
+    /// a dropped key press.
+    func showArming(style: OverlayStyle = .dictation) {
+        state.toast = nil
+        dismissTask?.cancel()
+        state.style = style
+        state.phase = .arming
+        state.message = ""
+        present(width: 78, height: 44)
+    }
+
     func showRecording(style: OverlayStyle = .dictation) {
         state.toast = nil
         dismissTask?.cancel()
@@ -156,6 +168,11 @@ private struct RecordingOverlayView: View {
     private var compactContent: some View {
         ZStack {
             switch state.phase {
+            case .arming:
+                // Flat, dimmed bars: present and clearly not listening yet.
+                RecordingVoiceBars(levels: [0, 0, 0, 0], style: state.style)
+                    .opacity(0.45)
+                    .transition(.scale(scale: 0.82).combined(with: .opacity))
             case .recording:
                 RecordingVoiceBars(levels: state.levels, style: state.style)
                     .transition(.scale(scale: 0.82).combined(with: .opacity))

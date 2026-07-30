@@ -215,6 +215,116 @@ final class TextProcessingTests: XCTestCase {
         XCTAssertTrue(trimmed.contains(0.04))
     }
 
+    /// The clipped-onset case: the mic opened mid-word, so speech starts at
+    /// sample 0 and there is no acoustic lead-in to keep.
+    func testSpeechStartingAtSampleZeroGetsSyntheticLeadIn() throws {
+        let speech = [Float](repeating: 0.04, count: 32_000)
+        let trimmed = try AudioTrimmer.trim(speech)
+        // 250 ms at 16 kHz prepended, and the pad really is silence.
+        XCTAssertEqual(trimmed.count, speech.count + 4_000)
+        XCTAssertEqual(trimmed[0..<4_000].max(), 0)
+        XCTAssertEqual(trimmed[4_000], 0.04)
+    }
+
+    /// A clip that already carries its full lead-in must not be padded again.
+    func testAmpleLeadInIsNotPaddedFurther() throws {
+        let silence = [Float](repeating: 0, count: 16_000)
+        let speech = [Float](repeating: 0.04, count: 32_000)
+        let trimmed = try AudioTrimmer.trim(silence + speech + silence)
+        XCTAssertEqual(trimmed.count, speech.count + 8_000)
+    }
+
+    /// The guard's job is to stop the cue being mistaken for the speech onset,
+    /// so the clip anchors on the words rather than on the tone.
+    func testEarconIsNotMistakenForTheSpeechOnset() throws {
+        let cue = [Float](repeating: 0.05, count: 2_400) // 150 ms tone
+        let gap = [Float](repeating: 0, count: 1_600)
+        let speech = [Float](repeating: 0.04, count: 32_000)
+        let clip = cue + gap + speech
+
+        let guarded = try AudioTrimmer.trim(clip, earconGuard: 0..<2_400)
+        let unguarded = try AudioTrimmer.trim(clip)
+        // Unguarded, the tone is the onset and drags the whole head of the clip
+        // in; guarded, the anchor moves to the speech.
+        XCTAssertLessThan(guarded.count, unguarded.count)
+        XCTAssertGreaterThanOrEqual(guarded.count, speech.count)
+    }
+
+    /// A near-instant warm start actively encourages talking over the cue. That
+    /// speech must survive — cutting to the guard's end used to discard it,
+    /// which is the exact clipping this whole change exists to remove.
+    func testSpeechStartingDuringTheEarconIsNotDiscarded() throws {
+        let cueOverSpeech = [Float](repeating: 0.05, count: 2_400)
+        let speech = [Float](repeating: 0.04, count: 32_000)
+        let trimmed = try AudioTrimmer.trim(
+            cueOverSpeech + speech,
+            earconGuard: 0..<2_400
+        )
+        // Every speech sample is still present; nothing was cut to the guard.
+        XCTAssertGreaterThanOrEqual(trimmed.count, speech.count)
+    }
+
+    /// If the pre-roll caught a real onset before the cue, that audio is worth
+    /// more than a clean tone — keep it.
+    func testSpeechBeforeTheEarconSurvives() throws {
+        let early = [Float](repeating: 0.04, count: 3_200)
+        let cue = [Float](repeating: 0.05, count: 2_400)
+        let speech = [Float](repeating: 0.04, count: 32_000)
+        let trimmed = try AudioTrimmer.trim(
+            early + cue + speech,
+            earconGuard: 3_200..<5_600
+        )
+        XCTAssertGreaterThanOrEqual(trimmed.count, early.count + cue.count + speech.count)
+    }
+
+    /// Pressing the key and saying nothing is silence, not a transcript of the cue.
+    func testCueAloneIsRejectedAsSilence() {
+        let cue = [Float](repeating: 0.05, count: 2_400)
+        let quiet = [Float](repeating: 0, count: 16_000)
+        XCTAssertThrowsError(
+            try AudioTrimmer.trim(cue + quiet, earconGuard: 0..<2_400)
+        ) { error in
+            guard case PressayError.silence = error else {
+                return XCTFail("expected .silence, got \(error)")
+            }
+        }
+    }
+
+    /// The guard is derived from a wall-clock duration, so it can overrun the
+    /// clip. Clamping must keep the slice in bounds rather than trapping.
+    func testEarconGuardBeyondTheClipDoesNotCrash() {
+        let speech = [Float](repeating: 0.04, count: 32_000)
+        XCTAssertThrowsError(
+            try AudioTrimmer.trim(speech, earconGuard: 0..<999_999)
+        ) { error in
+            guard case PressayError.silence = error else {
+                return XCTFail("expected .silence, got \(error)")
+            }
+        }
+    }
+
+    func testEmptyEarconGuardBehavesLikeNoGuard() throws {
+        let speech = [Float](repeating: 0.04, count: 32_000)
+        let guarded = try AudioTrimmer.trim(speech, earconGuard: 5_000..<5_000)
+        let plain = try AudioTrimmer.trim(speech)
+        XCTAssertEqual(guarded.count, plain.count)
+    }
+
+    func testNegativeEarconGuardIsClamped() throws {
+        let speech = [Float](repeating: 0.04, count: 32_000)
+        let trimmed = try AudioTrimmer.trim(speech, earconGuard: -500..<0)
+        XCTAssertEqual(trimmed.count, speech.count + 4_000)
+    }
+
+    /// A guard sitting past the speech must not drag `start` beyond `end`.
+    func testGuardAfterTheSpeechDoesNotInvertTheSlice() throws {
+        let speech = [Float](repeating: 0.04, count: 8_000)
+        let tail = [Float](repeating: 0, count: 24_000)
+        let trimmed = try AudioTrimmer.trim(speech + tail, earconGuard: 20_000..<24_000)
+        XCTAssertFalse(trimmed.isEmpty)
+        XCTAssertEqual(trimmed.max(), 0.04)
+    }
+
     func testProcessingPolicyKeepsNormalPathFastAndAllowsLongPrompts() {
         XCTAssertEqual(DictationProcessingPolicy.asrTimeout(duration: 10), 1.85)
         XCTAssertGreaterThan(DictationProcessingPolicy.asrTimeout(duration: 110), 10)

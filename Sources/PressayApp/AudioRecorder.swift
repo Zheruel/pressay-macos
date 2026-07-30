@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 import PressayCore
+import os
 
 final class AudioRecorder: @unchecked Sendable {
     struct LevelFrame: Sendable {
@@ -18,6 +19,10 @@ final class AudioRecorder: @unchecked Sendable {
         }
 
         let segments: [Segment]
+        /// Where the start cue sits on the capture timeline, measured from the
+        /// first sample. Resampling preserves duration, so this stays valid
+        /// after conversion to 16 kHz.
+        let earconWindow: Range<TimeInterval>?
 
         var duration: TimeInterval {
             segments.reduce(0) { $0 + Double($1.samples.count) / max($1.sampleRate, 1) }
@@ -32,11 +37,37 @@ final class AudioRecorder: @unchecked Sendable {
     private var lastLevelUpdate = Date.distantPast
     private var speechMeter = SpeechActivityMeter()
     private var isRecording = false
+    /// Tap installed and engine running — true while merely warm, too.
+    private var engineOpen = false
     private var configurationObserver: (any NSObjectProtocol)?
+    private let logger = Logger(subsystem: "dev.localflow.app", category: "audio")
+
+    /// Rolling pre-roll, so pressing the key and speaking in the same motion
+    /// keeps the word onset that would otherwise land before `start()`.
+    private var preRoll: [Float] = []
+    private var preRollWrite = 0
+    private var preRollFilled = 0
+    /// While set in the future, incoming audio is dropped rather than buffered.
+    private var preRollMutedUntil: Date?
+
+    /// Whether the device has delivered anything but digital silence. Bluetooth
+    /// links hand out zero-filled buffers for hundreds of ms while negotiating.
+    private var hasLiveAudio = false
+    private var announcedFirstAudio = false
+    private var openedAt = Date.distantPast
+    private var earconWindow: Range<TimeInterval>?
 
     var onLevel: (@Sendable (LevelFrame) -> Void)?
+    /// Fired once per dictation when real samples start arriving. This is the
+    /// only honest moment to tell the user the mic is listening.
+    var onFirstAudio: (@Sendable () -> Void)?
     /// Fired on the main queue when a device change ends the capture early.
     var onCaptureFailed: ((String) -> Void)?
+
+    /// CoreAudio UID of the input to pin, or nil to follow the system default.
+    var preferredInputUID: String?
+
+    var isWarm: Bool { engineOpen }
 
     init() {
         // queue: .main serializes the handler with start()/stop()/cancel(),
@@ -56,17 +87,115 @@ final class AudioRecorder: @unchecked Sendable {
         }
     }
 
+    // MARK: - Warmth
+
+    /// Opens the stream without starting a dictation, so the next key press
+    /// pays no hardware start latency.
+    func warmUp() throws {
+        guard !engineOpen else { return }
+        try openEngine()
+    }
+
+    /// Closes the stream. Safe to call while idle; refuses to cut a dictation.
+    func coolDown() {
+        guard !isRecording else { return }
+        closeEngine()
+    }
+
+    /// Closes the stream even mid-dictation. For sleep and screen lock, where
+    /// leaving a Bluetooth link half-torn-down is what wedges the input into
+    /// delivering silence on the other side.
+    func forceClose() {
+        closeEngine()
+    }
+
+    // MARK: - Dictation
+
     func start() throws {
         guard !isRecording else { return }
-        // A stale running engine (swallowed stop, partial teardown) would
-        // otherwise diverge from isRecording and silently kill every dictation.
-        if engine.isRunning {
-            try? catchingObjCException {
-                engine.inputNode.removeTap(onBus: 0)
-                engine.stop()
+        if !engineOpen {
+            try openEngine()
+        }
+
+        // A warm mic keeps its converged noise floor; a freshly opened one has
+        // nothing to preserve and was reset in openEngine().
+        lastLevelUpdate = Date()
+        announcedFirstAudio = false
+        earconWindow = nil
+        lock.withLock {
+            finishedSegments.removeAll()
+            samples = drainPreRollLocked()
+            isRecording = true
+        }
+
+        // Already-flowing audio means the cue can fire now rather than waiting
+        // for the next buffer.
+        if hasLiveAudio {
+            announcedFirstAudio = true
+            onFirstAudio?()
+        }
+    }
+
+    /// Stops the dictation and hands over the raw samples; resample + trim
+    /// happen later, off the main actor. The stream stays open — the warm
+    /// window decides when it closes.
+    func stop() throws -> RawCapture {
+        guard isRecording else { throw PressayError.recordingTooShort }
+
+        return lock.withLock {
+            isRecording = false
+            var segments = finishedSegments
+            if !samples.isEmpty {
+                segments.append(RawCapture.Segment(samples: samples, sampleRate: sampleRate))
             }
+            samples.removeAll(keepingCapacity: true)
+            finishedSegments.removeAll()
+            return RawCapture(segments: segments, earconWindow: earconWindow)
+        }
+    }
+
+    func cancel() {
+        lock.withLock {
+            isRecording = false
+            samples.removeAll(keepingCapacity: true)
+            finishedSegments.removeAll()
+        }
+        onLevel?(.silent)
+    }
+
+    /// Records where the start cue lands on the capture timeline. The cue now
+    /// plays into a live mic, so the trimmer needs to know to skip it.
+    func markEarcon(duration: TimeInterval) {
+        guard isRecording else { return }
+        // Measured across the whole capture, not the current segment: a
+        // Bluetooth headset flipping to HFP as the mic opens seals segment 0,
+        // which would otherwise put this window back at sample 0 — on top of
+        // the pre-roll and the word onset it is meant to sit after.
+        let elapsed = lock.withLock {
+            finishedSegments.reduce(0.0) { $0 + Double($1.samples.count) / max($1.sampleRate, 1) }
+                + Double(samples.count) / max(sampleRate, 1)
+        }
+        earconWindow = elapsed..<(elapsed + duration)
+    }
+
+    /// Keeps a cue out of the pre-roll ring. The release and cancel cues play
+    /// while the stream is still warm, and would otherwise be drained into the
+    /// head of the *next* dictation as its loudest content.
+    func mutePreRoll(for duration: TimeInterval) {
+        lock.withLock { preRollMutedUntil = Date().addingTimeInterval(duration) }
+    }
+
+    // MARK: - Engine
+
+    private func openEngine() throws {
+        // A stale running engine (swallowed stop, partial teardown) would
+        // otherwise diverge from engineOpen and silently kill every dictation.
+        if engine.isRunning || engineOpen {
+            closeEngine()
         }
         let input = engine.inputNode
+        applyPreferredInput(to: input)
+
         let format = input.inputFormat(forBus: 0)
         guard format.channelCount > 0, format.sampleRate > 0 else {
             throw PressayError.microphoneUnavailable
@@ -76,49 +205,70 @@ final class AudioRecorder: @unchecked Sendable {
             samples.removeAll(keepingCapacity: true)
             finishedSegments.removeAll()
             sampleRate = format.sampleRate
+            allocatePreRollLocked(sampleRate: format.sampleRate)
         }
         speechMeter.reset()
+        hasLiveAudio = false
         lastLevelUpdate = Date()
-        onLevel?(.silent)
+
+        let startedAt = Date()
         do {
             try installTapAndStart(on: input, format: format)
         } catch {
             try? catchingObjCException { input.removeTap(onBus: 0) }
             throw PressayError.microphoneUnavailable
         }
-        isRecording = true
+        engineOpen = true
+        openedAt = Date()
+        logger.info(
+            """
+            mic opened: \(format.sampleRate, privacy: .public) Hz \
+            \(format.channelCount, privacy: .public) ch, \
+            engine.start() took \(Date().timeIntervalSince(startedAt) * 1000, privacy: .public) ms
+            """
+        )
     }
 
-    /// Stops capture and hands over the raw samples; resample + trim happen
-    /// later, off the main actor.
-    func stop() throws -> RawCapture {
-        guard isRecording else { throw PressayError.recordingTooShort }
-        isRecording = false
+    private func closeEngine() {
+        if engineOpen {
+            logger.info("mic closed after \(Date().timeIntervalSince(self.openedAt), privacy: .public)s")
+        }
+        engineOpen = false
+        hasLiveAudio = false
+        // Stop the tap before touching shared state: once it is removed no
+        // further render-thread callback can be in flight.
         try? catchingObjCException {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
         }
-
-        return lock.withLock {
-            var segments = finishedSegments
-            if !samples.isEmpty {
-                segments.append(RawCapture.Segment(samples: samples, sampleRate: sampleRate))
-            }
+        lock.withLock {
+            isRecording = false
             samples.removeAll(keepingCapacity: true)
             finishedSegments.removeAll()
-            return RawCapture(segments: segments)
+            preRoll.removeAll(keepingCapacity: true)
+            preRollWrite = 0
+            preRollFilled = 0
         }
     }
 
-    func cancel() {
-        tearDownCapture()
+    private func applyPreferredInput(to input: AVAudioInputNode) {
+        guard let preferredInputUID,
+              let device = AudioDeviceMonitor.device(forUID: preferredInputUID)
+        else { return }
+        do {
+            try input.auAudioUnit.setDeviceID(device.id)
+        } catch {
+            // Fall back to the system default rather than refusing to record.
+            logger.error("could not pin input to \(device.name, privacy: .public): \(error)")
+        }
     }
 
     /// Seals the samples captured so far as a segment and restarts the tap
     /// with the new device format. Idempotent — macOS can post this
     /// notification several times per device transition.
     private func handleConfigurationChange() {
-        guard isRecording else { return }
+        guard engineOpen else { return }
+        logger.info("configuration change while \(self.isRecording ? "recording" : "warm", privacy: .public)")
 
         let input = engine.inputNode
         try? catchingObjCException { input.removeTap(onBus: 0) }
@@ -130,12 +280,17 @@ final class AudioRecorder: @unchecked Sendable {
         }
 
         lock.withLock {
-            if !samples.isEmpty {
+            if isRecording, !samples.isEmpty {
                 finishedSegments.append(RawCapture.Segment(samples: samples, sampleRate: sampleRate))
                 samples.removeAll(keepingCapacity: true)
             }
             sampleRate = format.sampleRate
+            allocatePreRollLocked(sampleRate: format.sampleRate)
         }
+        // The new device has its own noise floor and may hand out digital
+        // silence again while it settles.
+        speechMeter.reset()
+        hasLiveAudio = false
 
         do {
             try installTapAndStart(on: input, format: format)
@@ -155,21 +310,54 @@ final class AudioRecorder: @unchecked Sendable {
     }
 
     private func abortCapture() {
-        tearDownCapture()
-        onCaptureFailed?("Microphone changed — try again")
+        let wasRecording = isRecording
+        closeEngine()
+        if wasRecording {
+            onCaptureFailed?("Microphone changed — try again")
+        }
     }
 
-    private func tearDownCapture() {
-        isRecording = false
-        try? catchingObjCException {
-            engine.inputNode.removeTap(onBus: 0)
-            engine.stop()
-        }
-        lock.withLock {
-            samples.removeAll(keepingCapacity: true)
-            finishedSegments.removeAll()
-        }
+    // MARK: - Pre-roll
+
+    private func allocatePreRollLocked(sampleRate: Double) {
+        let capacity = max(1, Int(sampleRate * DictationProcessingPolicy.preRollDuration))
+        preRoll = [Float](repeating: 0, count: capacity)
+        preRollWrite = 0
+        preRollFilled = 0
     }
+
+    private func appendPreRollLocked(_ mono: [Float]) {
+        guard !preRoll.isEmpty else { return }
+        if let preRollMutedUntil {
+            guard Date() >= preRollMutedUntil else { return }
+            self.preRollMutedUntil = nil
+        }
+        let capacity = preRoll.count
+        // A buffer longer than the ring can only contribute its tail.
+        let source = mono.count > capacity ? Array(mono.suffix(capacity)) : mono
+        for sample in source {
+            preRoll[preRollWrite] = sample
+            preRollWrite = (preRollWrite + 1) % capacity
+        }
+        preRollFilled = min(capacity, preRollFilled + source.count)
+    }
+
+    /// Oldest-first copy of the ring, then reset so the next dictation starts clean.
+    private func drainPreRollLocked() -> [Float] {
+        guard preRollFilled > 0, !preRoll.isEmpty else { return [] }
+        let capacity = preRoll.count
+        let start = (preRollWrite - preRollFilled + capacity) % capacity
+        var output = [Float]()
+        output.reserveCapacity(preRollFilled)
+        for offset in 0..<preRollFilled {
+            output.append(preRoll[(start + offset) % capacity])
+        }
+        preRollWrite = 0
+        preRollFilled = 0
+        return output
+    }
+
+    // MARK: - Capture
 
     private func consume(_ buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData else { return }
@@ -178,14 +366,43 @@ final class AudioRecorder: @unchecked Sendable {
         guard frameCount > 0 else { return }
 
         var mono = [Float](repeating: 0, count: frameCount)
+        var peak: Float = 0
         for channel in 0..<channelCount {
             let source = channelData[channel]
             for index in 0..<frameCount {
                 mono[index] += source[index] / Float(channelCount)
             }
         }
+        for value in mono { peak = max(peak, abs(value)) }
 
-        lock.withLock { samples.append(contentsOf: mono) }
+        // Digital silence means the link is still negotiating, not that the
+        // room is quiet: a live mic always carries a noise floor.
+        if !hasLiveAudio, peak > 1e-6 {
+            hasLiveAudio = true
+            logger.info(
+                "first live audio \(Date().timeIntervalSince(self.openedAt) * 1000, privacy: .public) ms after open"
+            )
+        }
+
+        // Reading isRecording inside the lock, and flipping it inside the lock
+        // in start()/stop(), is what stops a buffer landing in the pre-roll ring
+        // microseconds after start() drained it — which would silently drop the
+        // very word onset this class exists to preserve.
+        let recording = lock.withLock { () -> Bool in
+            guard isRecording else {
+                appendPreRollLocked(mono)
+                return false
+            }
+            samples.append(contentsOf: mono)
+            return true
+        }
+
+        if recording, hasLiveAudio, !announcedFirstAudio {
+            announcedFirstAudio = true
+            onFirstAudio?()
+        }
+        guard recording else { return }
+
         let now = Date()
         let levelFrameDuration = now.timeIntervalSince(lastLevelUpdate)
         if levelFrameDuration >= 1.0 / 30.0 {
