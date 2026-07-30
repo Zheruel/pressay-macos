@@ -61,7 +61,7 @@ final class AppSettings: ObservableObject {
         let model = Self.readASRModel(defaults)
         asrModel = model
         // A language stored against a previous model may not exist on this one
-        // (Qwen3-ASR only auto-detects, Fun-ASR only runs English).
+        // (Fun-ASR runs English only; Voxtral covers eight languages).
         let storedLanguage =
             TranscriptionLanguage(rawValue: defaults.string(forKey: Key.language) ?? "") ?? .auto
         language = model.supportedLanguages.contains(storedLanguage)

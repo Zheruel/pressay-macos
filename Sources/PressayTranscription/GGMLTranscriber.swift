@@ -2,9 +2,10 @@ import Foundation
 import PressayCore
 import TranscribeCpp
 
-/// Dictation on the transcribe.cpp ggml/Metal engine (Whisper GGUF or
-/// Parakeet). Validated against the WhisperKit path on the full dictation
-/// corpus: identical-or-better transcripts at a fraction of the latency.
+/// Dictation on the transcribe.cpp ggml/Metal engine. Loads whichever GGUF
+/// the selected `ASRModel` points at, reconciles the requested language and
+/// formatting toggles against what that artifact actually advertises, and
+/// splits audio the decoder context cannot hold in one run.
 public actor GGMLTranscriber: SpeechTranscriber {
     private let asrModel: ASRModel
     private var language: String
@@ -16,9 +17,11 @@ public actor GGMLTranscriber: SpeechTranscriber {
     /// ships punctuation and ITN off and emits verbatim lowercase otherwise.
     private var supportsPnc = false
     private var supportsItn = false
-    /// Longest single run this session accepts, in samples; nil when the
-    /// family chunks internally or is otherwise unbounded (Whisper).
-    private var maxRunSamples: Int?
+    /// Longest single run this session accepts, in seconds of audio; nil when
+    /// the family chunks internally or is otherwise unbounded (Whisper).
+    /// Stored as a duration so it stays correct whatever rate a clip arrives
+    /// at, rather than assuming the recorder's 16 kHz.
+    private var maxRunSeconds: TimeInterval?
 
     /// How many times a segment may be halved before we give up. Three levels
     /// turns a 100-second clip into ~12-second pieces, far below any context
@@ -27,8 +30,6 @@ public actor GGMLTranscriber: SpeechTranscriber {
     /// Never split below this: a sub-second fragment carries no usable context
     /// and splitting further cannot help.
     private static let minimumSplitSeconds: TimeInterval = 1.0
-    /// The engines all take 16 kHz mono; the recorder resamples to it.
-    private static let sampleRate = 16_000
 
     public init(model: ASRModel, language: String = "en") {
         self.asrModel = model
@@ -111,9 +112,7 @@ public actor GGMLTranscriber: SpeechTranscriber {
         }
         // 0 means "no practical limit" — the family chunks internally.
         let maxAudioMs = fresh.limits.effectiveMaxAudioMs
-        maxRunSamples = maxAudioMs > 0
-            ? Int(Double(maxAudioMs) / 1000 * Double(Self.sampleRate))
-            : nil
+        maxRunSeconds = maxAudioMs > 0 ? Double(maxAudioMs) / 1000 : nil
 
         session = fresh
         removeUnusedModelArtifacts(in: directory, keeping: destination)
@@ -177,7 +176,8 @@ public actor GGMLTranscriber: SpeechTranscriber {
         depth: Int
     ) async throws -> String {
         // Known-too-long input: split before spending a decode on it.
-        if let limit = maxRunSamples, samples.count > limit, canSplit(samples, sampleRate, depth) {
+        let seconds = sampleRate > 0 ? Double(samples.count) / Double(sampleRate) : 0
+        if let limit = maxRunSeconds, seconds > limit, canSplit(samples, sampleRate, depth) {
             return try await splitAndTranscribe(
                 samples, sampleRate: sampleRate, session: session, depth: depth)
         }

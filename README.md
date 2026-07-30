@@ -21,11 +21,11 @@ Pressay is a native, hold-to-talk dictation app built for people who communicate
 It is deliberately not an always-listening assistant. There is no account, telemetry, subscription, or cloud transcription.
 
 > [!IMPORTANT]
-> Pressay 1.3 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
+> Pressay 1.4 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
 
 ## Why Pressay
 
-- **Quality first.** Fun-ASR MLT Nano is the calibrated English default; Whisper Large V3 Turbo covers 100 languages, and Qwen3-ASR 1.7B is an optional model with the richest punctuation. Each model offers only the languages it can actually decode.
+- **Quality first.** Fun-ASR MLT Nano is the calibrated English default; Whisper Large V3 Turbo covers 100 languages, and Voxtral Mini 3B is a slower option for people who want the most careful transcript. Each model offers only the languages it can actually decode.
 - **Fast local inference.** `transcribe.cpp` runs GGUF models through ggml and Metal, with the model and Metal pipeline warmed before the first dictation.
 - **Optional structure.** A Structured Dictation toggle adds punctuation, paragraphs, and bullet lists to longer dictations — deterministically, on-device.
 - **Cursor-first UX.** A clipboard-preserving synthetic paste handles native, web, and Electron editors; direct Accessibility replacement is the fallback.
@@ -68,34 +68,38 @@ Pressay has one quality-first default instead of exposing a wall of decoder knob
 | --- | --- | --- |
 | Audio | Segmented `AVAudioEngine` capture, 16 kHz mono resampling, conservative edge trimming | Handles Bluetooth/device changes without clipping first or last words |
 | ASR | Fun-ASR MLT Nano 2512 Q6_K GGUF via `transcribe.cpp` | Best English transcript on the development corpus: never collapsed a long dictation, resolved the most technical vocabulary, 2.5× faster than Whisper from a smaller artifact |
-| Language | Per-model — only what the engine can decode | Fun-ASR runs English-locked, Qwen3-ASR always auto-detects, Whisper offers all 19; the picker follows the selected model |
+| Language | Per-model — only what the engine can decode | Fun-ASR runs English-locked, Voxtral offers eight plus detection, Whisper all 19; the picker follows the selected model |
 | Cleanup | Deterministic text and vocabulary pipeline | Predictable, quick, and preserves protected tokens |
 | Structure | Optional deterministic structuring pass | Readability without an LLM rewriting what was said |
 | Multilingual option | Whisper Large V3 Turbo Q8 GGUF via `transcribe.cpp` | 100 languages, and the only engine that chunks long audio inside the runtime |
-| Punctuation option | Qwen3-ASR 1.7B Q8 GGUF via `transcribe.cpp` | Richest punctuation and capitalization measured; auto-detect only, ~2.2 GB download |
+| Quality option | Voxtral Mini 3B Q4 GGUF via `transcribe.cpp` | Matches the default on technical vocabulary and punctuates more densely, at 9x the latency and 4x the size; eight languages plus detection |
 | Long dictations | In-app splitting at a silence boundary | The context-bound engines cannot take a 100-second clip in one run; Pressay splits and keeps the chosen model instead of falling back to Whisper, which is the engine that collapses long clips |
 
 ### How the shipping models compare
 
-Ten engines were replayed through the same 184-clip corpus. The two measurements that decided the
-default:
+Thirteen engines were replayed through the same 184-clip corpus. The two measurements that decided
+the default:
 
 <p align="center">
-  <img src="docs/assets/asr-model-comparison.svg" width="100%" alt="Fun-ASR MLT Nano and Qwen3-ASR never collapsed a long dictation while Whisper V3 Turbo collapsed 3 of 47; Fun-ASR is also the fastest at a 0.14 second median">
+  <img src="docs/assets/asr-model-comparison.svg" width="100%" alt="Fun-ASR MLT Nano and Voxtral Mini never collapsed a long dictation while Whisper V3 Turbo collapsed 3 of 47; Fun-ASR is also the fastest at a 0.14 second median">
 </p>
 
 The three that ship:
 
-| Engine | Download | Long-clip collapse | Technical vocabulary | Median latency |
+| Engine | Download | Long-clip collapse | Technical terms | Median latency |
 | --- | ---: | ---: | ---: | ---: |
-| **Fun-ASR MLT Nano** (default) | 691 MB | **0/47** | **33 ✓ / 26 ✗** | **0.14 s** |
-| Whisper V3 Turbo | 886 MB | 3/47 | 30 ✓ / 29 ✗ | 0.39 s |
-| Qwen3-ASR 1.7B | 2.19 GB | **0/47** | 23 ✓ / 36 ✗ | 0.44 s |
+| **Fun-ASR MLT Nano** (default) | 691 MB | **0/47** | **86%** | **0.14 s** |
+| Whisper V3 Turbo | 886 MB | 3/47 | 75% | 0.39 s |
+| Voxtral Mini 3B | 2.98 GB | **0/47** | 81% | 1.28 s |
 
 "Collapse" counts dictations over 15 seconds that came back with no capitals and no punctuation —
 the failure that motivated the 1.3 Voxtral option. Fun-ASR removes it outright while also being the
-fastest and smallest engine measured. See the [benchmark notes](docs/benchmarks.md) for the full
-ten-engine table, the method, and what these numbers do not prove.
+fastest and smallest engine measured. Thirteen engines were measured; the other ten are in the [benchmark notes](docs/benchmarks.md)
+along with the method and what these numbers do not prove.
+
+<p align="center">
+  <img src="docs/assets/asr-selection.svg" width="100%" alt="Technical-term accuracy across thirteen engines: Fun-ASR MLT Nano leads at 86%, Voxtral Mini 81%, Whisper V3 Turbo 75%, and the rest cluster below 60% regardless of size">
+</p>
 
 ### Why normal dictation does not use an LLM
 
@@ -128,7 +132,7 @@ Pinned or corrected history records are retained until you delete them. Delete h
 - Apple Silicon Mac
 - macOS 26+
 - Xcode 26+ with the macOS 26 SDK
-- Around 2 GB of free space for the default Fun-ASR model and build artifacts (Whisper V3 Turbo adds ~0.9 GB and Qwen3-ASR ~2.2 GB if selected; only the selected model is downloaded, and artifacts from models Pressay no longer ships are removed automatically)
+- Around 2 GB of free space for the default Fun-ASR model and build artifacts (Whisper V3 Turbo adds ~0.9 GB and Voxtral Mini ~3 GB if selected; only the selected model is downloaded, and artifacts from models Pressay no longer ships are removed automatically)
 
 ```bash
 git clone https://github.com/Zheruel/pressay-macos.git
@@ -235,7 +239,7 @@ Keep benchmark audio, transcripts, API keys, and generated results outside the r
 ## Acknowledgements
 
 - [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) for a unified ggml/Metal speech runtime.
-- [FunAudioLLM Fun-ASR MLT Nano 2512](https://huggingface.co/FunAudioLLM/Fun-ASR-MLT-Nano-2512), [OpenAI Whisper Large V3 Turbo](https://huggingface.co/openai/whisper-large-v3-turbo), and [Qwen3-ASR 1.7B](https://huggingface.co/Qwen/Qwen3-ASR-1.7B) for the speech models.
+- [FunAudioLLM Fun-ASR MLT Nano 2512](https://huggingface.co/FunAudioLLM/Fun-ASR-MLT-Nano-2512), [OpenAI Whisper Large V3 Turbo](https://huggingface.co/openai/whisper-large-v3-turbo), and [Mistral Voxtral Mini 3B](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507) for the speech models.
 - [Freesound](https://freesound.org/) contributor AbdrTar for the CC0 recording cues from which Pressay's earcons are derived.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licensing details.

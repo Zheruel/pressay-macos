@@ -17,7 +17,7 @@ The sanitized aggregate data behind the charts lives in [`docs/benchmarks/result
 
 The corpus is representative of the app's intended use, but it is not a standardized public benchmark. Results should be treated as product calibration on one machine, not universal model rankings.
 
-## Pressay 1.4 — ten-engine sweep
+## Pressay 1.4 — thirteen-engine sweep
 
 For 1.4 every engine in `transcribe.cpp` that plausibly beat Whisper was replayed through the same
 184-clip corpus. Three passes were needed, because two of the candidates are misleading at their
@@ -30,34 +30,43 @@ defaults:
    auto-detect produced on near-silent clips.
 
 <p align="center">
-  <img src="assets/asr-model-comparison.svg" width="100%" alt="Fun-ASR MLT Nano and Qwen3-ASR never collapsed a long dictation while Whisper V3 Turbo collapsed 3 of 47; Fun-ASR is also the fastest at a 0.14 second median">
+  <img src="assets/asr-model-comparison.svg" width="100%" alt="Fun-ASR MLT Nano and Voxtral Mini never collapsed a long dictation while Whisper V3 Turbo collapsed 3 of 47; Fun-ASR is also the fastest at a 0.14 second median">
 </p>
 
-Final numbers, best configuration per engine:
+Final numbers, best configuration per engine, sorted by the metric that decided it:
 
-| Engine | Q6/Q8 size | Collapse | punct/caps | Vocab ✓/✗ | Foreign | Dropped | Median | p95 |
-| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| **Fun-ASR MLT Nano** | 691 MB | **0/47** | .049/**.090** | **33/26** | 0 | 0 | **0.14 s** | 0.76 |
-| Qwen3-ASR 1.7B | 2.19 GB | **0/47** | **.063/.102** | 23/36 | 0 | 0 | 0.44 s | 2.21 |
-| Voxtral Mini 3B | 2.98 GB | 0/47 | .069/.099 | 34/25 | 0 | 0 | 1.16 s | 3.47 |
-| Whisper V3 Turbo | 886 MB | 3/47 | .056/.080 | 30/29 | 0 | 0 | 0.39 s | 0.78 |
-| Fun-ASR Nano | 850 MB | 1/47 | .049/.088 | 23/36 | 1 | 0 | 0.15 s | 0.76 |
-| Canary Qwen 2.5B | 2.80 GB | 0/47 | .037/.082 | 16/34 | 0 | 0 | 0.30 s | 1.69 |
-| Whisper Large V3 (full) | 1.67 GB | 3/47 | .055/.085 | 28/27 | 0 | 1 | 0.60 s | 1.81 |
-| Canary 1B Flash | 1.05 GB | 0/46 | .046/.080 | 16/36 | 0 | **4** | 0.10 s | 0.47 |
-| Parakeet Unified EN | 731 MB | 0/47 | .037/.085 | 13/47 | 0 | 1 | 0.06 s | 0.30 |
-| Granite Speech 4.1 NAR | 2.50 GB | 0/46 | .056/**.000** | 22/31 | 0 | 1 | 0.18 s | 0.85 |
+| Engine | Size | Terms | Collapse | Complete | Lost | punct/caps | Median |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| **Fun-ASR MLT Nano** *(ships, default)* | 691 MB | **86%** | **0/47** | 97.6% | 0 | .049/.090 | **0.14 s** |
+| **Voxtral Mini 3B** *(ships)* | 2.98 GB | 81% | **0/47** | 97.5% | 0 | **.069/.099** | 1.28 s |
+| **Whisper V3 Turbo** *(ships)* | 886 MB | 75% | 3/47 | 96.1% | 0 | .056/.080 | 0.39 s |
+| Whisper Large V3 (full) | 1.67 GB | 73% | 3/47 | 96.1% | 0 | .055/.085 | 0.60 s |
+| Fun-ASR Nano | 850 MB | 60% | 1/47 | 96.9% | 0 | .049/.088 | 0.15 s |
+| Voxtral Mini 4B Realtime | 2.83 GB | 58% | 0/47 | 96.1% | 0 | **.073/.104** | 1.57 s |
+| Qwen3-ASR 1.7B | 2.19 GB | 57% | 0/47 | **98.0%** | 0 | .063/.102 | 0.44 s |
+| Granite Speech 4.1 2B | 2.56 GB | 57% | 0/47 | 97.0% | 0 | .046/.083 | 0.30 s |
+| Parakeet TDT 0.6B v3 | 1.30 GB | 56% | 0/47 | **99.2%** | 0 | .058/.099 | **0.06 s** |
+| Canary 1B Flash | 1.05 GB | 54% | 0/47 | **93.8%** | **4** | .046/.080 | 0.10 s |
+| Canary Qwen 2.5B | 2.80 GB | 53% | 0/47 | 97.1% | 0 | .037/.082 | 0.30 s |
+| Granite Speech 4.1 NAR | 2.50 GB | 38% | 0/47 | 95.5% | 2 | .056/**.000** | 0.18 s |
+| Parakeet Unified EN | 731 MB | **36%** | 0/47 | 98.0% | 0 | .037/.085 | 0.06 s |
+
+<p align="center">
+  <img src="assets/asr-selection.svg" width="100%" alt="Technical-term accuracy across thirteen engines: Fun-ASR MLT Nano leads at 86%, Voxtral Mini 81%, Whisper V3 Turbo 75%, and the rest cluster below 60% regardless of size">
+</p>
 
 Metric definitions:
 
 - **Collapse** — dictations over 15 s that came back with *exactly* zero terminal punctuation and
   zero capitals across 25+ words. The corpus breaks cleanly here: the affected clips sit at
   0.000/0.000 and the next-worst is 0.013/0.065.
+- **Terms** — canonical spellings as a share of all renderings, for `Kimi`, `Claude`, `Codex`,
+  `Anthropic`, `RunPod`, `SonarCloud`, `macOS` and `GitHub`, scored against the wrong renderings
+  actually observed (`Akimi`, `Kemi`, `kimimi`, `run pod`, `Rampod`, `entropic`, …).
+- **Complete** — words produced against the best engine on the same clip. This catches *silent
+  omission*, which no formatting metric sees.
+- **Lost** — real dictations (longer than 2.7 s, so not near-silent) dropped to an error.
 - **punct/caps** — median per-word density of `.!?` and of capitalized words, on clips over 15 s.
-- **Vocab ✓/✗** — canonical spellings against known mishearings for the terms in
-  `CuratedVocabulary` (`Claude Code`, `CLAUDE.md`, `Kimi`, `SonarCloud`, …).
-- **Foreign** — short clips answered with a predominantly non-Latin script.
-- **Dropped** — real dictations (not near-silent clips) lost to an error.
 
 ### What decided it
 
@@ -65,13 +74,32 @@ Whisper Large V3 full was tested to check whether the collapse came from Turbo's
 (4 blocks against 32). **It did not** — full V3 collapsed on 3/47 as well, on different clips, while
 running 1.7× slower. That hypothesis is dead, and the collapse is not a decoder-depth artifact.
 
-The NVIDIA family (Parakeet, Canary) is fast and never collapses but is markedly worse at technical
-vocabulary — 13/47 for Parakeet Unified EN — which matches the 1.3 rejection of Parakeet TDT and the
-public AA-WER ordering. Canary 1B Flash additionally dropped four genuine dictations between 7 and
-16 seconds. Granite NAR emits no capital letters even with PNC requested.
+**Technical terms decided everything else.** The field splits into three: Fun-ASR, Voxtral and
+Whisper at 75–86%, then a cliff to 53–60% for everything newer or larger. Size does not predict it —
+a 2.8 GB Canary Qwen scores 53% where a 691 MB Fun-ASR scores 86%. For dictating agent prompts a
+wrong repository name costs more than a missing comma, so this ranking dominates.
+
+The models that write the prettiest prose are not the accurate ones. Voxtral Realtime has the best
+punctuation and capitalization measured (.073/.104) and Qwen3-ASR the best completeness (98.0%), and
+both sit at 57–58% on terms. Parakeet TDT v3 has the best completeness of all (99.2%) at the fastest
+speed (0.06 s) — and 56% on terms, which is why 1.3 was right to drop it.
+
+**Whisper also omits words**, not just punctuation: 96.1% completeness with content silently missing
+on 4 of 47 long clips, second-worst in the field. In one passage it rendered "That seems like a
+creative idea that nobody's done before" as "but it's done before".
+
+Canary 1B Flash dropped four genuine dictations (7.0, 8.5, 10.6 and 16.2 s) and showed real
+repetition looping — 8.9% duplicated 6-grams on its worst clip. Granite NAR emits no capital letters
+even with PNC requested.
+
+**Voxtral Mini 4B Realtime** (Apache-2.0, Feb 2026) was evaluated as a possible replacement: it has
+no practical length limit, which would remove the chunking below. In batch it is the *slowest*
+engine here at 1.57 s, because a streaming model has no advantage when the whole clip arrives at
+once. Streaming it during the hold would not help either — Fun-ASR's mean wait is 259 ms and only
+2.2% of dictations exceed one second, while Voxtral Realtime's committed delay alone is 480 ms.
 
 An "error" is not automatically a defect. On near-silent 1.2 s clips Whisper returns `"you"`,
-`"Thank you."` or `"."`, while Qwen3 and (now) Fun-ASR return nothing. Inserting nothing is the
+`"Thank you."` or `"."`, while Voxtral and (now) Fun-ASR return nothing. Inserting nothing is the
 correct behaviour; those rows are counted as empties, not failures.
 
 ### Limitations
@@ -83,6 +111,21 @@ correct behaviour; those rows are counted as empties, not failures.
   The same detector is applied to every engine, so the comparison holds even though the absolute
   number differs from the earlier note.
 - One repetition, one machine, one speaker, English. Latency figures are wall-clock on a warm model.
+
+### Quantization: Q6_K is the ceiling, not a compromise
+
+The default ships at Q6_K (691 MB). Both larger quants were replayed through the same corpus:
+
+| Quant | Size | Terms | punct/caps | Collapse | Median |
+| --- | ---: | ---: | --- | ---: | ---: |
+| **Q6_K** *(ships)* | **691 MB** | **86%** | .049/.090 | 0/47 | **0.14 s** |
+| Q8_0 | 891 MB | 81% | .049/.097 | 0/47 | 0.15 s |
+| BF16 | 1590 MB | 81% | .049/.097 | 0/47 | 0.19 s |
+
+Q8_0 and BF16 are the same model in practice — identical output on 93% of clips and identical on
+every aggregate metric — so the extra 700 MB buys nothing at all. Against Q6_K they differ on ~3% of
+words with **no systematic winner**: Q6_K is marginally ahead on technical terms, Q8_0 on
+capitalization, both inside noise. There is no quality headroom left to purchase here.
 
 ## Pressay 1.3 — Voxtral evaluation
 

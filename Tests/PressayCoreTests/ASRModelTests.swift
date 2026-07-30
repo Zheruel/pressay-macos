@@ -5,25 +5,18 @@ final class ASRModelTests: XCTestCase {
     func testShippingModelSet() {
         XCTAssertEqual(
             Set(ASRModel.allCases.map(\.rawValue)),
-            ["funASRMLTNano", "whisperTurboGGML", "qwen3ASR17B"])
+            ["funASRMLTNano", "whisperTurboGGML", "voxtralMini"])
     }
 
     func testRetiredModelsAreGone() {
-        for retired in ["voxtralMini", "parakeetV3", "whisperKit"] {
+        for retired in ["parakeetV3", "whisperKit", "qwen3ASR17B"] {
             XCTAssertNil(ASRModel(rawValue: retired))
         }
     }
 
     // MARK: - Migration of persisted settings
 
-    func testVoxtralUsersKeepMultilingualLongFormBehaviour() {
-        // Voxtral was picked for multilingual long-form work; dropping those
-        // users onto the English-only default would silently change what the
-        // app does for them.
-        XCTAssertEqual(ASRModel.migrating(storedRawValue: "voxtralMini"), .qwen3ASR17B)
-    }
-
-    func testOtherRetiredAndAbsentValuesFallBackToTheDefault() {
+    func testRetiredAndAbsentValuesFallBackToTheDefault() {
         for stored in ["parakeetV3", "whisperKit", "", "nonsense"] {
             XCTAssertEqual(
                 ASRModel.migrating(storedRawValue: stored), .funASRMLTNano, "stored=\(stored)")
@@ -76,10 +69,18 @@ final class ASRModelTests: XCTestCase {
         XCTAssertFalse(ASRModel.funASRMLTNano.offersLanguageChoice)
     }
 
-    func testQwen3DetectsItsOwnLanguageAndRejectsHints() {
-        XCTAssertEqual(ASRModel.qwen3ASR17B.supportedLanguages, [.auto])
-        XCTAssertFalse(ASRModel.qwen3ASR17B.supportsLanguageHint)
-        XCTAssertFalse(ASRModel.qwen3ASR17B.offersLanguageChoice)
+    func testVoxtralOffersItsAdvertisedLanguagesAndDefaultsToAutomatic() {
+        let vox = ASRModel.voxtralMini
+        XCTAssertEqual(vox.defaultLanguage, .auto)
+        XCTAssertTrue(vox.offersLanguageChoice)
+        XCTAssertTrue(vox.supportsLanguageHint)
+        // Mistral advertises exactly these eight, plus detection.
+        XCTAssertEqual(Set(vox.supportedLanguages), Set<TranscriptionLanguage>(
+            [.auto, .english, .french, .german, .spanish, .italian,
+             .portuguese, .dutch, .hindi]))
+        // Anything it cannot decode must not be offered.
+        XCTAssertFalse(vox.supportedLanguages.contains(.norwegian))
+        XCTAssertFalse(vox.supportedLanguages.contains(.japanese))
     }
 
     func testWhisperKeepsFullLanguageCoverage() {
@@ -89,18 +90,19 @@ final class ASRModelTests: XCTestCase {
         XCTAssertTrue(ASRModel.whisperTurboGGML.supportsLanguageHint)
     }
 
-    func testOnlyWhisperKeepsItsShippedFormattingDefaults() {
-        // Whisper's 1.3 calibration was measured on the defaults; the two new
-        // engines emit verbatim lowercase unless PNC/ITN is asked for.
-        XCTAssertFalse(ASRModel.whisperTurboGGML.requestsExplicitFormatting)
+    func testOnlyTheEngineThatNeedsItRequestsFormatting() {
+        // Fun-ASR emits verbatim lowercase unless ITN is asked for. The two
+        // engines calibrated in earlier releases expose no such toggle and
+        // must keep the defaults those calibrations were measured against.
         XCTAssertTrue(ASRModel.funASRMLTNano.requestsExplicitFormatting)
-        XCTAssertTrue(ASRModel.qwen3ASR17B.requestsExplicitFormatting)
+        XCTAssertFalse(ASRModel.whisperTurboGGML.requestsExplicitFormatting)
+        XCTAssertFalse(ASRModel.voxtralMini.requestsExplicitFormatting)
     }
 
     // MARK: - Refusal and hallucination filtering
 
     func testAssistantRefusalIsSuppressed() {
-        let model = ASRModel.qwen3ASR17B
+        let model = ASRModel.voxtralMini
         XCTAssertTrue(model.isTranscriptionRefusal("I'm sorry, I didn't understand."))
         XCTAssertTrue(model.isTranscriptionRefusal("Sorry, I didn't understand you."))
         XCTAssertTrue(
@@ -128,10 +130,10 @@ final class ASRModelTests: XCTestCase {
     }
 
     func testForeignScriptIsKeptWhenTheModelCanTranscribeIt() {
-        // Whisper and Qwen3 legitimately return these scripts; dropping them
-        // would silently break every non-Latin language.
+        // Whisper legitimately returns these scripts; dropping them would
+        // silently break every non-Latin language it supports.
         XCTAssertFalse(ASRModel.whisperTurboGGML.isTranscriptionRefusal("아, 그거는."))
-        XCTAssertFalse(ASRModel.qwen3ASR17B.isTranscriptionRefusal("这是一个测试。"))
+        XCTAssertFalse(ASRModel.whisperTurboGGML.isTranscriptionRefusal("这是一个测试。"))
         XCTAssertFalse(ASRModel.whisperTurboGGML.isTranscriptionRefusal("Это тест."))
     }
 
