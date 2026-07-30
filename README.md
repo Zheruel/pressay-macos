@@ -67,6 +67,8 @@ Pressay has one quality-first default instead of exposing a wall of decoder knob
 | Layer | Shipping choice | Why |
 | --- | --- | --- |
 | Audio | Segmented `AVAudioEngine` capture, 16 kHz mono resampling, conservative edge trimming | Handles Bluetooth/device changes without clipping first or last words |
+| Capture start | Mic held warm for 45 s after a dictation, with a 0.5 s pre-roll buffer | A cold Bluetooth mic needs 550–710 ms before it delivers real audio, all of it after the key is already down. Warm capture removes that window entirely, and the pre-roll recovers speech from before the key press |
+| Start cue | Earcon fires on the first real audio sample, not on the key press | The cue is a promise that the mic is listening; playing it early is what teaches people to talk into a dead mic |
 | ASR | Fun-ASR MLT Nano 2512 Q6_K GGUF via `transcribe.cpp` | Best English transcript on the development corpus: never collapsed a long dictation, resolved the most technical vocabulary, 2.5× faster than Whisper from a smaller artifact |
 | Language | Per-model — only what the engine can decode | Fun-ASR runs English-locked, Voxtral offers eight plus detection, Whisper all 19; the picker follows the selected model |
 | Cleanup | Deterministic text and vocabulary pipeline | Predictable, quick, and preserves protected tokens |
@@ -123,6 +125,8 @@ Pressay therefore keeps the whole dictation path deterministic — including the
 
 The first model download comes from Hugging Face. A Kimi API key is optional, stored in the macOS login keychain, and only enables the explicitly labeled cloud features. Pressay remains fully useful without it.
 
+**Keep the microphone ready** trades a visible signal for capture latency, so it is worth stating plainly. With it on, the audio stream stays open for 45 s after a dictation and macOS keeps the orange recording indicator lit for that time. Only audio captured while the hold key is down is ever written to disk or transcribed — the rest passes through a half-second buffer that is overwritten continuously and discarded when the stream closes. The mic is never opened before your first dictation of a session, it closes on sleep and screen lock, it yields as soon as another app starts playing audio, and the whole behaviour can be switched off in Settings.
+
 Pinned or corrected history records are retained until you delete them. Delete history from the full app window at any time.
 
 ## Install from source
@@ -144,7 +148,7 @@ open .build/Pressay.app
 
 On first launch, the setup assistant requests:
 
-1. Microphone access — record while a hold key is pressed.
+1. Microphone access — record while a hold key is pressed. The stream may also stay open for up to 45 s between dictations so the next one does not clip your first word (see **Keep the microphone ready** in Settings); only audio from while the key is held is ever retained.
 2. Accessibility — insert the finished text into the focused field.
 3. Input Monitoring — observe the global hold shortcut.
 

@@ -363,6 +363,9 @@ public enum TranscriptionLanguage: String, CaseIterable, Codable, Sendable, Iden
 
 public enum DictationPhase: Equatable, Sendable {
     case idle
+    /// Key is down and the mic is opening, but no audio is flowing yet. A cold
+    /// Bluetooth headset spends 500 ms+ here; a warm one skips through it.
+    case arming
     case recording
     case processing
     case succeeded
@@ -374,16 +377,28 @@ public struct DictationStateMachine: Sendable {
 
     public init() {}
 
+    /// Key went down. Capture is requested but not yet confirmed live.
+    @discardableResult
+    public mutating func arm() -> Bool {
+        guard phase == .idle else { return false }
+        phase = .arming
+        return true
+    }
+
+    /// The mic delivered its first real audio. Also accepted straight from
+    /// `.idle` so callers that never arm keep working.
     @discardableResult
     public mutating func begin() -> Bool {
-        guard phase == .idle else { return false }
+        guard phase == .idle || phase == .arming else { return false }
         phase = .recording
         return true
     }
 
+    /// Accepts `.arming` too: releasing the key before the mic opens must still
+    /// hand off to processing rather than stranding the session.
     @discardableResult
     public mutating func stop() -> Bool {
-        guard phase == .recording else { return false }
+        guard phase == .recording || phase == .arming else { return false }
         phase = .processing
         return true
     }
@@ -417,6 +432,17 @@ public enum DictationProcessingPolicy {
     /// Shortest capture worth transcribing; the coordinator's cheap pre-check
     /// and AudioTrimmer's guard must agree on this.
     public static let minimumClipDuration: TimeInterval = 0.25
+
+    /// How long the mic stays open after a dictation.
+    ///
+    /// Tuned against 548 real gaps: the median is 35 s, and coverage runs
+    /// 40% at 30 s → 49.5% at 45 s → 53.5% at 60 s. 45 s clears the median and
+    /// sits on the knee — past it each extra second buys much less.
+    public static let micWarmWindow: TimeInterval = 45
+
+    /// Audio retained ahead of the key press while the mic is already warm, so
+    /// speaking and pressing in the same motion keeps its word onset.
+    public static let preRollDuration: TimeInterval = 0.5
 
     public static func asrTimeout(duration: TimeInterval) -> TimeInterval {
         guard duration >= 30 else { return normalPipelineLimit }

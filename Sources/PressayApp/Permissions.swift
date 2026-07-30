@@ -20,7 +20,7 @@ final class PermissionController: ObservableObject {
         }
         var detail: String {
             switch self {
-            case .microphone: "Records only while you hold the dictation key."
+            case .microphone: "Only audio from while you hold the dictation key is ever kept."
             case .accessibility: "Inserts the finished prompt at your cursor."
             case .inputMonitoring: "Detects your hold-to-talk key in any application."
             }

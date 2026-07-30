@@ -2,6 +2,30 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-07-30
+
+### Fixed
+
+- Dictations no longer lose their first word when you press the key and start speaking in the same motion. Three causes compounded, and all three are fixed. The press path slept 135–160 ms on the main thread before opening the mic, purely so the start earcon would stay out of the recording — that sleep also ran inside the CGEventTap callback, which is what the tap's existing `tapDisabledByTimeout` recovery was there to catch. On top of it, `AVAudioEngine` was cold-started on every press: measured on AirPods Pro, real audio arrives 550–710 ms after the key goes down, against 107–116 ms once warm. Finally `AudioTrimmer` is built to hand the encoder 250 ms of lead-in, but `max(0, firstSpeech - padding)` clamps to zero when speech starts at the first sample, so a clip that had already been chopped got no lead-in either — and Whisper-family encoders drop or hallucinate a first token that begins at frame 0.
+
+### Added
+
+- The microphone stays open for 45 seconds after a dictation, so a follow-up dictation starts instantly instead of paying the hardware open cost again. The window is tuned against 548 real dictation gaps: the median gap is 35 s, and coverage runs 40% at 30 s, 49.5% at 45 s, 53.5% at 60 s — 45 s clears the median and sits on the knee. It never opens the mic before the first dictation of a session, closes on sleep and screen lock, and can be switched off in Settings. Holding the stream open also removes the repeated open/close cycling that could leave a Bluetooth input delivering digital silence indefinitely, which is the most likely cause of dictations that were intermittently much worse for no visible reason.
+- A 0.5 second pre-roll buffer. While the mic is warm, audio from before the key press is retained and prepended to the dictation, so speaking and pressing at the same instant keeps the word onset rather than losing it.
+- An input-device picker. "Follow system" is still the default and now names what it currently resolves to, since the difference matters: a Bluetooth headset costs ~600 ms on a cold start and runs its mic at 24 kHz, while the built-in array opens in ~110 ms at 48 kHz.
+- A `.arming` dictation phase with its own overlay state, so pressing the key acknowledges immediately while the mic is still opening.
+
+### Changed
+
+- The start earcon now fires when the microphone delivers its first non-silent sample rather than before capture begins. Bluetooth links hand out zero-filled buffers for hundreds of milliseconds while negotiating, so the old cue routinely finished before the mic was live. When the mic is already warm this is indistinguishable from before; when it is cold the cue is honestly later. A 1.2 s timeout cues anyway rather than leaving a held key with no feedback.
+- `AudioTrimmer` always guarantees the encoder its 250 ms of lead-in, synthesising silence when the recording itself starts on speech. It also takes an optional earcon guard, since the cue now plays into a live mic: the tone is excluded from onset detection and cut from the clip, unless the pre-roll caught real speech ahead of it, which is worth more than a clean tone.
+- The permission refresh was removed from the key-press path. It made three synchronous TCC calls inside the event-tap callback on every press, while the existing monitor already keeps that state current.
+- Settings are regrouped. Dictation now holds the shortcut, microphone, and capture behaviour; the model and language pickers moved into Local transcription alongside their status; startup has its own section.
+
+### Notes
+
+- Opening a Bluetooth microphone puts the headset into its call profile, dropping output from 48 kHz stereo to 24 kHz mono for as long as macOS keeps it there. This is macOS behaviour and predates this release — every dictation has always done it, and the sample rate cannot be forced back (`AudioObjectSetPropertyData` returns `kAudioHardwareUnsupportedOperationError`). Keeping the mic warm is therefore close to free on that path, but the warm window still yields as soon as another application starts playing audio. That check attributes playback by process ID: the device-level "is running somewhere" property is tripped by Pressay's own microphone within a millisecond on Bluetooth, which made an earlier version of the guard close the very stream that had just tripped it.
+
 ## [1.4.0] - 2026-07-30
 
 ### Added

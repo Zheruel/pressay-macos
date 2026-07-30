@@ -25,6 +25,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // when executor state is under load (swiftlang/swift#89197).
     nonisolated func applicationDidFinishLaunching(_ notification: Notification) {
         Task { @MainActor in AppCoordinator.shared.start() }
+        observeSystemMicReleases()
+    }
+
+    /// A warm mic must not survive sleep or screen lock — resuming into a
+    /// half-torn-down Bluetooth link is how the input wedges into silence.
+    private nonisolated func observeSystemMicReleases() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name: NSNotification.Name in [
+            NSWorkspace.willSleepNotification,
+            NSWorkspace.screensDidSleepNotification,
+            NSWorkspace.sessionDidResignActiveNotification,
+        ] {
+            center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { AppCoordinator.shared.releaseMicForSystemEvent() }
+            }
+        }
     }
 
     // ggml's Metal device teardown aborts in a C++ static destructor during

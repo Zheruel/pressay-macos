@@ -291,6 +291,17 @@ private struct GeneralSettingsView: View {
     /// Cached presence check: SecItemCopyMatching is a securityd IPC, too
     /// expensive to run on every body pass (each SecureField keystroke).
     @State private var keyConfigured = false
+    /// Enumerated once per appearance; the HAL query is too costly for `body`.
+    @State private var inputDevices: [AudioDeviceMonitor.Device] = []
+    @State private var defaultInputName: String?
+
+    /// "Follow system" is meaningless without naming what it resolves to —
+    /// especially when that is a Bluetooth headset with its own trade-offs.
+    private var microphoneCaption: String {
+        guard settings.inputDeviceUID == nil else { return "Pressay always records from this input" }
+        guard let defaultInputName else { return "Which input Pressay records from" }
+        return "Following the system default — currently \(defaultInputName)"
+    }
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
@@ -323,6 +334,39 @@ private struct GeneralSettingsView: View {
 
                     Divider()
 
+                    HStack(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Microphone").font(.body.weight(.medium))
+                            Text(microphoneCaption)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: $settings.inputDeviceUID) {
+                            Text("Follow system").tag(String?.none)
+                            ForEach(inputDevices) { device in
+                                Text(device.name).tag(String?.some(device.uid ?? device.name))
+                            }
+                        }
+                        .labelsHidden()
+                        // Trailing: a menu Picker sizes its button to the widest
+                        // menu item, so equal frames alone leave ragged right edges.
+                        .frame(width: 230, alignment: .trailing)
+                        .onChange(of: settings.inputDeviceUID) { _, _ in coordinator.applyMicWarmth() }
+                    }
+
+                    Divider()
+
+                    Toggle(isOn: $settings.keepMicWarm) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Keep the microphone ready").font(.body.weight(.medium))
+                            Text("Holds the mic open for \(Int(DictationProcessingPolicy.micWarmWindow))s after a dictation so the next one can't clip your first word — the recording indicator stays lit meanwhile")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .onChange(of: settings.keepMicWarm) { _, _ in coordinator.applyMicWarmth() }
+
+                    Divider()
+
                     Toggle(isOn: $settings.structuredDictation) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Structured dictation").font(.body.weight(.medium))
@@ -331,60 +375,9 @@ private struct GeneralSettingsView: View {
                         }
                     }
 
-                    Divider()
+                }
 
-                    HStack(spacing: 14) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Transcription model").font(.body.weight(.medium))
-                            Text(settings.asrModel.caption)
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Picker("", selection: $settings.asrModel) {
-                            ForEach(ASRModel.allCases) { Text($0.displayName).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 230)
-                        .onChange(of: settings.asrModel) { _, _ in coordinator.applyASRModel() }
-                    }
-
-                    if coordinator.modelPreparing {
-                        VStack(alignment: .leading, spacing: 6) {
-                            if let progress = coordinator.modelDownloadProgress {
-                                HStack(spacing: 10) {
-                                    ProgressView(value: progress)
-                                    Text("\(Int((progress * 100).rounded()))%")
-                                        .font(.caption.monospacedDigit())
-                                        .foregroundStyle(.secondary)
-                                }
-                            } else {
-                                ProgressView().controlSize(.small)
-                            }
-                            Text(coordinator.modelStatus)
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Divider()
-
-                    HStack(spacing: 14) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Transcription language").font(.body.weight(.medium))
-                            Text(settings.asrModel.languageCaption)
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Picker("", selection: $settings.language) {
-                            ForEach(settings.asrModel.supportedLanguages) { Text($0.rawValue).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(width: 155)
-                        .disabled(!settings.asrModel.offersLanguageChoice)
-                        .onChange(of: settings.language) { _, _ in coordinator.applyTranscriptionLanguage() }
-                    }
-
-                    Divider()
-
+                SettingsCard(title: "Startup", systemImage: "power") {
                     Toggle(isOn: $settings.launchAtLogin) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Launch Pressay at login").font(.body.weight(.medium))
@@ -406,18 +399,35 @@ private struct GeneralSettingsView: View {
                 }
 
                 SettingsCard(title: "Local transcription", systemImage: "cpu") {
-                    HStack(spacing: 10) {
-                        Image(systemName: "waveform.badge.sparkles")
-                            .font(.title2)
-                            .foregroundStyle(.indigo)
-                            .frame(width: 34)
+                    HStack(spacing: 14) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Whisper Large V3 Turbo").font(.body.weight(.medium))
-                            Text(coordinator.modelStatus).font(.caption).foregroundStyle(.secondary)
+                            Text("Model").font(.body.weight(.medium))
+                            Text(settings.asrModel.caption)
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
+                        Picker("", selection: $settings.asrModel) {
+                            ForEach(ASRModel.allCases) { Text($0.displayName).tag($0) }
+                        }
+                        .labelsHidden()
+                        // Trailing: a menu Picker sizes its button to the widest
+                        // menu item, so equal frames alone leave ragged right edges.
+                        .frame(width: 230, alignment: .trailing)
+                        .onChange(of: settings.asrModel) { _, _ in coordinator.applyASRModel() }
+                    }
+
+                    // Status for the model named directly above, so the two can
+                    // never disagree the way a second hardcoded card did.
+                    HStack(spacing: 10) {
                         if coordinator.modelPreparing {
-                            ProgressView().controlSize(.small)
+                            if let progress = coordinator.modelDownloadProgress {
+                                ProgressView(value: progress).frame(width: 120)
+                                Text("\(Int((progress * 100).rounded()))%")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ProgressView().controlSize(.small)
+                            }
                         } else if coordinator.modelReady {
                             Label("Ready", systemImage: "checkmark.circle.fill")
                                 .font(.caption.weight(.medium)).foregroundStyle(.green)
@@ -425,6 +435,31 @@ private struct GeneralSettingsView: View {
                             Button("Retry") { Task { await coordinator.prepareModel() } }
                                 .pointerStyle(.link)
                         }
+                        // modelStatus names the model too, which only reads as
+                        // repetition once the picker above is the source of truth.
+                        Text(coordinator.modelReady
+                            ? "Runs on your Mac — audio never leaves the device"
+                            : coordinator.modelStatus)
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                    }
+
+                    Divider()
+
+                    HStack(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Language").font(.body.weight(.medium))
+                            Text(settings.asrModel.languageCaption)
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: $settings.language) {
+                            ForEach(settings.asrModel.supportedLanguages) { Text($0.rawValue).tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(width: 155, alignment: .trailing)
+                        .disabled(!settings.asrModel.offersLanguageChoice)
+                        .onChange(of: settings.language) { _, _ in coordinator.applyTranscriptionLanguage() }
                     }
                 }
 
@@ -505,6 +540,8 @@ private struct GeneralSettingsView: View {
             permissions.startMonitoring()
             settings.refreshLaunchAtLogin()
             keyConfigured = KimiAPIKeyStore.read() != nil
+            inputDevices = AudioDeviceMonitor.inputDevices()
+            defaultInputName = AudioDeviceMonitor.defaultInputName
         }
     }
 

@@ -15,6 +15,39 @@ final class StateAndRetentionTests: XCTestCase {
         XCTAssertEqual(state.phase, .idle)
     }
 
+    func testArmingLeadsIntoRecording() {
+        var state = DictationStateMachine()
+        XCTAssertTrue(state.arm())
+        XCTAssertEqual(state.phase, .arming)
+        XCTAssertFalse(state.arm())
+        XCTAssertTrue(state.begin())
+        XCTAssertEqual(state.phase, .recording)
+    }
+
+    /// A quick tap can release the key before a cold mic ever reports audio;
+    /// that must still hand off to processing instead of stranding the session.
+    func testReleaseWhileArmingStillStops() {
+        var state = DictationStateMachine()
+        XCTAssertTrue(state.arm())
+        XCTAssertTrue(state.stop())
+        XCTAssertEqual(state.phase, .processing)
+    }
+
+    func testCancelWhileArmingReturnsToIdle() {
+        var state = DictationStateMachine()
+        XCTAssertTrue(state.arm())
+        state.cancel()
+        XCTAssertEqual(state.phase, .idle)
+        XCTAssertTrue(state.arm())
+    }
+
+    func testArmingIsRejectedWhileProcessing() {
+        var state = DictationStateMachine()
+        XCTAssertTrue(state.arm())
+        XCTAssertTrue(state.stop())
+        XCTAssertFalse(state.arm())
+    }
+
     func testPinnedRecordsNeverExpire() {
         let policy = RetentionPolicy(textDays: 30, audioDays: 7)
         let old = Date(timeIntervalSinceNow: -90 * 86_400)
