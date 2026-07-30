@@ -370,15 +370,16 @@ private struct GeneralSettingsView: View {
                     HStack(spacing: 14) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Transcription language").font(.body.weight(.medium))
-                            Text("Automatic handles mixed Norwegian and English")
+                            Text(settings.asrModel.languageCaption)
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Picker("", selection: $settings.language) {
-                            ForEach(TranscriptionLanguage.allCases) { Text($0.rawValue).tag($0) }
+                            ForEach(settings.asrModel.supportedLanguages) { Text($0.rawValue).tag($0) }
                         }
                         .labelsHidden()
                         .frame(width: 155)
+                        .disabled(!settings.asrModel.offersLanguageChoice)
                         .onChange(of: settings.language) { _, _ in coordinator.applyTranscriptionLanguage() }
                     }
 

@@ -107,64 +107,173 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     ]
 }
 
-/// The local speech-to-text model powering dictation. Defaults and captions
-/// come from a 184-clip corpus comparison against production transcripts
-/// (see PressayBench + the transcribe.cpp evaluation).
+/// The local speech-to-text model powering dictation. Defaults, captions, and
+/// language coverage come from a ten-engine replay of the 184-clip dictation
+/// corpus (see PressayBench + docs/benchmarks.md).
 public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
-    /// Whisper Large V3 Turbo on the transcribe.cpp ggml/Metal engine —
-    /// corpus-validated best transcript quality. The default.
+    /// Fun-ASR MLT Nano 2512 (Q6_K) — the calibrated English default. On the
+    /// corpus it beat Whisper V3 Turbo on every axis that matters here: it
+    /// never collapsed a long dictation into an unpunctuated lowercase block
+    /// (0/47 against Whisper's 3/47), capitalized more consistently, resolved
+    /// more technical vocabulary, and ran 2.5x faster from a smaller artifact.
+    /// It is English-locked with ITN on; both are load-bearing, see
+    /// `supportedLanguages` and `requestsExplicitFormatting`.
+    case funASRMLTNano = "funASRMLTNano"
+    /// Whisper Large V3 Turbo — the multilingual option at 100 languages, and
+    /// the only engine here that chunks long audio inside the runtime.
     case whisperTurboGGML = "whisperTurboGGML"
-    /// Voxtral Mini 3B (Q4_K_M) — LLM-style multilingual audio model. Stronger
-    /// on long dictations (punctuation, capitalization, completeness) at the
-    /// cost of a larger download and more memory than Whisper.
-    case voxtralMini = "voxtralMini"
+    /// Qwen3-ASR 1.7B — the richest punctuation and capitalization measured,
+    /// and the only engine that returns nothing rather than a hallucination on
+    /// near-silent audio. Detects its own language; hints are rejected.
+    case qwen3ASR17B = "qwen3ASR17B"
 
     public var id: String { rawValue }
 
+    /// The engine to use for a persisted setting written by an older build.
+    /// Retired engines map to their closest surviving replacement; anything
+    /// unrecognized (or absent) falls back to the default.
+    public static func migrating(storedRawValue: String?) -> ASRModel {
+        guard let stored = storedRawValue else { return .funASRMLTNano }
+        if let model = ASRModel(rawValue: stored) { return model }
+        switch stored {
+        // Voxtral was chosen for multilingual long-form work, so preserve that
+        // rather than dropping those users onto the English-only default.
+        case "voxtralMini": return .qwen3ASR17B
+        // "parakeetV3" (1.3) and "whisperKit" (1.0) carry no such intent.
+        default: return .funASRMLTNano
+        }
+    }
+
     public var displayName: String {
         switch self {
+        case .funASRMLTNano: "Fun-ASR MLT Nano"
         case .whisperTurboGGML: "Whisper V3 Turbo"
-        case .voxtralMini: "Voxtral Mini 3B"
+        case .qwen3ASR17B: "Qwen3-ASR 1.7B"
         }
     }
 
     public var caption: String {
         switch self {
-        case .whisperTurboGGML: "Best quality · recommended"
-        case .voxtralMini: "Best on long dictations · ~3 GB download · ~5 GB memory"
+        case .funASRMLTNano: "English · fastest · recommended · ~0.7 GB download"
+        case .whisperTurboGGML: "Multilingual · 100 languages · ~0.9 GB download"
+        case .qwen3ASR17B: "Best punctuation · automatic language · ~2.2 GB download"
         }
     }
 
     /// GGUF artifact for the transcribe.cpp engine.
     public var ggufDownload: (url: URL, fileName: String)? {
         switch self {
+        case .funASRMLTNano:
+            (URL(string: "https://huggingface.co/handy-computer/Fun-ASR-MLT-Nano-2512-gguf/resolve/main/Fun-ASR-MLT-Nano-2512-Q6_K.gguf")!,
+             "Fun-ASR-MLT-Nano-2512-Q6_K.gguf")
         case .whisperTurboGGML:
             (URL(string: "https://huggingface.co/handy-computer/whisper-large-v3-turbo-gguf/resolve/main/whisper-large-v3-turbo-Q8_0.gguf")!,
              "whisper-large-v3-turbo-Q8_0.gguf")
-        case .voxtralMini:
-            (URL(string: "https://huggingface.co/handy-computer/Voxtral-Mini-3B-2507-GGUF/resolve/main/Voxtral-Mini-3B-2507-Q4_K_M.gguf")!,
-             "Voxtral-Mini-3B-2507-Q4_K_M.gguf")
+        case .qwen3ASR17B:
+            (URL(string: "https://huggingface.co/handy-computer/Qwen3-ASR-1.7B-gguf/resolve/main/Qwen3-ASR-1.7B-Q8_0.gguf")!,
+             "Qwen3-ASR-1.7B-Q8_0.gguf")
+        }
+    }
+
+    /// Languages offered in Settings for this engine. These describe what the
+    /// engine was measured to do safely, not everything it advertises:
+    /// Fun-ASR left on auto-detect invented whole sentences in Korean and
+    /// Spanish for near-silent clips, and only the English lock removed that.
+    public var supportedLanguages: [TranscriptionLanguage] {
+        switch self {
+        case .funASRMLTNano: [.english]
+        case .whisperTurboGGML: TranscriptionLanguage.allCases
+        // This port answers any explicit hint with
+        // TRANSCRIBE_ERR_UNSUPPORTED_LANGUAGE — it detects language itself.
+        case .qwen3ASR17B: [.auto]
+        }
+    }
+
+    /// Language to fall back to when the current selection is not in
+    /// `supportedLanguages` — after a model switch, or a stale stored value.
+    public var defaultLanguage: TranscriptionLanguage {
+        switch self {
+        case .funASRMLTNano: .english
+        case .whisperTurboGGML, .qwen3ASR17B: .auto
+        }
+    }
+
+    /// Whether Settings should let the user pick a language at all.
+    public var offersLanguageChoice: Bool { supportedLanguages.count > 1 }
+
+    /// Explains the language picker's state for the selected engine.
+    public var languageCaption: String {
+        switch self {
+        case .funASRMLTNano: "This model runs English only"
+        case .whisperTurboGGML: "Automatic handles mixed Norwegian and English"
+        case .qwen3ASR17B: "This model always detects the language itself"
         }
     }
 
     /// Whether the engine honors a forced decoding language hint.
     public var supportsLanguageHint: Bool {
         switch self {
-        case .whisperTurboGGML, .voxtralMini: true
+        case .funASRMLTNano, .whisperTurboGGML: true
+        case .qwen3ASR17B: false
         }
     }
 
-    /// Whether `text` is an instruct-tuned model's refusal on unintelligible
-    /// audio (e.g. Voxtral's "I'm sorry, I didn't understand.") rather than a
-    /// transcript. Only engines that actually emit these are checked, and only
-    /// when the whole output is short and self-contained, so a longer real
-    /// dictation that merely *starts* with an apology is left untouched.
+    /// Whether to ask the engine for punctuation/capitalization and inverse
+    /// text normalization explicitly. Fun-ASR ships both off and emits
+    /// verbatim lowercase without them — turning ITN on is what moved it from
+    /// 8/46 collapsed long clips to 0/46. Whisper exposes no runtime toggle
+    /// and keeps the defaults its 1.3 calibration was measured against.
+    public var requestsExplicitFormatting: Bool {
+        switch self {
+        case .funASRMLTNano, .qwen3ASR17B: true
+        case .whisperTurboGGML: false
+        }
+    }
+
+    /// True when no language this engine can be set to uses a non-Latin
+    /// script, so foreign-script output cannot be a real transcript.
+    var expectsLatinScriptOnly: Bool {
+        supportedLanguages.allSatisfy(\.usesLatinScript)
+    }
+
+    /// Whether this engine can answer unintelligible audio with an assistant
+    /// reply instead of a transcript. Only the LLM-decoder engines do. Whisper
+    /// is excluded deliberately: it never emits one, and applying the filter
+    /// there would drop a real dictation of "I'm sorry, I didn't understand."
+    var emitsAssistantRefusals: Bool {
+        switch self {
+        case .funASRMLTNano, .qwen3ASR17B: true
+        case .whisperTurboGGML: false
+        }
+    }
+
+    /// Whether `text` is an artifact rather than dictated words: an
+    /// instruct-tuned model's refusal on unintelligible audio, or a burst of
+    /// another script that an engine invented for near-silent audio. Only
+    /// short, self-contained output is judged, so a real dictation that merely
+    /// *starts* with an apology is left untouched — and the script check is
+    /// skipped for engines that can legitimately transcribe those scripts.
     public func isTranscriptionRefusal(_ text: String) -> Bool {
-        guard self == .voxtralMini, text.count <= 64 else { return false }
-        let lower = text.lowercased()
-        return lower.hasPrefix("i'm sorry, i didn't understand")
-            || lower.hasPrefix("i'm sorry, i couldn't understand")
-            || lower.hasPrefix("sorry, i didn't understand")
+        guard text.count <= 64 else { return false }
+        if emitsAssistantRefusals {
+            let lower = text.lowercased()
+            if lower.hasPrefix("i'm sorry, i didn't understand")
+                || lower.hasPrefix("i'm sorry, i couldn't understand")
+                || lower.hasPrefix("sorry, i didn't understand") {
+                return true
+            }
+        }
+        return expectsLatinScriptOnly && Self.isPredominantlyNonLatin(text)
+    }
+
+    /// Most letters fall outside the Latin scripts — Cyrillic, Han, Kana,
+    /// Hangul, Arabic, Devanagari. Punctuation and digits are ignored so a
+    /// short clip like "아, 그거는." still reads as non-Latin.
+    static func isPredominantlyNonLatin(_ text: String) -> Bool {
+        let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+        guard !letters.isEmpty else { return false }
+        let nonLatin = letters.filter { $0.value > 0x02FF }.count
+        return nonLatin * 2 > letters.count
     }
 }
 
@@ -216,6 +325,20 @@ public enum TranscriptionLanguage: String, CaseIterable, Codable, Sendable, Iden
         case .chinese: "zh"
         case .japanese: "ja"
         case .korean: "ko"
+        }
+    }
+
+    /// Whether transcripts in this language are written in a Latin script.
+    /// `auto` is not: an auto-detecting engine may legitimately return any
+    /// script, so foreign-script output cannot be treated as a hallucination.
+    public var usesLatinScript: Bool {
+        switch self {
+        case .auto, .ukrainian, .russian, .arabic, .hindi,
+             .chinese, .japanese, .korean:
+            false
+        case .english, .norwegian, .danish, .german, .spanish, .french,
+             .italian, .dutch, .polish, .portuguese, .swedish:
+            true
         }
     }
 }

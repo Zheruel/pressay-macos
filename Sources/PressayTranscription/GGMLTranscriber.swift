@@ -12,6 +12,23 @@ public actor GGMLTranscriber: SpeechTranscriber {
     private var preparation: Task<Void, Error>?
     private var statusHandler: (@Sendable (String) -> Void)?
     private var progressHandler: (@Sendable (Double?) -> Void)?
+    /// Runtime formatting toggles the loaded model actually exposes. Fun-ASR
+    /// ships punctuation and ITN off and emits verbatim lowercase otherwise.
+    private var supportsPnc = false
+    private var supportsItn = false
+    /// Longest single run this session accepts, in samples; nil when the
+    /// family chunks internally or is otherwise unbounded (Whisper).
+    private var maxRunSamples: Int?
+
+    /// How many times a segment may be halved before we give up. Three levels
+    /// turns a 100-second clip into ~12-second pieces, far below any context
+    /// window here, so exceeding it means something other than length.
+    private static let maxSplitDepth = 3
+    /// Never split below this: a sub-second fragment carries no usable context
+    /// and splitting further cannot help.
+    private static let minimumSplitSeconds: TimeInterval = 1.0
+    /// The engines all take 16 kHz mono; the recorder resamples to it.
+    private static let sampleRate = 16_000
 
     public init(model: ASRModel, language: String = "en") {
         self.asrModel = model
@@ -80,7 +97,39 @@ public actor GGMLTranscriber: SpeechTranscriber {
         // budget (mirrors WhisperKit's prewarm).
         nonisolated(unsafe) let warmupSession = fresh
         _ = try? await warmupSession.run([Float](repeating: 0, count: 16_000))
+
+        if asrModel.requestsExplicitFormatting {
+            supportsPnc = model.supports(.pnc)
+            supportsItn = model.supports(.itn)
+        }
+        // The GGUF is the authority on what it can decode. If the static table
+        // in ASRModel ever drifts from the artifact, fall back to the model's
+        // own default rather than sending a hint the engine will reject.
+        let advertised = model.capabilities.languages
+        if language != "auto", !advertised.isEmpty, !advertised.contains(language) {
+            language = asrModel.defaultLanguage.whisperCode
+        }
+        // 0 means "no practical limit" — the family chunks internally.
+        let maxAudioMs = fresh.limits.effectiveMaxAudioMs
+        maxRunSamples = maxAudioMs > 0
+            ? Int(Double(maxAudioMs) / 1000 * Double(Self.sampleRate))
+            : nil
+
         session = fresh
+        removeUnusedModelArtifacts(in: directory, keeping: destination)
+    }
+
+    /// Deletes GGUFs in the model directory that back no current `ASRModel` —
+    /// artifacts left behind by models retired in an update. Files backing a
+    /// model that still ships are kept, so switching back never re-downloads.
+    private func removeUnusedModelArtifacts(in directory: URL, keeping active: URL) {
+        let known = Set(ASRModel.allCases.compactMap { $0.ggufDownload?.fileName })
+        let contents = try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil)
+        for url in contents ?? [] where url.pathExtension == "gguf" {
+            guard url != active, !known.contains(url.lastPathComponent) else { continue }
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     /// Streams the GGUF to `destination`, reporting fractional progress through
@@ -106,31 +155,87 @@ public actor GGMLTranscriber: SpeechTranscriber {
         guard let session else {
             throw PressayError.modelUnavailable("\(asrModel.displayName) is not loaded")
         }
-        // Safe to send across the await: the model's run lock serializes all
-        // runs, and this actor is the session's only owner (same contract the
-        // wrapper's own async overload relies on).
-        nonisolated(unsafe) let activeSession = session
         let started = ContinuousClock.now
+        let text = try await transcribeSegment(
+            clip.samples, sampleRate: clip.sampleRate,
+            session: session, depth: 0)
+        guard !text.isEmpty else { throw PressayError.emptyTranscript }
+        return ASRTranscript(
+            text: text,
+            processingTime: started.duration(to: .now).seconds
+        )
+    }
+
+    /// Transcribes one segment, splitting it when the decoder context cannot
+    /// hold it. Returns "" for a segment that produced nothing usable, so a
+    /// hallucinated or empty chunk drops out of the join instead of poisoning
+    /// the surrounding real speech.
+    private func transcribeSegment(
+        _ samples: [Float],
+        sampleRate: Int,
+        session: Session,
+        depth: Int
+    ) async throws -> String {
+        // Known-too-long input: split before spending a decode on it.
+        if let limit = maxRunSamples, samples.count > limit, canSplit(samples, sampleRate, depth) {
+            return try await splitAndTranscribe(
+                samples, sampleRate: sampleRate, session: session, depth: depth)
+        }
         var options = RunOptions()
         options.timestamps = .none
         if asrModel.supportsLanguageHint, language != "auto" {
             options.language = language
         }
-        // The async overload hops the blocking run off this actor; the model's
-        // internal run lock serializes reentrant calls, and Task cancellation
-        // (our Timeout wrapper) bridges to the native abort.
-        let transcript = try await activeSession.run(clip.samples, options: options)
-        let text = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // LLM-style engines (Voxtral) occasionally answer near-silent/unclear
-        // audio with an assistant refusal instead of a transcript. Treat that
-        // as nothing dictated rather than inserting the boilerplate.
-        guard !text.isEmpty, !asrModel.isTranscriptionRefusal(text) else {
-            throw PressayError.emptyTranscript
+        if supportsPnc { options.pnc = .on }
+        if supportsItn { options.itn = .on }
+        // Safe to send across the await: the model's run lock serializes all
+        // runs, and this actor is the session's only owner (the same contract
+        // the wrapper's own async overload relies on).
+        nonisolated(unsafe) let activeSession = session
+        do {
+            // The async overload hops the blocking run off this actor; the
+            // model's internal run lock serializes reentrant calls, and Task
+            // cancellation (our Timeout wrapper) bridges to the native abort.
+            let transcript = try await activeSession.run(samples, options: options)
+            let text = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // LLM-style engines answer near-silent audio with a refusal, or an
+            // invented sentence in another script. Neither was dictated.
+            return asrModel.isTranscriptionRefusal(text) ? "" : text
+        } catch TranscribeError.outputTruncated(_, let partial) {
+            // Truncation cannot be predicted from input length — a repetition
+            // loop can exhaust the context on a three-second clip — so this is
+            // a retry path rather than something the length check above cures.
+            if canSplit(samples, sampleRate, depth) {
+                return try await splitAndTranscribe(
+                    samples, sampleRate: sampleRate, session: session, depth: depth)
+            }
+            // Too short to divide further: keep whatever did decode rather
+            // than dropping the words the engine got through.
+            let salvaged = (partial?.text ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return asrModel.isTranscriptionRefusal(salvaged) ? "" : salvaged
         }
-        return ASRTranscript(
-            text: text,
-            processingTime: started.duration(to: .now).seconds
-        )
+    }
+
+    private func splitAndTranscribe(
+        _ samples: [Float],
+        sampleRate: Int,
+        session: Session,
+        depth: Int
+    ) async throws -> String {
+        let cut = AudioChunking.splitPoint(samples: samples, sampleRate: sampleRate)
+        var parts: [String] = []
+        for piece in [Array(samples[..<cut]), Array(samples[cut...])] {
+            parts.append(try await transcribeSegment(
+                piece, sampleRate: sampleRate, session: session, depth: depth + 1))
+        }
+        return AudioChunking.join(parts)
+    }
+
+    private func canSplit(_ samples: [Float], _ sampleRate: Int, _ depth: Int) -> Bool {
+        guard depth < Self.maxSplitDepth, sampleRate > 0 else { return false }
+        // Both halves must still be long enough to be worth decoding.
+        return Double(samples.count) / Double(sampleRate) >= Self.minimumSplitSeconds * 2
     }
 }
 
