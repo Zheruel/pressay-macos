@@ -23,10 +23,11 @@ public actor GGMLTranscriber: SpeechTranscriber {
     /// at, rather than assuming the recorder's 16 kHz.
     private var maxRunSeconds: TimeInterval?
 
-    /// How many times a segment may be halved before we give up. Three levels
-    /// turns a 100-second clip into ~12-second pieces, far below any context
-    /// window here, so exceeding it means something other than length.
-    private static let maxSplitDepth = 3
+    /// How many times a segment may be halved. Four levels take a clip of
+    /// any plausible dictation length below the chunk threshold (16 pieces,
+    /// ~16 minutes at 60 s each), so exhausting it means something other
+    /// than length — a decode loop, not a long recording.
+    private static let maxSplitDepth = 4
     /// Never split below this: a sub-second fragment carries no usable context
     /// and splitting further cannot help.
     private static let minimumSplitSeconds: TimeInterval = 1.0
@@ -111,8 +112,14 @@ public actor GGMLTranscriber: SpeechTranscriber {
             language = asrModel.defaultLanguage.whisperCode
         }
         // 0 means "no practical limit" — the family chunks internally.
-        let maxAudioMs = fresh.limits.effectiveMaxAudioMs
-        maxRunSeconds = maxAudioMs > 0 ? Double(maxAudioMs) / 1000 : nil
+        // Two independent bounds. The runtime reports what the decoder
+        // context can hold (0 = unbounded, it chunks internally); the model
+        // declares where splitting starts paying for itself. Take the lower.
+        let apiLimit = fresh.limits.effectiveMaxAudioMs
+        maxRunSeconds = [
+            apiLimit > 0 ? Double(apiLimit) / 1000 : nil,
+            asrModel.preferredChunkSeconds,
+        ].compactMap { $0 }.min()
 
         session = fresh
         removeUnusedModelArtifacts(in: directory, keeping: destination)
@@ -175,7 +182,8 @@ public actor GGMLTranscriber: SpeechTranscriber {
         session: Session,
         depth: Int
     ) async throws -> String {
-        // Known-too-long input: split before spending a decode on it.
+        // Split before spending a decode we know will be slow or overflow —
+        // reacting to the failure afterwards throws away a whole decode.
         let seconds = sampleRate > 0 ? Double(samples.count) / Double(sampleRate) : 0
         if let limit = maxRunSeconds, seconds > limit, canSplit(samples, sampleRate, depth) {
             return try await splitAndTranscribe(

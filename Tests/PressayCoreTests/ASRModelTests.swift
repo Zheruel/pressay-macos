@@ -99,6 +99,18 @@ final class ASRModelTests: XCTestCase {
         XCTAssertFalse(ASRModel.voxtralMini.requestsExplicitFormatting)
     }
 
+    func testOnlyTheAutoregressiveEnginesChunkLongAudio() {
+        // Whisper chunks inside the runtime, so asking Pressay to split for it
+        // would add work for nothing.
+        XCTAssertNil(ASRModel.whisperTurboGGML.preferredChunkSeconds)
+        // The measured floor: below ~40 s the per-call overhead makes long
+        // dictations slower rather than faster.
+        for model in [ASRModel.funASRMLTNano, .voxtralMini] {
+            let seconds = try? XCTUnwrap(model.preferredChunkSeconds)
+            XCTAssertEqual(seconds, 60, "\(model.rawValue)")
+        }
+    }
+
     // MARK: - Refusal and hallucination filtering
 
     func testAssistantRefusalIsSuppressed() {

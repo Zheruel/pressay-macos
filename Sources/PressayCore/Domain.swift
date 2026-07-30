@@ -199,6 +199,21 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
+    /// Longest audio to hand this engine in one run, or nil to let it take
+    /// whatever it accepts. The autoregressive engines generate a transcript
+    /// token by token, so one long decode costs more than two shorter ones:
+    /// splitting at 60 s cut the worst-case wait on the corpus from 3.7 s to
+    /// 2.0 s for Fun-ASR and from 13.3 s to 7.7 s for Voxtral, with the
+    /// transcripts 99.3% identical. Below ~40 s the per-call overhead wins
+    /// again and it gets slower, so 60 s is the measured floor, not a guess.
+    /// Whisper chunks internally and needs none of this.
+    public var preferredChunkSeconds: TimeInterval? {
+        switch self {
+        case .funASRMLTNano, .voxtralMini: 60
+        case .whisperTurboGGML: nil
+        }
+    }
+
     /// Whether Settings should let the user pick a language at all.
     public var offersLanguageChoice: Bool { supportedLanguages.count > 1 }
 

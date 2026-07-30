@@ -112,6 +112,44 @@ correct behaviour; those rows are counted as empties, not failures.
   number differs from the earlier note.
 - One repetition, one machine, one speaker, English. Latency figures are wall-clock on a warm model.
 
+### Chunking long dictations is a speed win, not just a safety net
+
+Fun-ASR and Voxtral generate a transcript token by token, so decode cost grows with output
+length. Whisper does not — it chunks inside the runtime — and the curves cross:
+
+| Clip length | Fun-ASR | Whisper | Voxtral |
+| --- | ---: | ---: | ---: |
+| 0–5 s | **0.08 s** | 0.43 s | 0.93 s |
+| 5–15 s | **0.20 s** | 0.43 s | 1.13 s |
+| 15–30 s | **0.43 s** | 0.48 s | 1.70 s |
+| 30–60 s | **0.96 s** | 1.01 s | 3.42 s |
+| 60 s+ | 2.94 s | **1.56 s** | 6.08 s |
+
+So splitting long audio is worth doing even when the decoder could hold it. Thresholds were
+swept over the 18 clips longer than 30 s:
+
+| Split at | Total | Median | Worst case |
+| --- | ---: | ---: | ---: |
+| never | 16.89 s | 0.76 s | 3.68 s |
+| **60 s** | **15.32 s** | 0.76 s | **1.95 s** |
+| 40 s | 15.88 s | 0.78 s | 2.12 s |
+| 30 s | 16.98 s | 0.84 s | 2.13 s |
+| 20 s | 19.45 s | 0.98 s | 2.46 s |
+
+60 s is a measured optimum, not a guess: below ~40 s the per-call overhead makes long dictations
+*slower*. Quality is unaffected — technical terms 78% either way, punctuation .053 against .052,
+transcripts 99.3% identical on average. Across the whole corpus the worst-case wait fell from
+4.71 s to 2.07 s for Fun-ASR and from 13.27 s to 6.34 s for Voxtral.
+
+Two bounds are checked, and the lower wins: what the decoder context can hold (reported by the
+runtime) and where splitting starts paying for itself (declared per model). The reactive retry on
+`outputTruncated` stays, because truncation is not purely a length problem — a repetition loop
+exhausted the context on a 2.6 s clip.
+
+There is no setting that avoids this. `transcribe_session_params::n_ctx` can only *lower* the
+decoder context (`min(n_ctx, model_max_ctx)`, default 0 = model maximum), and
+`TRANSCRIBE_FEATURE_LONG_FORM` is whisper-only.
+
 ### Quantization: Q6_K is the ceiling, not a compromise
 
 The default ships at Q6_K (691 MB). Both larger quants were replayed through the same corpus:

@@ -73,7 +73,7 @@ Pressay has one quality-first default instead of exposing a wall of decoder knob
 | Structure | Optional deterministic structuring pass | Readability without an LLM rewriting what was said |
 | Multilingual option | Whisper Large V3 Turbo Q8 GGUF via `transcribe.cpp` | 100 languages, and the only engine that chunks long audio inside the runtime |
 | Quality option | Voxtral Mini 3B Q4 GGUF via `transcribe.cpp` | Matches the default on technical vocabulary and punctuates more densely, at 9x the latency and 4x the size; eight languages plus detection |
-| Long dictations | In-app splitting at a silence boundary | The context-bound engines cannot take a 100-second clip in one run; Pressay splits and keeps the chosen model instead of falling back to Whisper, which is the engine that collapses long clips |
+| Long dictations | Split at a silence boundary past 60 s | The context-bound engines cannot take a 100-second clip in one run, and decode token by token — so two short passes beat one long one. Halves the worst-case wait at identical quality, and keeps the chosen model rather than falling back to Whisper, which is the engine that collapses long clips |
 
 ### How the shipping models compare
 
