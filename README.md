@@ -21,7 +21,7 @@ Pressay is a native, hold-to-talk dictation app built for people who communicate
 It is deliberately not an always-listening assistant. There is no account, telemetry, subscription, or cloud transcription.
 
 > [!IMPORTANT]
-> Pressay 1.4 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
+> Pressay 1.5 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
 
 ## Why Pressay
 
@@ -125,7 +125,7 @@ Pressay therefore keeps the whole dictation path deterministic — including the
 
 The first model download comes from Hugging Face. A Kimi API key is optional, stored in the macOS login keychain, and only enables the explicitly labeled cloud features. Pressay remains fully useful without it.
 
-**Keep the microphone ready** trades a visible signal for capture latency, so it is worth stating plainly. With it on, the audio stream stays open for 45 s after a dictation and macOS keeps the orange recording indicator lit for that time. Only audio captured while the hold key is down is ever written to disk or transcribed — the rest passes through a half-second buffer that is overwritten continuously and discarded when the stream closes. The mic is never opened before your first dictation of a session, it closes on sleep and screen lock, it yields as soon as another app starts playing audio, and the whole behaviour can be switched off in Settings.
+**Keep the microphone ready** trades a visible signal for capture latency, so it is worth stating plainly. With it on, the audio stream stays open for 45 s after a dictation and macOS keeps the orange recording indicator lit for that time. What is kept is the audio from while the hold key is down, plus up to the half second immediately before it — that pre-roll is what stops a dictation losing its first word when you press and speak in one motion. Nothing older survives: it passes through a half-second ring buffer that is overwritten continuously and discarded when the stream closes. The mic is never opened before your first dictation of a session, it closes on sleep and screen lock, it yields as soon as another app starts playing audio, and the whole behaviour can be switched off in Settings.
 
 Pinned or corrected history records are retained until you delete them. Delete history from the full app window at any time.
 
@@ -148,7 +148,7 @@ open .build/Pressay.app
 
 On first launch, the setup assistant requests:
 
-1. Microphone access — record while a hold key is pressed. The stream may also stay open for up to 45 s between dictations so the next one does not clip your first word (see **Keep the microphone ready** in Settings); only audio from while the key is held is ever retained.
+1. Microphone access — record while a hold key is pressed, plus the half second before it. The stream may also stay open for up to 45 s between dictations so the next one does not clip your first word (see **Keep the microphone ready** in Settings).
 2. Accessibility — insert the finished text into the focused field.
 3. Input Monitoring — observe the global hold shortcut.
 

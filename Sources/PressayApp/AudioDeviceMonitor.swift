@@ -10,7 +10,7 @@ enum AudioDeviceMonitor {
     struct Device: Identifiable, Equatable, Sendable {
         let id: AudioDeviceID
         let name: String
-        let uid: String?
+        let uid: String
         let isBluetooth: Bool
     }
 
@@ -38,16 +38,20 @@ enum AudioDeviceMonitor {
             guard uint32Property(process, kAudioProcessPropertyIsRunningOutput) == 1 else {
                 return false
             }
-            return pid(of: process) != ourPID
+            // An unreadable PID is not evidence of somebody else playing;
+            // treating it as such would suppress warmth permanently after a
+            // single HAL hiccup.
+            guard let owner = pid(of: process) else { return false }
+            return owner != ourPID
         }
     }
 
-    private static func pid(of process: AudioObjectID) -> pid_t {
+    private static func pid(of process: AudioObjectID) -> pid_t? {
         var value = pid_t(-1)
         var size = UInt32(MemoryLayout<pid_t>.size)
         var property = address(kAudioProcessPropertyPID)
         guard AudioObjectGetPropertyData(process, &property, 0, nil, &size, &value) == noErr else {
-            return -1
+            return nil
         }
         return value
     }
@@ -81,12 +85,17 @@ enum AudioDeviceMonitor {
 
     // MARK: - Enumeration
 
-    /// Every device that can capture audio, for the input picker.
+    /// Every device that can capture audio, for the input picker. A device
+    /// without a UID cannot be persisted or looked up again, so it is left out
+    /// rather than offered as a choice that would silently not apply.
     static func inputDevices() -> [Device] {
         allDeviceIDs()
             .filter { channelCount($0, scope: kAudioObjectPropertyScopeInput) > 0 }
-            .map {
-                Device(id: $0, name: name($0), uid: uid($0), isBluetooth: isBluetooth($0))
+            .compactMap { device in
+                guard let uid = uid(device) else { return nil }
+                return Device(
+                    id: device, name: name(device), uid: uid, isBluetooth: isBluetooth(device)
+                )
             }
     }
 
@@ -222,7 +231,10 @@ final class OutputActivityObserver {
         self.handler = handler
     }
 
-    deinit { MainActor.assumeIsolated { stop() } }
+    // No assumeIsolated: deinit on a @MainActor class is nonisolated and may
+    // run on any thread, where that would trap. Listener blocks are released
+    // with the object, and stop() is called explicitly on teardown paths.
+    deinit {}
 
     func start() {
         guard defaultDeviceBlock == nil else { return }

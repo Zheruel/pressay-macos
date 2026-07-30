@@ -344,7 +344,7 @@ private struct GeneralSettingsView: View {
                         Picker("", selection: $settings.inputDeviceUID) {
                             Text("Follow system").tag(String?.none)
                             ForEach(inputDevices) { device in
-                                Text(device.name).tag(String?.some(device.uid ?? device.name))
+                                Text(device.name).tag(String?.some(device.uid))
                             }
                         }
                         .labelsHidden()

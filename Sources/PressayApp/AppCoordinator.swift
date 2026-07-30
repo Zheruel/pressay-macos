@@ -47,6 +47,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private var outputActivity: OutputActivityObserver?
     /// Parks warming after a failed open so a broken device can't spin.
     private var warmUpFailed = false
+    /// When the hold key went down. The pre-roll makes clip length useless as
+    /// an accidental-tap test, since every warm capture is at least 0.5 s.
+    private var keyPressedAt = Date.distantPast
     private lazy var onboardingWindow = OnboardingWindowController(coordinator: self)
     private lazy var settingsWindow = SettingsWindowController(coordinator: self)
 
@@ -262,6 +265,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
         activeMonitor = monitor
         sessionEngine = transcriber
+        keyPressedAt = Date()
         coolDownTask?.cancel()
         do {
             // The mic opens first and the cue waits for real audio. A cold
@@ -313,13 +317,16 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             // Only once the recorder is idle: coolDown() refuses to cut a live
             // dictation, so warming decided any earlier would never take effect.
             scheduleMicCoolDown()
-            // Cheap too-short check: accidental taps reset silently, without
-            // the release earcon. Silence is detected later, during trim.
-            guard raw.duration >= DictationProcessingPolicy.minimumClipDuration else {
+            // Held-key duration, not clip duration: a warm capture is seeded
+            // with up to 0.5 s of pre-roll, so every stray tap would otherwise
+            // clear this bar and earn a release earcon plus a full trim pass.
+            let held = Date().timeIntervalSince(keyPressedAt)
+            guard held >= DictationProcessingPolicy.minimumClipDuration else {
                 resetAfterNonResult()
                 return
             }
             sounds.play(.release)
+            recorder.mutePreRoll(for: sounds.beginCaptureDelay)
             overlay.showProcessing()
             let captured = target ?? accessibility.capture(vocabulary: settings.vocabularyTerms)
             let target = accessibility.refreshInsertionTarget(captured)
@@ -345,6 +352,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         target = nil
         overlay.hide()
         sounds.play(.cancel)
+            recorder.mutePreRoll(for: sounds.beginCaptureDelay)
         scheduleMicCoolDown()
     }
 
@@ -357,16 +365,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         // A dictation just succeeded on this device, so an earlier warm-up
         // failure is stale.
         warmUpFailed = false
-        coolDownTask?.cancel()
-        guard warmConditions(at: Date()).enabled else {
-            recorder.coolDown()
-            return
-        }
-        coolDownTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(DictationProcessingPolicy.micWarmWindow))
-            guard !Task.isCancelled else { return }
-            await MainActor.run { self?.applyMicWarmth() }
-        }
         applyMicWarmth()
     }
 
@@ -396,6 +394,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         // A device that refuses to open should not be retried on every audio
         // event; one failure parks warming until the next real dictation.
         guard shouldWarm, !warmUpFailed else {
+            coolDownTask?.cancel()
+            coolDownTask = nil
             recorder.coolDown()
             return
         }
@@ -404,7 +404,42 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         } catch {
             // Not worth surfacing: the next press opens the mic normally.
             warmUpFailed = true
+            coolDownTask?.cancel()
+            coolDownTask = nil
             logger.info("could not keep the mic warm: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        // Whoever warms the stream owns closing it. Scheduling this only from
+        // the post-dictation path left every other caller — the playback
+        // observer, both Settings toggles — able to open a stream that nothing
+        // would ever close.
+        scheduleCoolDown(for: conditions)
+    }
+
+    /// (Re)arms the deadline that closes a warm stream. Driven by the policy's
+    /// own expiry rather than a bare sleep, so a wall-clock adjustment during
+    /// the window cannot leave the mic open.
+    private func scheduleCoolDown(for conditions: MicWarmPolicy.Conditions) {
+        coolDownTask?.cancel()
+        guard let expiry = MicWarmPolicy.expiry(conditions, now: Date()) else {
+            coolDownTask = nil
+            return
+        }
+        coolDownTask = Task { [weak self] in
+            let remaining = max(0, expiry.timeIntervalSinceNow)
+            try? await Task.sleep(for: .seconds(remaining))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                // Re-check rather than closing blindly: a dictation may have
+                // landed while this was sleeping and pushed the deadline out.
+                if MicWarmPolicy.shouldStayWarm(self.warmConditions(at: Date()), now: Date()) {
+                    self.applyMicWarmth()
+                } else {
+                    self.coolDownTask = nil
+                    self.recorder.coolDown()
+                }
+            }
         }
     }
 
@@ -421,8 +456,18 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     /// half-torn-down Bluetooth link is how the input wedges into silence.
     func releaseMicForSystemEvent() {
         coolDownTask?.cancel()
+        coolDownTask = nil
+        armingTimeoutTask?.cancel()
+        armingTimeoutTask = nil
         lastDictationEnded = nil
-        recorder.coolDown()
+        // forceClose, not coolDown: sleeping mid-dictation is exactly when the
+        // stream must not survive, and coolDown() declines while recording.
+        recorder.forceClose()
+        if stateMachine.phase == .recording || stateMachine.phase == .arming {
+            stateMachine.cancel()
+            target = nil
+            overlay.hide()
+        }
     }
 
     func copy(_ record: DictationRecord) {
@@ -559,7 +604,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     /// Fails visibly while the key is still held; the eventual key release is
     /// a no-op because the state machine has left the recording phase.
     private func captureFailedMidDictation(_ message: String) {
-        guard stateMachine.phase == .recording else { return }
+        guard stateMachine.phase == .recording || stateMachine.phase == .arming else { return }
+        armingTimeoutTask?.cancel()
+        armingTimeoutTask = nil
         fail(PressayError.microphoneUnavailable, message: message)
     }
 
@@ -619,6 +666,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         stateMachine.fail(error.localizedDescription)
         overlay.showError(message ?? error.localizedDescription)
         sounds.play(.error)
+        recorder.mutePreRoll(for: sounds.beginCaptureDelay)
         target = nil
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
@@ -641,6 +689,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             ? "Learned: \(rules[0].heard) → \(rules[0].preferred)"
             : "Learned \(rules.count) new words"
         sounds.play(.learned)
+        recorder.mutePreRoll(for: sounds.beginCaptureDelay)
         overlay.showLearnedToast(message)
     }
 

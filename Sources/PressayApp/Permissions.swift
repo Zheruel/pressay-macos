@@ -20,7 +20,7 @@ final class PermissionController: ObservableObject {
         }
         var detail: String {
             switch self {
-            case .microphone: "Only audio from while you hold the dictation key is ever kept."
+            case .microphone: "Records while you hold the dictation key, plus a half-second before it."
             case .accessibility: "Inserts the finished prompt at your cursor."
             case .inputMonitoring: "Detects your hold-to-talk key in any application."
             }
@@ -70,8 +70,9 @@ final class PermissionController: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
                 refresh()
-                // Every tick hits tccd; holdKeyPressed() refreshes on demand,
-                // so the slow cadence only has to keep the menu UI honest.
+                // Every tick hits tccd. This is now the only refresh: the
+                // key-press path no longer does one synchronously, because it
+                // runs inside the CGEventTap callback.
                 let delay: Duration = allGranted ? .seconds(10) : .milliseconds(400)
                 try? await Task.sleep(for: delay)
             }

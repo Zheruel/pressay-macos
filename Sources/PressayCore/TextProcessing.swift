@@ -387,8 +387,12 @@ public enum AudioTrimmer {
         guard samples.count >= Int(Double(sampleRate) * DictationProcessingPolicy.minimumClipDuration) else {
             throw PressayError.recordingTooShort
         }
-        let guardRange = earconGuard.map {
-            max(0, $0.lowerBound)..<min(samples.count, max(0, $0.upperBound))
+        // Both bounds clamp: the guard is derived from a wall-clock duration and
+        // can start past the end of a very short capture, which would otherwise
+        // build an inverted Range and trap.
+        let guardRange = earconGuard.map { requested -> Range<Int> in
+            let lower = min(samples.count, max(0, requested.lowerBound))
+            return lower..<min(samples.count, max(lower, requested.upperBound))
         }
         let frameSize = max(1, sampleRate * frameMilliseconds / 1_000)
         var firstSpeech: Int?
@@ -409,14 +413,15 @@ public enum AudioTrimmer {
 
         guard let firstSpeech, let lastSpeech else { throw PressayError.silence }
         let padding = sampleRate * paddingMilliseconds / 1_000
+        // Deliberately not clamped past the cue. The onset search skips the
+        // guarded frames, so a speaker who talks *over* the cue is invisible
+        // there and `firstSpeech` lands after it — cutting to the guard's end
+        // would then discard the very word onset the pre-roll exists to keep.
+        // Leaving a short tone in the lead-in is the cheaper mistake.
         var start = max(0, firstSpeech - padding)
         var end = min(samples.count, lastSpeech + padding)
-        if let guardRange, firstSpeech >= guardRange.upperBound {
-            start = max(start, guardRange.upperBound)
-        }
         let minimumCount = sampleRate * minimumOutputMilliseconds / 1_000
-        // Once the cue has been cut away, nothing below may reach back into it.
-        let lowerLimit = guardRange.map { firstSpeech >= $0.upperBound ? $0.upperBound : 0 } ?? 0
+        let lowerLimit = 0
 
         // Preserve available room around very short utterances before adding
         // synthetic silence. Whisper is substantially more reliable on one-word

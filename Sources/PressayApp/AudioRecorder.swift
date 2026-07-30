@@ -47,6 +47,8 @@ final class AudioRecorder: @unchecked Sendable {
     private var preRoll: [Float] = []
     private var preRollWrite = 0
     private var preRollFilled = 0
+    /// While set in the future, incoming audio is dropped rather than buffered.
+    private var preRollMutedUntil: Date?
 
     /// Whether the device has delivered anything but digital silence. Bluetooth
     /// links hand out zero-filled buffers for hundreds of ms while negotiating.
@@ -97,6 +99,13 @@ final class AudioRecorder: @unchecked Sendable {
     /// Closes the stream. Safe to call while idle; refuses to cut a dictation.
     func coolDown() {
         guard !isRecording else { return }
+        closeEngine()
+    }
+
+    /// Closes the stream even mid-dictation. For sleep and screen lock, where
+    /// leaving a Bluetooth link half-torn-down is what wedges the input into
+    /// delivering silence on the other side.
+    func forceClose() {
         closeEngine()
     }
 
@@ -158,8 +167,22 @@ final class AudioRecorder: @unchecked Sendable {
     /// plays into a live mic, so the trimmer needs to know to skip it.
     func markEarcon(duration: TimeInterval) {
         guard isRecording else { return }
-        let elapsed = lock.withLock { Double(samples.count) / max(sampleRate, 1) }
+        // Measured across the whole capture, not the current segment: a
+        // Bluetooth headset flipping to HFP as the mic opens seals segment 0,
+        // which would otherwise put this window back at sample 0 — on top of
+        // the pre-roll and the word onset it is meant to sit after.
+        let elapsed = lock.withLock {
+            finishedSegments.reduce(0.0) { $0 + Double($1.samples.count) / max($1.sampleRate, 1) }
+                + Double(samples.count) / max(sampleRate, 1)
+        }
         earconWindow = elapsed..<(elapsed + duration)
+    }
+
+    /// Keeps a cue out of the pre-roll ring. The release and cancel cues play
+    /// while the stream is still warm, and would otherwise be drained into the
+    /// head of the *next* dictation as its loudest content.
+    func mutePreRoll(for duration: TimeInterval) {
+        lock.withLock { preRollMutedUntil = Date().addingTimeInterval(duration) }
     }
 
     // MARK: - Engine
@@ -305,6 +328,10 @@ final class AudioRecorder: @unchecked Sendable {
 
     private func appendPreRollLocked(_ mono: [Float]) {
         guard !preRoll.isEmpty else { return }
+        if let preRollMutedUntil {
+            guard Date() >= preRollMutedUntil else { return }
+            self.preRollMutedUntil = nil
+        }
         let capacity = preRoll.count
         // A buffer longer than the ring can only contribute its tail.
         let source = mono.count > capacity ? Array(mono.suffix(capacity)) : mono

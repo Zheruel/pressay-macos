@@ -234,19 +234,34 @@ final class TextProcessingTests: XCTestCase {
         XCTAssertEqual(trimmed.count, speech.count + 8_000)
     }
 
-    func testEarconIsCutWhenTheSpeakerWaitedForIt() throws {
+    /// The guard's job is to stop the cue being mistaken for the speech onset,
+    /// so the clip anchors on the words rather than on the tone.
+    func testEarconIsNotMistakenForTheSpeechOnset() throws {
         let cue = [Float](repeating: 0.05, count: 2_400) // 150 ms tone
         let gap = [Float](repeating: 0, count: 1_600)
         let speech = [Float](repeating: 0.04, count: 32_000)
+        let clip = cue + gap + speech
+
+        let guarded = try AudioTrimmer.trim(clip, earconGuard: 0..<2_400)
+        let unguarded = try AudioTrimmer.trim(clip)
+        // Unguarded, the tone is the onset and drags the whole head of the clip
+        // in; guarded, the anchor moves to the speech.
+        XCTAssertLessThan(guarded.count, unguarded.count)
+        XCTAssertGreaterThanOrEqual(guarded.count, speech.count)
+    }
+
+    /// A near-instant warm start actively encourages talking over the cue. That
+    /// speech must survive — cutting to the guard's end used to discard it,
+    /// which is the exact clipping this whole change exists to remove.
+    func testSpeechStartingDuringTheEarconIsNotDiscarded() throws {
+        let cueOverSpeech = [Float](repeating: 0.05, count: 2_400)
+        let speech = [Float](repeating: 0.04, count: 32_000)
         let trimmed = try AudioTrimmer.trim(
-            cue + gap + speech,
+            cueOverSpeech + speech,
             earconGuard: 0..<2_400
         )
-        // The cue is the loudest thing in the input; if it survived anywhere,
-        // the peak would still be 0.05.
-        XCTAssertEqual(trimmed.max(), 0.04)
-        // And the encoder still gets its silent lead-in.
-        XCTAssertEqual(trimmed[0..<4_000].max(), 0)
+        // Every speech sample is still present; nothing was cut to the guard.
+        XCTAssertGreaterThanOrEqual(trimmed.count, speech.count)
     }
 
     /// If the pre-roll caught a real onset before the cue, that audio is worth
