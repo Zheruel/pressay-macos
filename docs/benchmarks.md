@@ -29,6 +29,10 @@ defaults:
 3. **English-locked** for the Fun-ASR variants, which removed the foreign-language hallucinations
    auto-detect produced on near-silent clips.
 
+<p align="center">
+  <img src="assets/asr-model-comparison.svg" width="100%" alt="Fun-ASR MLT Nano and Qwen3-ASR never collapsed a long dictation while Whisper V3 Turbo collapsed 3 of 47; Fun-ASR is also the fastest at a 0.14 second median">
+</p>
+
 Final numbers, best configuration per engine:
 
 | Engine | Q6/Q8 size | Collapse | punct/caps | Vocab ✓/✗ | Foreign | Dropped | Median | p95 |

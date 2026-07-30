@@ -53,7 +53,7 @@
     <circle cx="121" cy="70" r="30" fill="#eeeaff"/>
     <path d="M104 72c6-15 28-15 34 0M109 81h24M113 90h16" fill="none" stroke="#6d5ce7" stroke-width="4" stroke-linecap="round"/>
     <text x="121" y="124" text-anchor="middle" class="label">Transcribe locally</text>
-    <text x="121" y="150" text-anchor="middle" class="small">Whisper V3 Turbo · Metal</text>
+    <text x="121" y="150" text-anchor="middle" class="small">Fun-ASR MLT Nano · Metal</text>
   </g>
   <path class="line" d="M850 229H870"/>
   <g transform="translate(878 135)">

@@ -77,7 +77,14 @@ Pressay has one quality-first default instead of exposing a wall of decoder knob
 
 ### How the shipping models compare
 
-Ten engines were replayed through the same 184-clip corpus. The three that ship:
+Ten engines were replayed through the same 184-clip corpus. The two measurements that decided the
+default:
+
+<p align="center">
+  <img src="docs/assets/asr-model-comparison.svg" width="100%" alt="Fun-ASR MLT Nano and Qwen3-ASR never collapsed a long dictation while Whisper V3 Turbo collapsed 3 of 47; Fun-ASR is also the fastest at a 0.14 second median">
+</p>
+
+The three that ship:
 
 | Engine | Download | Long-clip collapse | Technical vocabulary | Median latency |
 | --- | ---: | ---: | ---: | ---: |
