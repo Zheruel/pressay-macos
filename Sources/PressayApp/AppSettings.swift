@@ -61,7 +61,7 @@ final class AppSettings: ObservableObject {
         self.defaults = defaults
         learnedVocabulary = LearnedVocabularyStore(defaults: defaults)
         holdKey = Self.readHoldKey(
-            defaults, codeKey: Key.holdKeyCode, legacyKey: Key.holdKey, fallback: .rightOption
+            defaults, codeKey: Key.holdKeyCode, legacyKey: Key.holdKey, fallback: .default
         )
         let model = Self.readASRModel(defaults)
         asrModel = model

@@ -16,6 +16,9 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     public static let leftOption = HoldKey(keyCode: 58)
     public static let rightCommand = HoldKey(keyCode: 54)
 
+    /// What a fresh install holds to talk, and what "Reset" returns to.
+    public static let `default` = rightOption
+
     public static let escapeKeyCode: Int64 = 53
     public static let capsLockKeyCode: Int64 = 57
 
@@ -23,6 +26,17 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     /// capture, and Caps Lock toggles instead of holding.
     public static func isBindable(keyCode: Int64) -> Bool {
         keyCode != escapeKeyCode && keyCode != capsLockKeyCode
+    }
+
+    /// Why a key can't be bound, phrased for the person who just pressed it.
+    /// Capture stays open on a rejection, so this is a nudge rather than an
+    /// error.
+    public static func rejectionReason(keyCode: Int64) -> String? {
+        switch keyCode {
+        case capsLockKeyCode: return "Caps Lock can't stay held"
+        case escapeKeyCode: return "Escape cancels dictation"
+        default: return nil
+        }
     }
 
     /// Legacy persisted values from when HoldKey was a two-case enum.
@@ -50,6 +64,68 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     public var isModifier: Bool { modifierFlagMask != nil }
 
     public var displayName: String { Self.keyNames[keyCode] ?? "Key \(keyCode)" }
+
+    /// What to print on a keycap for this key: the glyph macOS engraves when
+    /// there is one, otherwise the name — letters, digits and F-keys already
+    /// read as caps on their own.
+    public var capGlyph: String { Self.capGlyphs[keyCode] ?? displayName }
+
+    /// What binding this key costs elsewhere. The hold-key tap has to swallow
+    /// a bound non-modifier key while Pressay runs — otherwise its keystrokes
+    /// would land in whatever you are dictating into — so some bindings take
+    /// the key away from every other app, and the picker says so before you
+    /// commit to one.
+    public enum BindingCost: Sendable, Hashable {
+        /// Modifier keys type nothing and are watched on a listen-only tap, so
+        /// they reach other apps untouched.
+        case passesThrough
+        /// Swallowed while bound, but it typed nothing to begin with: F-keys,
+        /// arrows, navigation.
+        case interceptsKey
+        /// Swallowed while bound, and it is a key you type with.
+        case blocksTyping
+    }
+
+    public var bindingCost: BindingCost {
+        if isModifier { return .passesThrough }
+        return Self.nonTypingKeyCodes.contains(keyCode) ? .interceptsKey : .blocksTyping
+    }
+
+    /// One sentence of warning for a binding that costs something, or nil when
+    /// it costs nothing. Chords are exempt in both cases: the tap passes
+    /// Cmd/Ctrl/Option combinations straight through.
+    public var cautionMessage: String? {
+        switch bindingCost {
+        case .passesThrough:
+            return nil
+        case .interceptsKey:
+            return "Pressay swallows \(displayName) while it runs, so other apps stop seeing it."
+        case .blocksTyping:
+            return "Pressay swallows \(displayName) while it runs, so you can't type with it. A modifier key avoids this."
+        }
+    }
+
+    private static let capGlyphs: [Int64: String] = [
+        54: "⌘", 55: "⌘",
+        58: "⌥", 61: "⌥",
+        56: "⇧", 60: "⇧",
+        59: "⌃", 62: "⌃",
+        63: "fn",
+        49: "␣", 36: "↩", 76: "⌤", 48: "⇥", 51: "⌫", 117: "⌦",
+        115: "↖", 119: "↘", 116: "⇞", 121: "⇟", 114: "?",
+        123: "←", 124: "→", 125: "↓", 126: "↑",
+    ]
+
+    /// Non-modifier keys that insert nothing, so swallowing one costs the key
+    /// itself and never a character mid-sentence. Anything absent here — every
+    /// letter, digit, punctuation mark, Space, Return, Tab, Delete, and the
+    /// numeric keypad — is treated as a key you type with.
+    private static let nonTypingKeyCodes: Set<Int64> = [
+        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, // F1–F12
+        105, 107, 113, 106, 64, 79, 80, 90,                     // F13–F20
+        123, 124, 125, 126,                                     // arrows
+        114, 115, 119, 116, 121, 117,                           // Help, Home, End, Page…, ⌦
+    ]
 
     /// Whether this modifier key is held, given an event's raw flags word.
     /// Uses the left/right-specific flag bit when present so the paired key of
@@ -104,6 +180,13 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
         79: "F18", 80: "F19", 90: "F20",
         50: "`", 27: "-", 24: "=", 33: "[", 30: "]", 42: "\\",
         41: ";", 39: "'", 43: ",", 47: ".", 44: "/",
+        // The keypad, so a bound key never renders as its raw code — that
+        // reads as a bug in the picker, and lands verbatim in the caution.
+        82: "Keypad 0", 83: "Keypad 1", 84: "Keypad 2", 85: "Keypad 3",
+        86: "Keypad 4", 87: "Keypad 5", 88: "Keypad 6", 89: "Keypad 7",
+        91: "Keypad 8", 92: "Keypad 9",
+        65: "Keypad .", 67: "Keypad *", 69: "Keypad +", 75: "Keypad /",
+        78: "Keypad -", 81: "Keypad =", 71: "Keypad Clear",
     ]
 }
 

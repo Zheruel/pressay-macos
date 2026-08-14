@@ -2,6 +2,22 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The hold-to-talk key picker looks and behaves like a recorder. Any key could already be bound by clicking and pressing one, but the control was a plain button whose label was the key name, so it read as a value rather than something to click. It is now a keycap — glyph and name, with hover and keyboard-focus states — that switches to a pulsing "Press any key / esc to cancel" while it listens, and offers a reset to Right Option once you have moved off it.
+
+### Fixed
+
+- Key capture can no longer leave push-to-talk switched off. Arming the recorder suspends the global hold-key monitor, and the only ways out were binding a key, pressing Escape, or closing the window — so clicking the recorder and then clicking into another app left dictation dead with nothing on screen saying so. Capture now also ends after 12 seconds, and as soon as the window stops being key.
+- Pressing Caps Lock during capture says why it cannot be bound instead of silently doing nothing, which read as a frozen recorder.
+
+### Added
+
+- A caution beside the shortcut when the bound key is not a modifier. Pressay has to swallow a bound non-modifier key while it runs, or its keystrokes would type into whatever you are dictating into; binding a letter therefore costs you that letter everywhere, and nothing said so until now. Command, Control, and Option chords still pass through — with `S` bound, ⌘S saves as usual.
+- Names for the numeric keypad, so binding one shows "Keypad 5" rather than "Key 87" on the keycap and in the caution.
+
 ## [1.5.0] - 2026-07-30
 
 ### Fixed
