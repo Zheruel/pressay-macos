@@ -6,7 +6,7 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 
 ### Changed
 
-- The hold-to-talk key picker looks and behaves like a recorder. Any key could already be bound by clicking and pressing one, but the control was a plain button whose label was the key name, so it read as a value rather than something to click. It is now a keycap — glyph and name, hover and focus states — that switches to a pulsing "Press any key / esc to cancel" while it listens, and offers a reset to Right Option once you have moved off it.
+- The hold-to-talk key picker looks and behaves like a recorder. Any key could already be bound by clicking and pressing one, but the control was a plain button whose label was the key name, so it read as a value rather than something to click. It is now a keycap — glyph and name, with hover and keyboard-focus states — that switches to a pulsing "Press any key / esc to cancel" while it listens, and offers a reset to Right Option once you have moved off it.
 
 ### Fixed
 
@@ -15,7 +15,8 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 
 ### Added
 
-- A caution beside the shortcut when the bound key is not a modifier. Pressay has to swallow a bound non-modifier key while it runs, or its keystrokes would type into whatever you are dictating into; binding a letter therefore costs you that letter everywhere, and nothing said so until now. Modified presses are unaffected — with `S` bound, ⌘S still saves.
+- A caution beside the shortcut when the bound key is not a modifier. Pressay has to swallow a bound non-modifier key while it runs, or its keystrokes would type into whatever you are dictating into; binding a letter therefore costs you that letter everywhere, and nothing said so until now. Command, Control, and Option chords still pass through — with `S` bound, ⌘S saves as usual.
+- Names for the numeric keypad, so binding one shows "Keypad 5" rather than "Key 87" on the keycap and in the caution.
 
 ## [1.5.0] - 2026-07-30
 

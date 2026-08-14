@@ -18,13 +18,23 @@ struct KeyCaptureButton: View {
     /// global hold-key monitor.
     var onCaptureActive: (Bool) -> Void
 
+    /// A refused key, and which attempt it was: pressing the same unbindable
+    /// key twice has to restart the dismissal timer rather than inherit the
+    /// first press's deadline, or the second message blinks out immediately.
+    private struct Rejection: Equatable, Sendable {
+        let reason: String
+        let attempt: Int
+    }
+
     @Environment(\.controlActiveState) private var controlActiveState
 
     @State private var capturing = false
     @State private var eventMonitor: Any?
-    @State private var rejection: String?
+    @State private var rejection: Rejection?
+    @State private var rejectionCount = 0
     @State private var hovering = false
     @State private var pulsing = false
+    @FocusState private var focused: Bool
 
     /// Long enough to find the key you meant, short enough that clicking the
     /// recorder and walking away doesn't leave dictation switched off.
@@ -43,6 +53,9 @@ struct KeyCaptureButton: View {
             .buttonStyle(.plain)
             .pointerStyle(.link)
             .onHover { hovering = $0 }
+            // .plain drops the focus ring the default style drew, and this is
+            // the one control in Settings you might reach for without a mouse.
+            .focused($focused)
             .help(capturing ? "Press the key you want to hold" : "Click, then press any key")
             .accessibilityLabel("Hold-to-talk key")
             .accessibilityValue(key.displayName)
@@ -60,9 +73,13 @@ struct KeyCaptureButton: View {
             .pointerStyle(.link)
             .help("Reset to \(HoldKey.default.displayName)")
             .accessibilityLabel("Reset hold-to-talk key to \(HoldKey.default.displayName)")
-            // Kept in the layout so binding a key never shifts the row.
+            // Kept in the layout so binding a key never shifts the row. Fading
+            // it out is not enough on its own: an invisible button still takes
+            // the pointer, shows its tooltip, and is read out by VoiceOver.
             .opacity(showsReset ? 1 : 0)
             .disabled(!showsReset)
+            .allowsHitTesting(showsReset)
+            .accessibilityHidden(!showsReset)
             .frame(width: 16)
         }
         .animation(.snappy(duration: 0.16), value: capturing)
@@ -108,7 +125,7 @@ struct KeyCaptureButton: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(rejection == nil ? "Press any key" : "Not that one")
                             .font(.caption.weight(.semibold))
-                        Text(rejection ?? "esc to cancel")
+                        Text(rejection?.reason ?? "esc to cancel")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -135,6 +152,11 @@ struct KeyCaptureButton: View {
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(chipStroke, lineWidth: capturing ? 1.5 : 1)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(focused ? 0.85 : 0), lineWidth: 3)
+                .padding(-2.5)
         )
         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
@@ -210,6 +232,7 @@ struct KeyCaptureButton: View {
     /// Shows why a key was refused for a beat; the `rejection`-keyed task
     /// clears it.
     private func reject(_ reason: String) {
-        rejection = reason
+        rejectionCount += 1
+        rejection = Rejection(reason: reason, attempt: rejectionCount)
     }
 }

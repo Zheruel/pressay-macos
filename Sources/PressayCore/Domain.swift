@@ -180,6 +180,13 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
         79: "F18", 80: "F19", 90: "F20",
         50: "`", 27: "-", 24: "=", 33: "[", 30: "]", 42: "\\",
         41: ";", 39: "'", 43: ",", 47: ".", 44: "/",
+        // The keypad, so a bound key never renders as its raw code — that
+        // reads as a bug in the picker, and lands verbatim in the caution.
+        82: "Keypad 0", 83: "Keypad 1", 84: "Keypad 2", 85: "Keypad 3",
+        86: "Keypad 4", 87: "Keypad 5", 88: "Keypad 6", 89: "Keypad 7",
+        91: "Keypad 8", 92: "Keypad 9",
+        65: "Keypad .", 67: "Keypad *", 69: "Keypad +", 75: "Keypad /",
+        78: "Keypad -", 81: "Keypad =", 71: "Keypad Clear",
     ]
 }
 

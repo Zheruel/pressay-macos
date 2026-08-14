@@ -51,10 +51,25 @@ final class HoldKeyTests: XCTestCase {
     }
 
     func testUnknownKeysAreTreatedAsTypingKeys() {
-        // The numeric keypad and anything else absent from the name table gets
-        // the stronger warning rather than the quieter one.
-        let keypadFive = HoldKey(keyCode: 87)
-        XCTAssertEqual(keypadFive.bindingCost, .blocksTyping)
+        // Anything absent from the name table gets the stronger warning rather
+        // than the quieter one.
+        XCTAssertEqual(HoldKey(keyCode: 110).bindingCost, .blocksTyping)
+    }
+
+    func testTheKeypadIsNamedRatherThanNumbered() {
+        // "Key 87" on a keycap reads as a broken picker, and the caution
+        // repeats whatever this returns.
+        XCTAssertEqual(HoldKey(keyCode: 87).displayName, "Keypad 5")
+        XCTAssertEqual(HoldKey(keyCode: 65).displayName, "Keypad .")
+        XCTAssertEqual(HoldKey(keyCode: 92).displayName, "Keypad 9")
+        XCTAssertEqual(HoldKey(keyCode: 87).bindingCost, .blocksTyping)
+        let keypad: [Int64] = [65, 67, 69, 71, 75, 78, 81, 82, 83, 84, 85, 86, 87, 88, 89, 91, 92]
+        for code in keypad {
+            XCTAssertFalse(
+                HoldKey(keyCode: code).displayName.hasPrefix("Key "),
+                "keypad code \(code) is unnamed"
+            )
+        }
     }
 
     // MARK: - Presentation
