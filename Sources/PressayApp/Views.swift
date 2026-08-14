@@ -321,7 +321,7 @@ private struct GeneralSettingsView: View {
                     HStack(spacing: 14) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Hold-to-talk shortcut").font(.body.weight(.medium))
-                            Text("Hold to record, release to insert")
+                            Text("Click the key, then press the one you want to hold")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
@@ -330,6 +330,16 @@ private struct GeneralSettingsView: View {
                             onChange: { coordinator.restartHotkey() },
                             onCaptureActive: coordinator.keyCaptureActive
                         )
+                    }
+
+                    // Binding a non-modifier key means the tap has to swallow
+                    // it everywhere; that is worth saying out loud rather than
+                    // leaving it to be discovered while typing.
+                    if let caution = settings.holdKey.cautionMessage {
+                        Label(caution, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Divider()

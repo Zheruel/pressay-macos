@@ -169,7 +169,9 @@ struct OnboardingView: View {
                 setupChoiceRow(
                     icon: "option",
                     title: "Hold-to-talk shortcut",
-                    detail: "Hold to record, release to insert"
+                    detail: settings.holdKey.cautionMessage
+                        ?? "Click the key, then press the one you want to hold",
+                    detailIsCaution: settings.holdKey.cautionMessage != nil
                 ) {
                     KeyCaptureButton(
                         key: $settings.holdKey,
@@ -240,6 +242,7 @@ struct OnboardingView: View {
         icon: String,
         title: String,
         detail: String,
+        detailIsCaution: Bool = false,
         @ViewBuilder accessory: () -> Accessory
     ) -> some View {
         HStack(spacing: 14) {
@@ -249,7 +252,10 @@ struct OnboardingView: View {
                 .foregroundStyle(.blue)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body.weight(.medium))
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(detailIsCaution ? Color.orange : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             accessory()

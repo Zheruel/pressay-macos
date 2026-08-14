@@ -43,7 +43,9 @@ It is deliberately not an always-listening assistant. There is no account, telem
 | Dictate | Right Option | Faithful transcript with deterministic cleanup | None after model download |
 | Escape | Escape while recording | Cancels without inserting | None |
 
-The hold key is configurable. Pressay captures the destination before its nonactivating overlay appears, so the result returns to the right app and selection.
+The hold key is configurable: in **Settings → General → Dictation**, click the key shown beside **Hold-to-talk shortcut** and press the key you want. Any key can be bound except Escape, which cancels a dictation, and Caps Lock, which toggles rather than holds. Binding a non-modifier key means Pressay has to swallow that key while it runs — otherwise its keystrokes would land in whatever you are dictating into — so the picker says so before you commit, and modifier keys avoid it entirely. Modified presses are unaffected either way: with `S` bound, ⌘S still saves.
+
+Pressay captures the destination before its nonactivating overlay appears, so the result returns to the right app and selection.
 
 ## Structured Dictation
 
