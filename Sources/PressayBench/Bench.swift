@@ -413,30 +413,14 @@ struct Bench {
         print("wrote \(reviewURL.path) and \(resultsURL.path)")
     }
 
-    // MARK: - Kimi prompt-polish template iteration
-
-    /// KIMI_API_KEY env var, or the key the app saved to the keychain
-    /// (macOS may show a one-time access prompt for the bench binary).
-    static func kimiAPIKey() -> String? {
-        if let key = ProcessInfo.processInfo.environment["KIMI_API_KEY"], !key.isEmpty {
-            return key
-        }
-        guard let key = KimiAPIKeyStore.read(), !key.isEmpty else { return nil }
-        return key
-    }
-
     // MARK: - Tuner variant evaluation
 
     /// Replays the corpus through the tuner variants so their proposals can be
     /// hand-labeled and compared:
     ///   det-legacy   the pre-fix deterministic matcher (regression witness)
     ///   det-fixed    the shipping matcher (DetConfig.fixed)
-    ///   k3           the Kimi judge over all candidates (--with-kimi 1)
-    ///   k3-residual  the Kimi judge over candidates det-fixed left unresolved
-    ///                — its marginal contribution, the number that decides
-    ///                whether the LLM stage earns its keep.
     /// Texts come from --asr-results (rep-1 rows), --timeline, or the
-    /// structure cache; --include-seen 1 adds the app's seenCandidates.
+    /// structure cache.
     /// --labels file.tsv ("heard<TAB>good|bad") prints per-variant precision.
     static func runTuneEval(options: [String: String], outDir: URL) async throws {
         var texts: [String] = []
@@ -458,19 +442,11 @@ struct Bench {
         }
 
         let anchors = VocabularyParser.parse(CuratedVocabulary.source).map(\.preferred)
-        var candidates = VocabularyTuner.candidates(in: texts, minimumCount: 1, anchors: anchors)
-        if options["include-seen"] == "1" {
-            let seen = UserDefaults(suiteName: "dev.localflow.app")?
-                .stringArray(forKey: "vocabularyTuner.seenCandidates") ?? []
-            let known = Set(candidates.map { $0.term.lowercased() })
-            candidates += seen
-                .filter { !known.contains($0.lowercased()) }
-                .map { TunerCandidate(term: $0, count: 1, excerpt: "(seenCandidates)") }
-        }
+        let candidates = VocabularyTuner.candidates(in: texts, minimumCount: 1, anchors: anchors)
         print("tune-eval: \(texts.count) texts -> \(candidates.count) candidates")
 
-        // Full candidate dump for external judges (e.g. replaying the K3
-        // prompt through another model): term, count, excerpt per line.
+        // Full candidate dump for external review (e.g. hand-labeling or
+        // replaying against another matcher): term, count, excerpt per line.
         if let dumpPath = options["candidates-out"] {
             struct CandidateDump: Codable {
                 let term: String
@@ -492,33 +468,12 @@ struct Bench {
             candidates: candidates, anchors: anchors, config: .fixed
         ))
 
-        var k3: [String: String] = [:]
-        var k3Residual: [String: String] = [:]
-        if options["with-kimi"] == "1" {
-            guard let key = kimiAPIKey() else {
-                throw BenchError.usage("KIMI_API_KEY not set and no key in the keychain")
-            }
-            let client = KimiTunerClient()
-            let counts = Dictionary(candidates.map { ($0.term, $0.count) }) { first, _ in first }
-            func judge(_ subset: [TunerCandidate]) async throws -> [String: String] {
-                guard !subset.isEmpty else { return [:] }
-                let findings = try await client.judge(candidates: subset, anchors: anchors, apiKey: key)
-                return ruleMap(VocabularyTuner.anchorFilteredRules(
-                    findings: findings.map { ($0.heard, $0.meant) },
-                    anchors: anchors,
-                    counts: counts
-                ))
-            }
-            k3 = try await judge(candidates)
-            k3Residual = try await judge(candidates.filter { fixed[$0.term.lowercased()] == nil })
-        }
-
         // Review artifact: every candidate any variant proposed a rule for.
-        var lines = ["heard\tproposed\tcount\texcerpt\tdet-legacy\tdet-fixed\tk3\tk3-residual"]
+        var lines = ["heard\tproposed\tcount\texcerpt\tdet-legacy\tdet-fixed"]
         var proposedTerms: [String] = []
         for candidate in candidates {
             let fold = candidate.term.lowercased()
-            let proposals = [legacy[fold], fixed[fold], k3[fold], k3Residual[fold]]
+            let proposals = [legacy[fold], fixed[fold]]
             guard let proposed = proposals.compactMap({ $0 }).first else { continue }
             proposedTerms.append(fold)
             lines.append([
@@ -528,8 +483,6 @@ struct Bench {
                 candidate.excerpt.replacingOccurrences(of: "\t", with: " "),
                 legacy[fold] != nil ? "Y" : "N",
                 fixed[fold] != nil ? "Y" : "N",
-                k3[fold] != nil ? "Y" : "N",
-                k3Residual[fold] != nil ? "Y" : "N",
             ].joined(separator: "\t"))
         }
         let reviewURL = outDir.appending(path: "tune-eval-review.tsv")
@@ -547,7 +500,7 @@ struct Bench {
                 labels[parts[0].lowercased()] = parts[1].trimmingCharacters(in: .whitespaces) == "good"
             }
             print("\nprecision over \(labels.count) labeled terms:")
-            for (name, variant) in [("det-legacy", legacy), ("det-fixed", fixed), ("k3", k3), ("k3-residual", k3Residual)] {
+            for (name, variant) in [("det-legacy", legacy), ("det-fixed", fixed)] {
                 let judged = variant.keys.compactMap { labels[$0] }
                 guard !judged.isEmpty else {
                     print("  \(name): no labeled proposals")
@@ -556,15 +509,12 @@ struct Bench {
                 let good = judged.filter { $0 }.count
                 print(String(format: "  %-11@ %d/%d good (%.0f%%)", name as NSString, good, judged.count, 100 * Double(good) / Double(judged.count)))
             }
-            let unique = k3Residual.keys.filter { labels[$0] == true && fixed[$0] == nil && legacy[$0] == nil }
-            print("  true rules unique to k3: \(unique.count)\(unique.isEmpty ? "" : " — \(unique.sorted().joined(separator: ", "))")")
         }
     }
 
     // MARK: - Vocabulary tuner acceptance
 
     /// Acceptance check: runs the production tuner over the record timeline.
-    /// `--with-kimi 1` also runs the live Kimi judge (KIMI_API_KEY or keychain).
     static func runTune(options: [String: String]) async throws {
         let timelineURL = URL(fileURLWithPath: options["timeline"] ?? ".build/bench/timeline.json")
         let entries = try JSONDecoder().decode([TimelineEntry].self, from: Data(contentsOf: timelineURL))
@@ -577,25 +527,6 @@ struct Bench {
         print("\ndeterministic rules (\(rules.count)):")
         for rule in rules {
             print("  \(rule.heard) -> \(rule.preferred) (×\(rule.count))")
-        }
-
-        if options["with-kimi"] == "1" {
-            guard let key = kimiAPIKey() else {
-                throw BenchError.usage("KIMI_API_KEY not set and no key in the keychain")
-            }
-            let client = KimiTunerClient()
-            let findings = try await client.judge(candidates: candidates, anchors: anchors, apiKey: key)
-            let counts = Dictionary(uniqueKeysWithValues: candidates.map { ($0.term, $0.count) })
-            let k3Rules = VocabularyTuner.anchorFilteredRules(
-                findings: findings.map { ($0.heard, $0.meant) },
-                anchors: anchors,
-                counts: counts
-            )
-            print("\nk3 findings (\(findings.count)), accepted after anchor filter (\(k3Rules.count)):")
-            for finding in findings {
-                let accepted = k3Rules.contains { $0.heard == finding.heard && $0.preferred == finding.meant }
-                print("  \(accepted ? "ACCEPT" : "REJECT") \(finding.heard) -> \(finding.meant)")
-            }
         }
     }
 

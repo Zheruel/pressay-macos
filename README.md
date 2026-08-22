@@ -35,7 +35,7 @@ It is deliberately not an always-listening assistant. There is no account, telem
 ## How it works
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" width="100%" alt="Pressay architecture: audio is recorded, transcribed, cleaned, optionally structured, and inserted locally; only the optional vocabulary review sends candidate terms to Kimi">
+  <img src="docs/assets/architecture.svg" width="100%" alt="Pressay architecture: audio is recorded, transcribed, cleaned, optionally structured, and inserted locally; vocabulary tuning also runs on-device">
 </p>
 
 | Shortcut | Default | Result | Network |
@@ -115,15 +115,15 @@ Pressay therefore keeps the whole dictation path deterministic — including the
 
 ## Privacy model
 
-| Data | Standard dictation | Optional Kimi features | Retention |
-| --- | --- | --- | --- |
-| Microphone audio | Processed locally | Never sent | 7 days by default |
-| Transcript | Stored locally | Never sent | 30 days by default |
-| Vocabulary candidates | Learned locally | Periodic review may send candidate terms and short transcript excerpts | Local learned rules follow history retention |
-| Text around the cursor | Read transiently during Accessibility target capture | Never sent | Never stored |
-| Telemetry or analytics | None | None | Never collected |
+| Data | Handling | Retention |
+| --- | --- | --- |
+| Microphone audio | Processed locally, never sent | 7 days by default |
+| Transcript | Stored locally, never sent | 30 days by default |
+| Vocabulary candidates | Learned locally, never sent | Local learned rules follow history retention |
+| Text around the cursor | Read transiently during Accessibility target capture, never sent | Never stored |
+| Telemetry or analytics | None collected | Never collected |
 
-The first model download comes from Hugging Face. A Kimi API key is optional, stored in the macOS login keychain, and only enables the explicitly labeled cloud features. Pressay remains fully useful without it.
+The only network call Pressay ever makes is the first model download, from Hugging Face. After that, dictation, cleanup, and vocabulary tuning are fully on-device.
 
 **Keep the microphone ready** trades a visible signal for capture latency, so it is worth stating plainly. With it on, the audio stream stays open for 45 s after a dictation and macOS keeps the orange recording indicator lit for that time. What is kept is the audio from while the hold key is down, plus up to the half second immediately before it — that pre-roll is what stops a dictation losing its first word when you press and speak in one motion. Nothing older survives: it passes through a half-second ring buffer that is overwritten continuously and discarded when the stream closes. The mic is never opened before your first dictation of a session, it closes on sleep and screen lock, it yields as soon as another app starts playing audio, and the whole behaviour can be switched off in Settings.
 
@@ -192,7 +192,7 @@ Core ML <= core ml, core em el
 myRepository <= my repository
 ```
 
-The preferred spelling appears on the left; comma-separated forms on the right are corrected to it. Learned rules are visible and removable. Optional Kimi review only accepts corrections that map back to trusted vocabulary anchors.
+The preferred spelling appears on the left; comma-separated forms on the right are corrected to it. Learned rules are visible and removable, and only ever accept corrections that map back to trusted vocabulary anchors.
 
 ## Project layout
 
