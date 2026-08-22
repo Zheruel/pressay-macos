@@ -24,8 +24,6 @@ final class LearnedVocabularyStore: ObservableObject {
         static let rules = "vocabularyTuner.rules"
         static let blocklist = "vocabularyTuner.blocklist"
         static let lastDetRun = "vocabularyTuner.lastDetRun"
-        static let lastK3Run = "vocabularyTuner.lastK3Run"
-        static let seenCandidates = "vocabularyTuner.seenCandidates"
         static let schemaVersion = "vocabularyTuner.schemaVersion"
     }
 
@@ -42,16 +40,6 @@ final class LearnedVocabularyStore: ObservableObject {
     var lastDetRun: Date? {
         get { defaults.object(forKey: Key.lastDetRun) as? Date }
         set { defaults.set(newValue, forKey: Key.lastDetRun) }
-    }
-
-    var lastK3Run: Date? {
-        get { defaults.object(forKey: Key.lastK3Run) as? Date }
-        set { defaults.set(newValue, forKey: Key.lastK3Run) }
-    }
-
-    var seenCandidates: Set<String> {
-        get { Set(defaults.stringArray(forKey: Key.seenCandidates) ?? []) }
-        set { defaults.set(Array(newValue), forKey: Key.seenCandidates) }
     }
 
     var entries: [VocabularyParser.Entry] {
@@ -100,9 +88,9 @@ final class LearnedVocabularyStore: ObservableObject {
 
     /// Adds one source's new rules on top of its existing ones and returns
     /// only the rules that were genuinely new — blocklisted and already-known
-    /// heard terms don't count, so callers can't celebrate a no-op. The K3
-    /// judge only sees never-before-seen candidates, so replacement semantics
-    /// would silently wipe every rule learned in earlier K3 runs.
+    /// heard terms don't count, so callers can't celebrate a no-op. Only the
+    /// incoming heard terms are replaced, so earlier learned rules for terms
+    /// outside this batch survive.
     @discardableResult
     func mergeRules(_ rules: [LearnedRule], source: LearnedRule.Source) -> [LearnedRule] {
         let incoming = rules.filter { !blocklist.contains($0.heard.lowercased()) }
@@ -125,10 +113,6 @@ final class LearnedVocabularyStore: ObservableObject {
         blocklist.insert(record.heard.lowercased())
         records.removeAll { $0.heard.lowercased() == record.heard.lowercased() }
         persist()
-    }
-
-    func isCovered(_ term: String) -> Bool {
-        records.contains { $0.heard.caseInsensitiveCompare(term) == .orderedSame }
     }
 
     private func reload() {

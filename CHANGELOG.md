@@ -2,6 +2,12 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Removed
+
+- The optional Kimi cloud vocabulary review. Nobody used it, and its API key, keychain storage, Settings card, and `PressayBench` evaluation paths are gone. The deterministic on-device vocabulary tuner is unchanged and is now the whole tuner; a Kimi API key left in the login keychain by an earlier build is deleted automatically. Pressay now makes no network calls after the initial model download.
+
 ## [1.5.0] - 2026-07-30
 
 ### Fixed

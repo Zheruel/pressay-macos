@@ -273,7 +273,7 @@ Even under a strictly formatting-scoped prompt, the language model completed a t
 
 The fixed matcher (larger English stop list, minimum phonetic key length 4, recurrence scaled to phonetic distance) kept every genuinely useful rule — including `CloudMD → CLAUDE.md` and `codecs → Codex` — while rejecting the ordinary-word rewrites the legacy matcher had learned on real machines (`mix → macOS`, `correction → Markdown`, `colleagues → Codex`).
 
-A frontier-LLM replay of the judge prompt over the same 997 candidates confirmed the two-tier design: the LLM contributed real rules the deterministic tier structurally cannot act on — ambiguity ties (`CloudCode` is phonetic distance 1 to both `Claude Code` and `CLAUDE.md`), too-short keys (`TLDA → TL;DR`), and distance-2 variants (`Sona Cloud`, `SornCloud`, `Sunr cloud → SonarCloud`) — while the anchor filter discarded 149 of its 184 raw findings as junk. The judgment tier earns its keep, but only behind that filter.
+A frontier-LLM replay of a judge prompt over the same 997 candidates found that an LLM judge tier could add real rules the deterministic matcher structurally cannot act on — ambiguity ties (`CloudCode` is phonetic distance 1 to both `Claude Code` and `CLAUDE.md`), too-short keys (`TLDA → TL;DR`), and distance-2 variants (`Sona Cloud`, `SornCloud`, `Sunr cloud → SonarCloud`) — while an anchor filter discarded 149 of its 184 raw findings as junk. Pressay shipped that tier as an optional, off-by-default cloud vocabulary review for a time; it was later removed as unused, so the deterministic matcher above is now the whole tuner.
 
 ## Reproducing the harness
 
@@ -297,6 +297,5 @@ The manifest schema is represented by `ManifestEntry` in [`Sources/PressayBench/
 - The private corpus cannot provide independently reproducible WER.
 - Two shared clips are enough to demonstrate relative latency on the development Mac, not quality across accents and environments.
 - A validator pass is a safety check, not a blind preference score.
-- Cloud-model latency and behavior vary over time, so the repository does not publish a permanent Kimi leaderboard.
 
 If public contributors provide a consented, license-compatible prompt-dictation corpus, Pressay can add normalized WER and critical-token error rates without weakening the current privacy standard.

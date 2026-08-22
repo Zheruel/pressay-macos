@@ -285,12 +285,6 @@ private struct GeneralSettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings
     @ObservedObject private var permissions: PermissionController
-    @State private var apiKeyDraft = ""
-    @State private var keyStatus: String?
-    @State private var testingConnection = false
-    /// Cached presence check: SecItemCopyMatching is a securityd IPC, too
-    /// expensive to run on every body pass (each SecureField keystroke).
-    @State private var keyConfigured = false
     /// Enumerated once per appearance; the HAL query is too costly for `body`.
     @State private var inputDevices: [AudioDeviceMonitor.Device] = []
     @State private var defaultInputName: String?
@@ -494,43 +488,6 @@ private struct GeneralSettingsView: View {
                             .textSelection(.enabled)
                     }
                 }
-
-                SettingsCard(title: "Kimi cloud features", systemImage: "sparkles.rectangle.stack") {
-                    Text("Optional. A Kimi API key lets Pressay periodically ask Kimi to review new names found in your transcripts and suggest vocabulary fixes. Without a key, dictation and tuning stay fully on-device.")
-                        .font(.callout).foregroundStyle(.secondary)
-                    HStack {
-                        SecureField("sk-kimi-…", text: $apiKeyDraft)
-                            .textFieldStyle(.roundedBorder)
-                        Button("Save") {
-                            let saved = KimiAPIKeyStore.save(apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines))
-                            apiKeyDraft = ""
-                            keyStatus = saved ? "Saved to Keychain" : "Keychain refused the key — try again"
-                            keyConfigured = saved || keyConfigured
-                        }
-                        .pointerStyle(.link)
-                        .disabled(apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        if keyConfigured {
-                            Button(testingConnection ? "Testing…" : "Test") { testConnection() }
-                                .pointerStyle(.link)
-                                .disabled(testingConnection)
-                            Button("Clear") {
-                                KimiAPIKeyStore.clear()
-                                keyStatus = "Removed"
-                                keyConfigured = false
-                            }
-                        }
-                    }
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(keyConfigured ? Color.green : Color.secondary.opacity(0.4))
-                            .frame(width: 8, height: 8)
-                        Text(keyConfigured ? "Key saved — Kimi review enabled" : "Not set — on-device tuning only")
-                            .font(.caption).foregroundStyle(.secondary)
-                        if let keyStatus {
-                            Text("· \(keyStatus)").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
             }
             .frame(maxWidth: 680, alignment: .leading)
             .padding(28)
@@ -539,24 +496,8 @@ private struct GeneralSettingsView: View {
         .onAppear {
             permissions.startMonitoring()
             settings.refreshLaunchAtLogin()
-            keyConfigured = KimiAPIKeyStore.read() != nil
             inputDevices = AudioDeviceMonitor.inputDevices()
             defaultInputName = AudioDeviceMonitor.defaultInputName
-        }
-    }
-
-    private func testConnection() {
-        guard let key = KimiAPIKeyStore.read() else { return }
-        testingConnection = true
-        keyStatus = nil
-        Task {
-            do {
-                _ = try await KimiTunerClient().testConnection(apiKey: key)
-                keyStatus = "Connection works"
-            } catch {
-                keyStatus = "Failed: \(error.localizedDescription)"
-            }
-            testingConnection = false
         }
     }
 }
@@ -725,10 +666,8 @@ private struct DictionarySettingsView: View {
                 case .running:
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text("Reviewing…").font(.caption).foregroundStyle(.secondary)
+                        Text("Scanning…").font(.caption).foregroundStyle(.secondary)
                     }
-                case .failed(let message):
-                    Text("Kimi review failed: \(message)").font(.caption).foregroundStyle(.orange)
                 }
             }
             .padding(.bottom, 4)

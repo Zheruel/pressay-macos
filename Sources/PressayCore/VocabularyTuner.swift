@@ -15,6 +15,9 @@ public struct TunerCandidate: Equatable, Sendable {
 public struct LearnedRule: Codable, Equatable, Sendable {
     public enum Source: String, Codable, Sendable {
         case det
+        /// Legacy: rules the removed Kimi cloud judge produced. No new rule
+        /// is ever tagged this way; the case only keeps already-persisted
+        /// records decoding and displaying correctly.
         case k3
     }
 
@@ -153,49 +156,6 @@ public enum VocabularyTuner {
         let fresh = candidates(in: [text], minimumCount: 1, anchors: anchors)
         guard !fresh.isEmpty else { return [] }
         return deterministicRules(candidates: fresh, anchors: anchors, config: .exact)
-    }
-
-    /// Candidates worth sending to the LLM judge: within phonetic reach of
-    /// some anchor. A finding can only be accepted when `meant` is an anchor,
-    /// so terms with no anchor in acoustic range (project names, foreign
-    /// words, jargon) are guaranteed rejections — sending them wastes tokens.
-    public static func judgeWorthy(
-        candidates: [TunerCandidate],
-        anchors: [String],
-        maxDistance: Int = 2
-    ) -> [TunerCandidate] {
-        let anchorKeys = anchors.map { PhoneticKey.key($0) }
-        return candidates.filter { candidate in
-            let key = PhoneticKey.key(candidate.term)
-            guard !key.isEmpty else { return false }
-            return anchorKeys.contains { PhoneticKey.distance(key, $0) <= maxDistance }
-        }
-    }
-
-    /// LLM findings are accepted only when the correction lands on an anchor
-    /// term (curated, user-added, or previously learned).
-    public static func anchorFilteredRules(
-        findings: [(heard: String, meant: String)],
-        anchors: [String],
-        counts: [String: Int]
-    ) -> [LearnedRule] {
-        let anchorFolds = Set(anchors.map { $0.lowercased() })
-        return findings.compactMap { finding in
-            let heard = finding.heard.trimmingCharacters(in: .whitespacesAndNewlines)
-            let meant = finding.meant.trimmingCharacters(in: .whitespacesAndNewlines)
-            // A heard term that is itself an anchor must never become a rule:
-            // it would rewrite the user's own vocabulary (same guard as the
-            // deterministic path).
-            guard !heard.isEmpty,
-                  anchorFolds.contains(meant.lowercased()),
-                  !anchorFolds.contains(heard.lowercased()) else { return nil }
-            return LearnedRule(
-                heard: heard,
-                preferred: meant,
-                count: counts[heard] ?? 1,
-                source: .k3
-            )
-        }
     }
 
     // MARK: - Tokenizing and filtering

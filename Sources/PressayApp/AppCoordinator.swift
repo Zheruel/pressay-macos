@@ -3,6 +3,7 @@ import Foundation
 import PressayCore
 import PressayTranscription
 import OSLog
+import Security
 
 @MainActor
 final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
@@ -57,6 +58,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         // Before the history store opens: its retention pass must see the
         // audio files at their final location.
         Self.migrateApplicationSupportDirectory()
+        Self.removeLegacyKimiAPIKey()
         do {
             history = try HistoryStore()
         } catch {
@@ -130,6 +132,21 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         guard FileManager.default.fileExists(atPath: old.path),
               !FileManager.default.fileExists(atPath: new.path) else { return }
         try? FileManager.default.moveItem(at: old, to: new)
+    }
+
+    /// One-time cleanup for the removed Kimi cloud vocabulary judge: deletes
+    /// any API key earlier builds saved to the login keychain, since nothing
+    /// reads it again. Guarded so the Keychain call runs only once.
+    private static func removeLegacyKimiAPIKey() {
+        let flag = "kimiAPIKey.removedFromKeychain"
+        guard !UserDefaults.standard.bool(forKey: flag) else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "dev.localflow.app",
+            kSecAttrAccount as String: "kimi-api-key",
+        ]
+        SecItemDelete(query as CFDictionary)
+        UserDefaults.standard.set(true, forKey: flag)
     }
 
     /// Suspends the hold-key monitor while a KeyCaptureButton is recording a
@@ -584,11 +601,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             self.target = nil
             celebrateLearnedRules(learnedRules)
             tunerRunner.scheduleIfNeeded(history: history, settings: settings)
-            // runModal spins a nested run loop; hop to a plain run-loop callout
-            // so it never sits on this async task's concurrency frames.
-            DispatchQueue.main.async { [weak self] in
-                MainActor.assumeIsolated { self?.maybeShowVocabularyExplainer() }
-            }
         } catch PressayError.recordingTooShort {
             resetAfterNonResult()
         } catch PressayError.silence {
@@ -621,43 +633,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private func cleanUpCancelledProcessing() {
         guard stateMachine.phase == .processing else { return }
         resetAfterNonResult()
-    }
-
-    private func maybeShowVocabularyExplainer() {
-        let key = "vocabularyTuner.keyPromptShown"
-        let snoozeKey = "vocabularyTuner.keyPromptSnoozeUntilRecords"
-        guard history.records.count >= max(3, UserDefaults.standard.integer(forKey: snoozeKey)),
-              !UserDefaults.standard.bool(forKey: key),
-              KimiAPIKeyStore.read() == nil else { return }
-        // A hold-key press during the modal would capture Pressay itself and
-        // dictate into the secure field; keep the monitors down until it closes.
-        suspendHotkeys()
-        defer { restartHotkey() }
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "Make Pressay even sharper"
-        alert.informativeText = "Pressay already fixes names it mishears, on-device. Add a Kimi API key and it can also ask Kimi to review new names in the background — everything works without one."
-        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        field.placeholderString = "sk-kimi-…"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Save key")
-        alert.addButton(withTitle: "Later")
-        alert.addButton(withTitle: "Don't ask again")
-        let response = alert.runModal()
-        // "Later" snoozes until well after the next batch of dictations;
-        // saving a key or declining permanently ends the prompt.
-        guard response != .alertSecondButtonReturn else {
-            UserDefaults.standard.set(history.records.count + 15, forKey: snoozeKey)
-            return
-        }
-        UserDefaults.standard.set(true, forKey: key)
-        guard response == .alertFirstButtonReturn else { return }
-        let apiKey = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apiKey.isEmpty else { return }
-        if !KimiAPIKeyStore.save(apiKey) {
-            lastError = "The Kimi key could not be saved to the keychain."
-        }
-        showSettings()
     }
 
     private func fail(_ error: Error, message: String? = nil) {

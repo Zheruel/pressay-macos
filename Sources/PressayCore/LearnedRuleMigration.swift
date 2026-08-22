@@ -6,7 +6,7 @@ public enum LearnedRuleMigration {
     /// distance-scaled evidence) after v0 stores accumulated false positives
     /// like "mix → macOS". Det rules are dropped wholesale — the daily pass
     /// rebuilds them from the 30-day history under the fixed matcher — while
-    /// k3 rules, the blocklist, and seen candidates are untouched.
+    /// k3 rules and the blocklist are untouched.
     public static let schemaVersion = 1
 
     public static func survivesV1(source: String) -> Bool {

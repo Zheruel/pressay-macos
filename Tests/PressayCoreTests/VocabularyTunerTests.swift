@@ -54,24 +54,6 @@ final class VocabularyTunerTests: XCTestCase {
         }
     }
 
-    func testAnchorFilteredLLMRulesKeepOnlyAnchorTargets() {
-        let rules = VocabularyTuner.anchorFilteredRules(
-            findings: [
-                (heard: "Kimmy", meant: "Kimi"),
-                (heard: "Akimi", meant: "Kimi"),
-                (heard: "SoonerCloud", meant: "SonarCloud"),
-                (heard: "OGG", meant: "OG"),
-            ],
-            anchors: anchors,
-            counts: ["Kimmy": 5, "Akimi": 2]
-        )
-        let byHeard = Dictionary(uniqueKeysWithValues: rules.map { ($0.heard, $0.preferred) })
-        XCTAssertEqual(byHeard["Kimmy"], "Kimi")
-        XCTAssertEqual(byHeard["Akimi"], "Kimi")
-        XCTAssertNil(byHeard["OGG"], "non-anchor corrections must be rejected")
-        XCTAssertNotNil(byHeard["SoonerCloud"], "SonarCloud is an anchor here, so it is kept")
-    }
-
     func testAnchorCollisionIsSkipped() {
         // SwiftData and SwiftUI share a phonetic key; a candidate near both
         // must not be arbitrarily assigned to either.
@@ -165,25 +147,6 @@ final class VocabularyTunerTests: XCTestCase {
             anchors: anchors + ["CLAUDE.md"]
         )
         XCTAssertEqual(rules.map(\.preferred), ["CLAUDE.md"])
-    }
-
-    func testJudgeWorthyKeepsAcousticNeighborsAndDropsFarTerms() {
-        // Corpus-measured: distance cap 2 keeps 25/26 true LLM-judge finds
-        // while dropping ~60% of candidates (guaranteed rejections).
-        let candidates = [
-            "CloudCode", "TLDA", "Sona Cloud", "SornCloud", "Kimmy",
-            "Polymarket", "Buenos Aires", "Fjordvik",
-        ].map { TunerCandidate(term: $0, count: 1, excerpt: "x") }
-        let worthy = Set(
-            VocabularyTuner.judgeWorthy(candidates: candidates, anchors: anchors + ["SonarCloud", "CLAUDE.md"])
-                .map(\.term)
-        )
-        for kept in ["CloudCode", "TLDA", "Sona Cloud", "SornCloud", "Kimmy"] {
-            XCTAssertTrue(worthy.contains(kept), "\(kept) is in acoustic range of an anchor")
-        }
-        for dropped in ["Polymarket", "Buenos Aires"] {
-            XCTAssertFalse(worthy.contains(dropped), "\(dropped) has no anchor in range")
-        }
     }
 
     func testMigrationDropsDetRulesAndKeepsK3() {
