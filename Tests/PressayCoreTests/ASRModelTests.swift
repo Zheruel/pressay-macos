@@ -3,9 +3,18 @@ import XCTest
 
 final class ASRModelTests: XCTestCase {
     func testShippingModelSet() {
+        // Declaration order is the Settings picker order, best first.
         XCTAssertEqual(
-            Set(ASRModel.allCases.map(\.rawValue)),
-            ["funASRMLTNano", "whisperTurboGGML", "voxtralMini"])
+            ASRModel.allCases.map(\.rawValue),
+            ["qwen3ASR17", "voxtralMini", "whisperTurboGGML", "qwen3ASR06", "funASRMLTNano"])
+    }
+
+    func testQwenIsEnglishOnlyWithoutAHint() {
+        for model in [ASRModel.qwen3ASR17, .qwen3ASR06] {
+            XCTAssertEqual(model.supportedLanguages, [.english])
+            XCTAssertFalse(model.supportsLanguageHint)
+            XCTAssertTrue(model.isTranscriptionRefusal("아, 그거는."))
+        }
     }
 
     func testRetiredModelsAreGone() {
@@ -19,10 +28,10 @@ final class ASRModelTests: XCTestCase {
     func testRetiredAndAbsentValuesFallBackToTheDefault() {
         for stored in ["parakeetV3", "whisperKit", "", "nonsense"] {
             XCTAssertEqual(
-                ASRModel.migrating(storedRawValue: stored), .funASRMLTNano, "stored=\(stored)")
+                ASRModel.migrating(storedRawValue: stored), .qwen3ASR17, "stored=\(stored)")
         }
         // A fresh install has nothing persisted at all.
-        XCTAssertEqual(ASRModel.migrating(storedRawValue: nil), .funASRMLTNano)
+        XCTAssertEqual(ASRModel.migrating(storedRawValue: nil), .qwen3ASR17)
     }
 
     func testAShippingSelectionIsPreserved() {
@@ -53,10 +62,13 @@ final class ASRModelTests: XCTestCase {
     }
 
     func testModelsWithoutAHintNeverOfferAFixedLanguage() {
-        // A model that cannot take a hint can only ever run on auto-detect;
-        // offering a fixed language would send it a hint it rejects.
+        // A model that cannot take a hint never gets a choice: offering one
+        // would imply a hint it rejects. Its single entry is either auto or a
+        // declared lock (Qwen: English, to keep the non-Latin filter armed);
+        // the transcriber never sends a hint either way.
         for model in ASRModel.allCases where !model.supportsLanguageHint {
-            XCTAssertEqual(model.supportedLanguages, [.auto], "\(model.rawValue)")
+            XCTAssertEqual(model.supportedLanguages.count, 1, "\(model.rawValue)")
+            XCTAssertFalse(model.offersLanguageChoice, "\(model.rawValue)")
         }
     }
 
@@ -105,7 +117,7 @@ final class ASRModelTests: XCTestCase {
         XCTAssertNil(ASRModel.whisperTurboGGML.preferredChunkSeconds)
         // The measured floor: below ~40 s the per-call overhead makes long
         // dictations slower rather than faster.
-        for model in [ASRModel.funASRMLTNano, .voxtralMini] {
+        for model in [ASRModel.funASRMLTNano, .voxtralMini, .qwen3ASR17, .qwen3ASR06] {
             let seconds = try? XCTUnwrap(model.preferredChunkSeconds)
             XCTAssertEqual(seconds, 60, "\(model.rawValue)")
         }

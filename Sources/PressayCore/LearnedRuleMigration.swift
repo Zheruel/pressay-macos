@@ -7,10 +7,19 @@ public enum LearnedRuleMigration {
     /// like "mix → macOS". Det rules are dropped wholesale — the daily pass
     /// rebuilds them from the 30-day history under the fixed matcher — while
     /// k3 rules, the blocklist, and seen candidates are untouched.
-    public static let schemaVersion = 1
+    ///
+    /// Version 2: det rules gained spelling agreement after a larger vocabulary
+    /// let the daily pass propose "backend → Cognito"; they are rebuilt again.
+    /// K3 rules survive unless a function word sits on their edge
+    /// ("Whisperflow I"), which the judge filter now rejects.
+    public static let schemaVersion = 2
 
     public static func survivesV1(source: String) -> Bool {
         source != LearnedRule.Source.det.rawValue
+    }
+
+    public static func survivesV2(source: String, heard: String) -> Bool {
+        survivesV1(source: source) && !VocabularyTuner.hasFunctionWordEdge(heard)
     }
 }
 

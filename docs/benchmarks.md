@@ -17,6 +17,34 @@ The sanitized aggregate data behind the charts lives in [`docs/benchmarks/result
 
 The corpus is representative of the app's intended use, but it is not a standardized public benchmark. Results should be treated as product calibration on one machine, not universal model rankings.
 
+## Real-dictation judged replay (October 2026)
+
+The 184-clip corpus measures eight technical terms. This pass measured whole-transcript accuracy
+on 24 real hold-to-talk dictations (7.5 minutes, agent prompts and team messages) recorded in
+Wispr Flow, with Wispr's own cloud transcript as a reference candidate. Every engine ran through
+`PressayBench asr`; three Sonnet judges scored each transcript 0–10 blind (shuffled labels, no
+audio — truth inferred from cross-candidate agreement). 22 clips had speech; 2 were near-silent.
+
+| Engine | Judged score | Near-silent clips | Median latency | Peak memory |
+| --- | ---: | --- | ---: | ---: |
+| *Wispr Flow raw (cloud reference)* | *9.05* | *empty, correct* | — | — |
+| **Qwen3-ASR 1.7B Q6_K** *(default)* | **9.00** | **empty, correct** | 0.69 s | 2.9 GB |
+| Voxtral Mini 3B | 8.91 | 1 of 2 hallucinated | 1.63 s | 4.9 GB |
+| Whisper V3 Turbo | 8.77 | both hallucinated | 0.63 s | 1.2 GB |
+| Qwen3-ASR 0.6B Q8_0 | 7.32 | empty, correct | 0.36 s | 1.6 GB |
+| Fun-ASR MLT Nano | 6.95 | both hallucinated | 0.29 s | 1.35 GB |
+
+Fun-ASR's 86% term score did not survive whole-transcript judging: it misheard ordinary words
+("checking in the email" for "checking in with me now", "intraanimations", "network is" for
+"not work") that no vocabulary alias can repair. Qwen3-ASR 1.7B with a 64-term hotword list on
+MLX scored the same 9.05 as Wispr, but transcribe.cpp exposes no context slot for Qwen, so the
+shipped GGUF runs without one and lands within noise of it. Granite Speech 4.1 2B (8.1, 11 GB
+peak on MLX), Granite Speech 5.0 TurboCTC (6.8, no punctuation) and an MLX conversion of Fun-ASR
+with hotwords (truncated most clips) were also run and dropped.
+
+Limits: 22 speech clips from one speaker; the top three are within judge noise of each other,
+the gap down to Qwen 0.6B and Fun-ASR is not.
+
 ## Pressay 1.4 — thirteen-engine sweep
 
 For 1.4 every engine in `transcribe.cpp` that plausibly beat Whisper was replayed through the same
@@ -274,6 +302,30 @@ Even under a strictly formatting-scoped prompt, the language model completed a t
 The fixed matcher (larger English stop list, minimum phonetic key length 4, recurrence scaled to phonetic distance) kept every genuinely useful rule — including `CloudMD → CLAUDE.md` and `codecs → Codex` — while rejecting the ordinary-word rewrites the legacy matcher had learned on real machines (`mix → macOS`, `correction → Markdown`, `colleagues → Codex`).
 
 A frontier-LLM replay of the judge prompt over the same 997 candidates confirmed the two-tier design: the LLM contributed real rules the deterministic tier structurally cannot act on — ambiguity ties (`CloudCode` is phonetic distance 1 to both `Claude Code` and `CLAUDE.md`), too-short keys (`TLDA → TL;DR`), and distance-2 variants (`Sona Cloud`, `SornCloud`, `Sunr cloud → SonarCloud`) — while the anchor filter discarded 149 of its 184 raw findings as junk. The judgment tier earns its keep, but only behind that filter.
+
+### Spelling agreement (1.6)
+
+Replaying the fixed matcher over 4,691 real dictations with a 90-term personal vocabulary
+showed the phonetic key alone does not scale with the vocabulary: it proposed more than 100 rules,
+most of them wrong — `backend → Cognito` (44 sightings), `codebase → Codex`, `Porsche → Pressay`,
+`the links → Telnyx`, `merged now → Markdown`. Keys drop vowels and keep raw first letters, so
+unrelated words collide once enough terms exist. 1.6 adds `spellingAgrees`: the same onset
+(silent "wh" h and leading vowels normalized), letter length within two, and multi-word
+mishearings that split where the term does (`cloud lore → CloudLore`). Prefixed English
+(`redeploy`, `preset`) now counts as English, and no rule may start or end on a function word —
+the LLM judge had accepted `Whisperflow I`, which then deleted the pronoun. The same replay now
+proposes 39 rules, all correct. Schema version 2 drops stored det rules (rebuilt from history on
+launch) and any judge rule with a function-word edge.
+
+### Runtime phonetic fallback
+
+Learned rules only cover mishearings seen before. `PhoneticVocabularyMatcher` also fixes a
+first sighting during cleanup: one non-English word, at most one phonetic edit from a unique
+vocabulary term, with the same first two letters and a length within two characters. Replayed
+with `PressayBench post --vocabulary` over 4,691 real dictations and a 90-term vocabulary, the
+first draft (onset key only) rewrote `codebase → Codex`, `Singapore → Scooper` and
+`caffeinate → Cognito`. With the final gates it made 30 rewrites, all correct on inspection
+(`Superbase → Supabase`, `DeepGrim → Deepgram`, `clodler → CloudLore`, `Anthropix → Anthropic`).
 
 ## Reproducing the harness
 

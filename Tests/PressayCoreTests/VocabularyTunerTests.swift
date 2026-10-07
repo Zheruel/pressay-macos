@@ -186,6 +186,38 @@ final class VocabularyTunerTests: XCTestCase {
         }
     }
 
+    func testSpellingAgreementRejectsReplayFalsePositives() {
+        // Each was proposed by the daily pass over 4,691 real dictations with
+        // a 90-term vocabulary, before spelling agreement existed.
+        let vocabulary = anchors + [
+            "Cognito", "Pressay", "Telnyx", "Notion", "Scooper", "Retell", "Cartesia",
+            "Polymarket", "CLAUDE.md", "Supabase", "CloudLore", "Tailwind", "GDPR", "LGTM",
+        ]
+        let noise = [
+            "backend", "codebase", "Porsche", "London", "Singapore", "redeploy", "preset",
+            "the links", "created so", "car that's", "could cut", "cold math", "get per",
+            "like thyme", "merged now", "play market", "Croatia So", "Polymark The",
+        ].map { TunerCandidate(term: $0, count: 5, excerpt: "x") }
+        XCTAssertEqual(
+            VocabularyTuner.deterministicRules(candidates: noise, anchors: vocabulary).map(\.heard), [])
+        let real = [
+            "Superbase", "supo base", "cloud lore", "Claude Lore", "CloudMD", "cloud code",
+        ].map { TunerCandidate(term: $0, count: 5, excerpt: "x") }
+        XCTAssertEqual(
+            VocabularyTuner.deterministicRules(candidates: real, anchors: vocabulary).map(\.preferred),
+            ["Supabase", "Supabase", "CloudLore", "CloudLore", "CLAUDE.md", "Claude Code"])
+    }
+
+    func testFunctionWordEdgesNeverBecomeRules() {
+        let rules = VocabularyTuner.anchorFilteredRules(
+            findings: [(heard: "Whisperflow I", meant: "Wispr Flow"), (heard: "Whisperflow", meant: "Wispr Flow")],
+            anchors: anchors, counts: [:])
+        XCTAssertEqual(rules.map(\.heard), ["Whisperflow"])
+        XCTAssertFalse(LearnedRuleMigration.survivesV2(source: "k3", heard: "Whisperflow I"))
+        XCTAssertTrue(LearnedRuleMigration.survivesV2(source: "k3", heard: "Kimmy"))
+        XCTAssertFalse(LearnedRuleMigration.survivesV2(source: "det", heard: "codecs"))
+    }
+
     func testMigrationDropsDetRulesAndKeepsK3() {
         XCTAssertFalse(LearnedRuleMigration.survivesV1(source: LearnedRule.Source.det.rawValue))
         XCTAssertTrue(LearnedRuleMigration.survivesV1(source: LearnedRule.Source.k3.rawValue))

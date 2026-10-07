@@ -5,7 +5,7 @@ import PressayPostProcessing
 import PressayTranscription
 
 // PressayBench — dev-only evaluation harness.
-// Subcommands: asr | structure | overhead | vocab | tune | tune-eval |
+// Subcommands: asr | post | structure | overhead | vocab | tune | tune-eval |
 // manifest-from-audio (see the usage errors of each for options).
 
 struct ManifestEntry: Codable {
@@ -66,7 +66,7 @@ struct Bench {
         setvbuf(stdout, nil, _IOLBF, 0)
         let args = Array(CommandLine.arguments.dropFirst())
         guard let command = args.first else {
-            throw BenchError.usage("expected subcommand: asr | structure | overhead | vocab | tune | tune-eval | manifest-from-audio")
+            throw BenchError.usage("expected subcommand: asr | post | structure | overhead | vocab | tune | tune-eval | manifest-from-audio")
         }
         let options = parseOptions(Array(args.dropFirst()))
         let manifestURL = URL(fileURLWithPath: options["manifest"] ?? ".build/bench/manifest.json")
@@ -94,6 +94,8 @@ struct Bench {
             try await runTuneEval(options: options, outDir: outDir)
         case "manifest-from-audio":
             try runManifestFromAudio(options: options, manifestURL: manifestURL)
+        case "post":
+            try await runPost(options: options)
         default:
             throw BenchError.usage("unknown subcommand \(command)")
         }
@@ -151,7 +153,7 @@ struct Bench {
         let maxClips = Int(options["max-clips"] ?? "0") ?? 0
         let language = options["language"] ?? "en"
         let ids = (options["ids"] ?? "").split(separator: ",").map(String.init)
-        // --engine whisperTurboGGML (default) | voxtralMini
+        // --engine <ASRModel raw value>; whisperTurboGGML by default
         let engineName = options["engine"] ?? ASRModel.whisperTurboGGML.rawValue
         guard let engine = ASRModel(rawValue: engineName) else {
             let valid = ASRModel.allCases.map(\.rawValue).joined(separator: ", ")
@@ -240,6 +242,56 @@ struct Bench {
         let url = outDir.appending(path: resultsName)
         try JSONEncoder.bench.encode(rows, to: url)
         print("wrote \(url.path)")
+    }
+
+    // MARK: - Post-processing replay
+
+    /// Runs the post-ASR text candidates over `--input` ({id: rawTranscript}):
+    /// the shipping rules, rules + structuring, and the on-device Apple model
+    /// in `--modes` (comma-separated PolisherMode values). Writes
+    /// `--output` as {candidate: {id: text}}.
+    static func runPost(options: [String: String]) async throws {
+        guard let input = options["input"], let output = options["output"] else {
+            throw BenchError.usage(
+                "post needs --input raw.json --output post.json [--vocabulary vocab.txt] [--modes light,structure]")
+        }
+        let raw = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: URL(fileURLWithPath: input)))
+        let vocabularySource = try options["vocabulary"].map { try String(contentsOfFile: $0, encoding: .utf8) }
+        let entries = VocabularyParser.parse(vocabularySource ?? CuratedVocabulary.source)
+        var results: [String: [String: String]] = ["rules": [:], "rules+structure": [:]]
+        for (id, text) in raw {
+            let cleaned = DeterministicPromptCleaner.clean(text, vocabulary: entries)
+            results["rules"]![id] = cleaned
+            results["rules+structure"]![id] = TranscriptStructurer.structure(cleaned)
+        }
+        let modes = try (options["modes"] ?? "").split(separator: ",").map { name in
+            guard let mode = PolisherMode(rawValue: String(name)) else {
+                throw BenchError.usage("unknown --modes value \(name)")
+            }
+            return mode
+        }
+        for mode in modes {
+            let polisher = ApplePromptPolisher(mode: mode)
+            var out: [String: String] = [:]
+            var latencies: [TimeInterval] = []
+            for (id, text) in raw.sorted(by: { $0.key < $1.key }) where !text.isEmpty {
+                let cleaned = results["rules"]![id]!
+                let started = ContinuousClock.now
+                do {
+                    out[id] = try await polisher.polish(cleaned, context: DictationContext(
+                        targetBundleID: nil, vocabulary: entries.map(\.preferred)))
+                } catch {
+                    out[id] = cleaned
+                    print("  \(id) apple-\(mode.rawValue) failed: \(error)")
+                }
+                latencies.append(started.duration(to: .now).seconds)
+            }
+            results["apple-\(mode.rawValue)"] = out
+            let sorted = latencies.sorted()
+            print("apple-\(mode.rawValue): median \(sorted.isEmpty ? 0 : sorted[sorted.count / 2])s")
+        }
+        try JSONEncoder.bench.encode(results, to: URL(fileURLWithPath: output))
+        print("wrote \(output)")
     }
 
     // MARK: - Manifest from audio
@@ -457,7 +509,8 @@ struct Bench {
             throw BenchError.usage("tune-eval needs texts: --asr-results, --timeline, or --use-structure-cache 1")
         }
 
-        let anchors = VocabularyParser.parse(CuratedVocabulary.source).map(\.preferred)
+        let vocabularySource = try options["vocabulary"].map { try String(contentsOfFile: $0, encoding: .utf8) }
+        let anchors = VocabularyParser.parse(vocabularySource ?? CuratedVocabulary.source).map(\.preferred)
         var candidates = VocabularyTuner.candidates(in: texts, minimumCount: 1, anchors: anchors)
         if options["include-seen"] == "1" {
             let seen = UserDefaults(suiteName: "dev.localflow.app")?

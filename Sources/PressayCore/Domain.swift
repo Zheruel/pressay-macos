@@ -107,27 +107,33 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     ]
 }
 
-/// The local speech-to-text model powering dictation. Defaults, captions, and
-/// language coverage come from a thirteen-engine replay of the 184-clip
-/// dictation corpus (see PressayBench + docs/benchmarks.md).
+/// The local speech-to-text model powering dictation. Declaration order is
+/// the Settings picker order: best first, from a blind-judged replay of 24
+/// real dictations (October 2026, see docs/benchmarks.md). Earlier defaults
+/// and language coverage came from the 184-clip corpus replay.
 public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
-    /// Fun-ASR MLT Nano 2512 (Q6_K) — the calibrated English default. On the
-    /// corpus it beat Whisper V3 Turbo on every axis that matters here: it
-    /// never collapsed a long dictation into an unpunctuated lowercase block
-    /// (0/47 against Whisper's 3/47), capitalized more consistently, resolved
-    /// more technical vocabulary, and ran 2.5x faster from a smaller artifact.
-    /// It is English-locked with ITN on; both are load-bearing, see
+    /// Qwen3-ASR 1.7B (Q6_K) — the default. Judged 9.0/10 on real
+    /// dictations, level with Wispr Flow's cloud transcript (9.05), and the
+    /// only engine besides Qwen3-ASR 0.6B that returned nothing for near-silent
+    /// clips. It auto-detects language and transcribe.cpp takes no hint for
+    /// it, so Pressay offers it as English-only to keep the non-Latin
+    /// hallucination filter armed.
+    case qwen3ASR17 = "qwen3ASR17"
+    /// Voxtral Mini 3B (Q4_K_M) — near-best accuracy (8.9) and the strongest
+    /// punctuation, at ~2.4x Qwen's latency and ~1.7x its memory.
+    case voxtralMini = "voxtralMini"
+    /// Whisper Large V3 Turbo — the multilingual option at 100 languages, the
+    /// lightest in memory, and the only engine here that chunks long audio
+    /// inside the runtime.
+    case whisperTurboGGML = "whisperTurboGGML"
+    /// Qwen3-ASR 0.6B (Q8_0) — the same family at a third of the size; fast
+    /// but clearly less accurate (7.3).
+    case qwen3ASR06 = "qwen3ASR06"
+    /// Fun-ASR MLT Nano 2512 (Q6_K) — the 1.4–1.5 default. Fastest, but it
+    /// misheard ordinary words most often on real dictations (7.0). It is
+    /// English-locked with ITN on; both are load-bearing, see
     /// `supportedLanguages` and `requestsExplicitFormatting`.
     case funASRMLTNano = "funASRMLTNano"
-    /// Whisper Large V3 Turbo — the multilingual option at 100 languages, and
-    /// the only engine here that chunks long audio inside the runtime.
-    case whisperTurboGGML = "whisperTurboGGML"
-    /// Voxtral Mini 3B (Q4_K_M) — the quality-first option. It matches the
-    /// default on technical vocabulary (81% against 86% is two term
-    /// occurrences) and punctuates more densely than anything else that is
-    /// also accurate, at roughly 8x the latency and 4x the size. Kept for
-    /// people who would rather wait a second than re-type a product name.
-    case voxtralMini = "voxtralMini"
 
     public var id: String { rawValue }
 
@@ -138,7 +144,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         // Retired raw values ("parakeetV3" from 1.3, "whisperKit" from 1.0)
         // carry no intent worth preserving, so they land on the default.
         guard let stored = storedRawValue,
-              let model = ASRModel(rawValue: stored) else { return .funASRMLTNano }
+              let model = ASRModel(rawValue: stored) else { return .qwen3ASR17 }
         return model
     }
 
@@ -147,14 +153,18 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         case .funASRMLTNano: "Fun-ASR MLT Nano"
         case .whisperTurboGGML: "Whisper V3 Turbo"
         case .voxtralMini: "Voxtral Mini 3B"
+        case .qwen3ASR17: "Qwen3-ASR 1.7B"
+        case .qwen3ASR06: "Qwen3-ASR 0.6B"
         }
     }
 
     public var caption: String {
         switch self {
-        case .funASRMLTNano: "English · fastest · recommended · ~0.7 GB download"
-        case .whisperTurboGGML: "Multilingual · 100 languages · ~0.9 GB download"
-        case .voxtralMini: "Highest quality · slower · ~3 GB download · ~5 GB memory"
+        case .qwen3ASR17: "#1 · Best accuracy · English · recommended · ~1.7 GB download · ~3 GB memory"
+        case .voxtralMini: "#2 · Near-best accuracy · 8 languages · slower · ~3 GB download · ~5 GB memory"
+        case .whisperTurboGGML: "#3 · Good accuracy · 100 languages · lightest · ~0.9 GB download"
+        case .qwen3ASR06: "#4 · Fast · English · less accurate · ~0.9 GB download"
+        case .funASRMLTNano: "#5 · Fastest · English · least accurate · ~0.7 GB download"
         }
     }
 
@@ -170,6 +180,12 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         case .voxtralMini:
             (URL(string: "https://huggingface.co/handy-computer/Voxtral-Mini-3B-2507-gguf/resolve/main/Voxtral-Mini-3B-2507-Q4_K_M.gguf")!,
              "Voxtral-Mini-3B-2507-Q4_K_M.gguf")
+        case .qwen3ASR17:
+            (URL(string: "https://huggingface.co/handy-computer/Qwen3-ASR-1.7B-gguf/resolve/main/Qwen3-ASR-1.7B-Q6_K.gguf")!,
+             "Qwen3-ASR-1.7B-Q6_K.gguf")
+        case .qwen3ASR06:
+            (URL(string: "https://huggingface.co/handy-computer/Qwen3-ASR-0.6B-gguf/resolve/main/Qwen3-ASR-0.6B-Q8_0.gguf")!,
+             "Qwen3-ASR-0.6B-Q8_0.gguf")
         }
     }
 
@@ -179,7 +195,9 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     /// Spanish for near-silent clips, and only the English lock removed that.
     public var supportedLanguages: [TranscriptionLanguage] {
         switch self {
-        case .funASRMLTNano: [.english]
+        // Qwen auto-detects and takes no hint; listing English alone keeps
+        // the non-Latin hallucination filter armed for near-silent clips.
+        case .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: [.english]
         case .whisperTurboGGML: TranscriptionLanguage.allCases
         // Voxtral advertises these eight, plus detection. Automatic is the
         // default because forcing a language made it fabricate a sentence for
@@ -194,7 +212,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     /// `supportedLanguages` — after a model switch, or a stale stored value.
     public var defaultLanguage: TranscriptionLanguage {
         switch self {
-        case .funASRMLTNano: .english
+        case .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: .english
         case .whisperTurboGGML, .voxtralMini: .auto
         }
     }
@@ -209,7 +227,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     /// Whisper chunks internally and needs none of this.
     public var preferredChunkSeconds: TimeInterval? {
         switch self {
-        case .funASRMLTNano, .voxtralMini: 60
+        case .funASRMLTNano, .voxtralMini, .qwen3ASR17, .qwen3ASR06: 60
         case .whisperTurboGGML: nil
         }
     }
@@ -220,7 +238,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     /// Explains the language picker's state for the selected engine.
     public var languageCaption: String {
         switch self {
-        case .funASRMLTNano: "This model runs English only"
+        case .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: "English (this model takes no language hint)"
         case .whisperTurboGGML: "Automatic handles mixed Norwegian and English"
         case .voxtralMini: "Automatic is safest on short clips for this model"
         }
@@ -230,6 +248,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     public var supportsLanguageHint: Bool {
         switch self {
         case .funASRMLTNano, .whisperTurboGGML, .voxtralMini: true
+        case .qwen3ASR17, .qwen3ASR06: false
         }
     }
 
@@ -244,7 +263,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     public var requestsExplicitFormatting: Bool {
         switch self {
         case .funASRMLTNano: true
-        case .whisperTurboGGML, .voxtralMini: false
+        case .whisperTurboGGML, .voxtralMini, .qwen3ASR17, .qwen3ASR06: false
         }
     }
 
@@ -260,7 +279,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     /// there would drop a real dictation of "I'm sorry, I didn't understand."
     var emitsAssistantRefusals: Bool {
         switch self {
-        case .funASRMLTNano, .voxtralMini: true
+        case .funASRMLTNano, .voxtralMini, .qwen3ASR17, .qwen3ASR06: true
         case .whisperTurboGGML: false
         }
     }

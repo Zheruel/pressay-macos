@@ -542,7 +542,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             let deterministic = DeterministicPromptCleaner.clean(
                 transcript.text,
                 vocabulary: settings.vocabularyEntries,
-                capitalizeFirstWord: !isTerminal
+                capitalizeFirstWord: !isTerminal,
+                // Fuzzy rewrites would break case-sensitive paths and branches.
+                phoneticFallback: !isTerminal
             )
             var finalText = deterministic
             var structureLatency: TimeInterval = 0

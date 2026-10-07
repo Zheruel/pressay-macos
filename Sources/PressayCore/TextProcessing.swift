@@ -132,7 +132,8 @@ public enum DeterministicPromptCleaner {
     public static func clean(
         _ source: String,
         vocabulary: [VocabularyParser.Entry] = [],
-        capitalizeFirstWord: Bool = true
+        capitalizeFirstWord: Bool = true,
+        phoneticFallback: Bool = true
     ) -> String {
         var text = SpokenFormatting.apply(to: source)
         text = removeAbandonedClause(beforeLastScratchThat: text)
@@ -148,6 +149,9 @@ public enum DeterministicPromptCleaner {
         text = collapseStutters(in: text)
 
         text = VocabularyParser.normalize(text, entries: vocabulary)
+        if phoneticFallback {
+            text = PhoneticVocabularyMatcher.correct(text, entries: vocabulary)
+        }
         text = text.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
         text = text.replacingOccurrences(of: #" *\n *"#, with: "\n", options: .regularExpression)
         text = text.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)

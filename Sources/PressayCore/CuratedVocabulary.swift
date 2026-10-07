@@ -45,7 +45,7 @@ package enum CuratedVocabulary {
     JSON <= j s o n
     .env <= dot env
     package.json <= package json
-    CLAUDE.md <= claude md, cloud md
+    CLAUDE.md <= claude md, cloud md, claudemd, cloudmd
     AGENTS.md <= agents md
     """
 

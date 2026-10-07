@@ -95,9 +95,12 @@ public enum VocabularyTuner {
         public var toleranceCap: Int
         /// Fuzzier matches need more recurrence: `count >= distance + 1`.
         public var scalesEvidenceWithDistance: Bool
+        /// Require `spellingAgrees` on top of the phonetic key.
+        public var requiresSpellingAgreement = true
 
         public static let legacy = DetConfig(
-            minimumKeyLength: 3, toleranceCap: 2, scalesEvidenceWithDistance: false
+            minimumKeyLength: 3, toleranceCap: 2, scalesEvidenceWithDistance: false,
+            requiresSpellingAgreement: false
         )
         public static let fixed = DetConfig(
             minimumKeyLength: 4, toleranceCap: 2, scalesEvidenceWithDistance: true
@@ -121,6 +124,11 @@ public enum VocabularyTuner {
         for candidate in candidates {
             let fold = candidate.term.lowercased()
             guard !anchorFolds.contains(fold) else { continue }
+            if config.requiresSpellingAgreement {
+                // Forced or seen candidates bypass the miner's English filter.
+                guard !hasFunctionWordEdge(candidate.term),
+                      candidate.term.contains(" ") || isCandidateTerm(candidate.term) else { continue }
+            }
             let key = PhoneticKey.key(candidate.term)
             guard key.count >= config.minimumKeyLength else { continue }
             let distances = anchorKeys
@@ -132,6 +140,8 @@ public enum VocabularyTuner {
                 ? 0
                 : min(tolerance(forKeyLength: key.count), config.toleranceCap)
             guard best.distance <= limit else { continue }
+            if config.requiresSpellingAgreement,
+               !spellingAgrees(heard: candidate.term, anchor: best.anchor) { continue }
             if config.scalesEvidenceWithDistance {
                 guard candidate.count >= best.distance + 1 else { continue }
             }
@@ -187,6 +197,7 @@ public enum VocabularyTuner {
             // it would rewrite the user's own vocabulary (same guard as the
             // deterministic path).
             guard !heard.isEmpty,
+                  !hasFunctionWordEdge(heard),
                   anchorFolds.contains(meant.lowercased()),
                   !anchorFolds.contains(heard.lowercased()) else { return nil }
             return LearnedRule(
@@ -222,6 +233,85 @@ public enum VocabularyTuner {
         return result
     }
 
+    // MARK: - Spelling agreement
+
+    /// Phonetic keys drop vowels and keep raw first letters, so on their own
+    /// they equate "backend" with Cognito, "Porsche" with Pressay and "the
+    /// links" with Telnyx — all proposed when the daily pass was replayed over
+    /// 4,691 real dictations with a 90-term vocabulary. Real mishearings also
+    /// start the same way, have about the same length, and split where the
+    /// term does.
+    public static func spellingAgrees(heard: String, anchor: String) -> Bool {
+        let heardLetters = heard.lowercased().filter(\.isLetter)
+        let anchorLetters = anchor.lowercased().filter(\.isLetter)
+        guard onset(heardLetters) == onset(anchorLetters),
+              abs(heardLetters.count - anchorLetters.count) <= 2 else { return false }
+        let heardWords = heard.split(whereSeparator: { !$0.isLetter }).map(String.init)
+        guard heardWords.count > 1 else { return true }
+        let parts = anchorParts(anchor)
+        if parts.count == heardWords.count {
+            return zip(heardWords, parts).allSatisfy {
+                onset($0.lowercased()) == onset($1.lowercased())
+            }
+        }
+        // A one-part term heard as two words ("supo base"): at least one
+        // must be non-English, and the break must fall where the term's would.
+        guard parts.count == 1, heardWords.count == 2,
+              heardWords.contains(where: isCandidateTerm) else { return false }
+        let split = heardWords[0].count
+        let next = heardWords[1].lowercased().first
+        let letters = Array(anchorLetters)
+        return (split - 1...split + 1).contains { index in
+            letters.indices.contains(index) && letters[index] == next
+        }
+    }
+
+    /// First two letters, with a silent "h" after the first dropped
+    /// ("whisper" ~ "Wispr") and any leading vowel treated alike
+    /// ("entropic" ~ "Anthropic").
+    static func onset(_ letters: String) -> String {
+        var chars = Array(letters)
+        if chars.count > 2, chars[1] == "h", chars[0] == "w" { chars.remove(at: 1) }
+        guard let first = chars.first else { return "" }
+        let head: Character = "aeiou".contains(first) ? "*" : first
+        return String(head) + (chars.count > 1 ? String(chars[1]) : "")
+    }
+
+    /// Word parts of a term: spaces and punctuation, then camel-case humps
+    /// ("CloudLore" → Cloud, Lore; "CLAUDE.md" → CLAUDE, md).
+    static func anchorParts(_ term: String) -> [String] {
+        term.split(whereSeparator: { !$0.isLetter }).flatMap { word -> [String] in
+            var parts: [String] = []
+            var current = ""
+            var previous: Character?
+            for character in word {
+                if let previous, previous.isLowercase, character.isUppercase {
+                    parts.append(current)
+                    current = ""
+                }
+                current.append(character)
+                previous = character
+            }
+            parts.append(current)
+            return parts
+        }
+    }
+
+    private static let functionWords: Set<String> = [
+        "a", "an", "and", "are", "as", "at", "but", "for", "he", "her", "i", "in", "is", "it",
+        "me", "my", "of", "on", "or", "our", "she", "so", "that", "the", "their", "they",
+        "this", "to", "we", "with", "you", "your",
+    ]
+
+    /// "Whisperflow I" was accepted by the LLM judge and then swallowed the
+    /// pronoun from every "Whisperflow I think…". A mishearing never needs a
+    /// function word on its edge.
+    static func hasFunctionWordEdge(_ term: String) -> Bool {
+        let words = term.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" })
+        guard words.count > 1, let first = words.first, let last = words.last else { return false }
+        return functionWords.contains(String(first)) || functionWords.contains(String(last))
+    }
+
     static func isCandidateTerm(_ word: String) -> Bool {
         guard word.count >= 3 else { return false }
         let fold = word.lowercased()
@@ -231,6 +321,17 @@ public enum VocabularyTuner {
     /// The word list stores base forms; "darker" and "cloned" must count as
     /// English or they become phonetic-match candidates ("Docker", "Claude").
     static func hasEnglishStem(_ fold: String) -> Bool {
+        if hasEnglishSuffixStem(fold) { return true }
+        // "redeploy", "mispriced", "preset": a prefix on an English word.
+        for prefix in ["re", "un", "pre", "mis", "over", "under", "sub", "non", "de"]
+        where fold.hasPrefix(prefix) && fold.count - prefix.count >= 3 {
+            let stem = String(fold.dropFirst(prefix.count))
+            if EnglishWordList.contains(stem) || hasEnglishSuffixStem(stem) { return true }
+        }
+        return false
+    }
+
+    private static func hasEnglishSuffixStem(_ fold: String) -> Bool {
         for suffix in ["s", "es", "d", "ed", "ing", "er", "est", "ly"] {
             guard fold.hasSuffix(suffix), fold.count - suffix.count >= 3 else { continue }
             let stem = String(fold.dropLast(suffix.count))
