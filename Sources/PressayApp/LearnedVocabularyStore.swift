@@ -144,7 +144,9 @@ final class LearnedVocabularyStore: ObservableObject {
         guard defaults.integer(forKey: Key.schemaVersion) < LearnedRuleMigration.schemaVersion else {
             return
         }
-        let surviving = records.filter { LearnedRuleMigration.survivesV1(source: $0.source) }
+        let surviving = records.filter {
+            LearnedRuleMigration.survivesV2(source: $0.source, heard: $0.heard)
+        }
         if surviving.count != records.count {
             records = surviving
             persist()

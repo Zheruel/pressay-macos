@@ -2,6 +2,24 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-10-07
+
+### Changed
+
+- Qwen3-ASR 1.7B (Q6_K) is the new default model. In a blind-judged replay of 22 real dictations it scored 9.0/10, level with Wispr Flow's cloud transcript (9.05), and returned nothing for near-silent clips instead of inventing text. The model picker is ranked best-first: Qwen3-ASR 1.7B, Voxtral Mini, Whisper Large V3 Turbo, Qwen3-ASR 0.6B, Fun-ASR MLT Nano. Existing users who never picked a model move to Qwen (a ~1.7 GB download); an explicit choice is kept.
+- The Qwen models are offered as English-only: transcribe.cpp takes no language hint for them, and the lock keeps the non-Latin hallucination filter armed.
+
+### Added
+
+- A runtime phonetic fallback in cleanup. A single non-English word one phonetic edit from a unique vocabulary term is corrected the first time it appears ("Superbase" → Supabase, "Grockpot" → Grokbot), before the tuner has learned it. Replayed over 4,691 real dictations it made 30 rewrites, all correct. It never runs in terminals, never touches acronyms, paths, emails or hyphenated words, and keeps spoken plurals.
+- `PressayBench post` replays cleanup over stored transcripts; `post` and `tune-eval` accept `--vocabulary` to test a personal vocabulary.
+
+### Fixed
+
+- The vocabulary tuner learned wrong rules once the vocabulary grew: replayed with 90 terms it proposed `backend → Cognito`, `codebase → Codex` and `the links → Telnyx`. Rules now also need spelling agreement (same onset, similar length, matching word split); the same replay proposes 39 rules, all correct. Stored deterministic rules are rebuilt on launch.
+- An LLM-judged rule could end on a function word ("Whisperflow I"), deleting the pronoun from every match. Such rules are rejected and removed from existing stores.
+- `CLAUDE.md` now also catches the run-together "cloudmd" and "claudemd".
+
 ## [1.5.0] - 2026-07-30
 
 ### Fixed
