@@ -434,6 +434,6 @@ The manifest schema is represented by `ManifestEntry` in [`Sources/PressayBench/
 - The private corpus cannot provide independently reproducible WER.
 - Two shared clips are enough to demonstrate relative latency on the development Mac, not quality across accents and environments.
 - A validator pass is a safety check, not a blind preference score.
-- Cloud-model latency and behavior vary over time, so the repository does not publish a permanent Kimi leaderboard.
+- Cloud-model latency and behavior vary over time; the cloud results here are dated snapshots, not a permanent leaderboard.
 
 If public contributors provide a consented, license-compatible prompt-dictation corpus, Pressay can add normalized WER and critical-token error rates without weakening the current privacy standard.

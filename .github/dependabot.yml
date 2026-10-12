@@ -1,17 +1,30 @@
 version: 2
 updates:
+  # Workflow actions, one grouped PR a week.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    # Only take releases that have been public for a week.
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "CI"
     groups:
       actions:
         patterns: ["*"]
 
-  # Covers Package.swift dependencies. The only current one is the pinned
-  # transcribe.cpp binaryTarget, which Dependabot cannot bump — bump its
-  # url + checksum manually on new upstream releases.
+  # Package.swift: FluidAudio (pinned exact; Dependabot bumps the pin). The
+  # transcribe.cpp binaryTarget is a url + checksum it cannot bump — update it
+  # by hand on new upstream releases.
   - package-ecosystem: swift
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "Deps"
+    groups:
+      swift:
+        patterns: ["*"]
