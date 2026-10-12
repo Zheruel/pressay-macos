@@ -14,41 +14,42 @@ enum ForegroundWindowPresenter {
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     init(coordinator: AppCoordinator) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 780, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         super.init(window: window)
+        self.coordinator = coordinator
 
-        window.title = "Pressay Settings"
+        window.title = "Pressay"
         // Keeps the titlebar height steady when a pane adds toolbar items.
         window.toolbar = NSToolbar(identifier: "PressaySettings")
         window.toolbarStyle = .unified
-        window.minSize = NSSize(width: 740, height: 520)
-        // Wider strands grouped-form rows in empty space.
-        window.maxSize = NSSize(width: 920, height: CGFloat.greatestFiniteMagnitude)
+        window.minSize = NSSize(width: 760, height: 520)
         window.isReleasedWhenClosed = false
         window.center()
-        window.setFrameAutosaveName("PressaySettingsWindow26")
-        // A frame autosaved before the width cap existed can exceed maxSize;
-        // restore only clamps future resizes, so clamp the restored frame too.
-        if window.frame.width > window.maxSize.width {
-            var frame = window.frame
-            frame.size.width = window.maxSize.width
-            window.setFrame(frame, display: false)
-        }
+        window.setFrameAutosaveName("PressayMainWindow")
         let hosting = NSHostingController(rootView: SettingsRootView(coordinator: coordinator))
         // Lets the split view own the toolbar and floating sidebar.
         hosting.sceneBridgingOptions = [.toolbars, .title]
         hosting.sizingOptions = []
         window.contentViewController = hosting
-        window.setContentSize(NSSize(width: 780, height: 640))
+        window.setContentSize(NSSize(width: 980, height: 680))
         window.delegate = self
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { nil }
+
+    var isKey: Bool { window?.isKeyWindow == true }
+
+    func windowDidResignKey(_ notification: Notification) {
+        // Switching to the call app mid-meeting brings up the notepad.
+        coordinator?.showNotepadIfRecording()
+    }
+
+    private weak var coordinator: AppCoordinator?
 
     func present() {
         guard let window else { return }

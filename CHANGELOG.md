@@ -2,6 +2,22 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Notetaker, now a page in the Pressay window rather than a separate Notes window. Past meetings are grouped by day and searchable. Each meeting opens with Summary, Transcript (chat bubbles with search and copy) and My Notes tabs.
+- Ask anything: ask about one meeting, or across your recent meetings from the Notetaker page. Answers come only from your notes and transcripts.
+- Call detection: when Zoom, Teams, Webex, FaceTime, Slack, Discord, WhatsApp or a browser call starts using the microphone, Pressay offers to take notes. Notes started this way stop when the call ends. Pressay only checks which apps use the mic, never what they hear, and needs no extra permission.
+- A floating notepad while recording, with the timer, levels, an optional live transcript and your notes.
+- Notetaker settings (gear on the Notetaker page): AI model picker limited to the providers you have set up (Claude Haiku 5.5 or Sonnet 5.5; GPT-6.1 Sol or GPT-6 Luna), call detection, stop when the call ends, maximum length, notepad and live transcript.
+- If a write-up fails, the note says why and offers Try Again.
+- Notes render nested bullets.
+
+### Removed
+
+- Voice notes and the note style picker. Existing voice notes stay readable.
+
 ## [1.7.0] - 2026-10-12
 
 ### Added

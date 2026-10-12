@@ -50,7 +50,13 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private let chatGPTCleaner = ChatGPTCleaner()
     private let editWatcher = EditWatcher()
     let chatGPT = ChatGPTAccount()
+    #if DEBUG
+    // PRESSAY_NOTES_DIR points design reviews at sample meetings.
+    let notes = ProcessInfo.processInfo.environment["PRESSAY_NOTES_DIR"]
+        .map { NotesStore(directory: URL(fileURLWithPath: $0)) } ?? NotesStore()
+    #else
     let notes = NotesStore()
+    #endif
     @Published private(set) var liveSession: LiveSession?
     @Published var recordingError: String?
     private var chatGPTForward: AnyCancellable?
@@ -58,7 +64,16 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     @Published private(set) var claudeAPIKey: String?
     private lazy var onboardingWindow = OnboardingWindowController(coordinator: self)
     private lazy var settingsWindow = SettingsWindowController(coordinator: self)
-    private lazy var notesWindow = NotesWindowController(coordinator: self)
+    private lazy var notepad = NotepadPanelController(coordinator: self)
+    private let callPrompt = CallPromptController()
+    private let callDetector = CallDetector()
+    /// A main-window section to switch to, e.g. "notes" for the Notetaker.
+    @Published var settingsPaneRequest: String?
+    @Published var notetakerSettingsShown = false
+    /// A hand-edited note waiting for the user to confirm a rewrite.
+    @Published var rewriteRequest: UUID?
+    private var callSettingsWatch: AnyCancellable?
+    private var finishTask: Task<Void, Never>?
 
     private init() {
         // Before the history store opens: its retention pass must see audio at its final location.
@@ -110,6 +125,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         outputActivity = observer
         try? history.applyRetention()
         reloadClaudeKey()
+        callDetector.onEvent = { [weak self] in self?.handleCall($0) }
+        callSettingsWatch = settings.$detectCalls.combineLatest(settings.$stopWhenCallEnds)
+            .sink { [weak self] detect, stop in self?.applyCallDetection(detect: detect, stop: stop) }
+        for note in notes.notes where note.needsWriteUp { writeUpNote(note.id) }
         // Independent of TCC onboarding.
         Task { await prepareModel() }
         Task { @MainActor in tunerRunner.scheduleIfNeeded(history: history, settings: settings) }
@@ -151,15 +170,16 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             showNotes()
         case "settings":
             showSettings()
+        case "call":
+            callPrompt.show(app: "Zoom") {}
         case let mode? where mode.hasPrefix("record-"):
             // e.g. "record-meeting-40": meeting, stops after 40 s.
             let parts = mode.split(separator: "-")
-            let kind: Note.Kind = parts.count > 1 && parts[1] == "meeting" ? .meeting : .voice
             let seconds = parts.count > 2 ? Double(parts[2]) ?? 30 : 30
             showNotes()
             Task { @MainActor in
                 while !self.modelReady { try? await Task.sleep(for: .milliseconds(200)) }
-                self.startRecording(kind)
+                self.startMeeting()
                 try? await Task.sleep(for: .seconds(seconds))
                 self.stopRecording()
             }
@@ -381,7 +401,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func showNotes() {
-        notesWindow.present()
+        settingsPaneRequest = "notes"
+        settingsWindow.present()
     }
 
     func completeOnboarding() {
@@ -403,7 +424,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             return
         }
         guard liveSession == nil else {
-            overlay.showError("Stop the recording in Notes to dictate")
+            overlay.showError("Stop the Notetaker to dictate")
             return
         }
         guard stateMachine.arm() else {
@@ -785,30 +806,71 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         stateMachine.reset()
     }
 
-    // MARK: - Notes
+    // MARK: - Notetaker
 
-    func startRecording(_ kind: Note.Kind, continuing id: UUID? = nil) {
-        guard liveSession == nil else { return }
+    var notesModel: NotesModel? {
+        NotesModel.resolve(
+            stored: settings.notesModel, preferChatGPT: settings.cleanupProvider == .chatgpt,
+            claude: claudeAPIKey != nil, chatGPT: chatGPT.isSignedIn
+        )
+    }
+
+    var notesModelOptions: [NotesModel] {
+        NotesModel.options(claude: claudeAPIKey != nil, chatGPT: chatGPT.isSignedIn)
+    }
+
+    private func applyCallDetection(detect: Bool, stop: Bool) {
+        if detect || stop {
+            callDetector.start()
+        } else {
+            callDetector.stop()
+            callPrompt.dismiss()
+        }
+    }
+
+    private func handleCall(_ event: CallDetectionState.Event) {
+        switch event {
+        case .started(let app):
+            guard settings.detectCalls, liveSession == nil else { return }
+            callPrompt.show(app: app) { [weak self] in
+                self?.startMeeting()
+            }
+        case .ended:
+            callPrompt.dismiss()
+            if settings.stopWhenCallEnds, let session = liveSession, session.fromCall {
+                stopRecording(automatic: true)
+            }
+        }
+    }
+
+    func startMeeting() {
+        guard liveSession == nil, finishTask == nil else { return }
         guard permissions.microphoneGranted else {
             recordingError = "Pressay needs microphone access to record. Allow it in System Settings › Privacy & Security › Microphone."
+            showNotes()
             return
         }
         guard modelReady else {
             recordingError = "Wait for the local model to finish preparing."
+            showNotes()
             return
         }
-        guard stateMachine.phase == .idle else { return }
+        guard stateMachine.phase == .idle else {
+            recordingError = "Finish dictating, then start the Notetaker."
+            showNotes()
+            return
+        }
+        callPrompt.dismiss()
 
-        let existing = id.flatMap(notes.note)
-        let noteID = existing?.id ?? UUID()
+        let noteID = UUID()
         coolDownTask?.cancel()
         coolDownTask = nil
         recorder.forceClose()
         do {
             let session = try LiveSession(
                 noteID: noteID,
-                kind: existing?.kind ?? kind,
-                offset: existing?.duration ?? 0,
+                kind: .meeting,
+                offset: 0,
                 transcriber: transcriber,
                 vocabulary: settings.vocabularyEntries,
                 inputUID: settings.inputDeviceUID,
@@ -817,48 +879,94 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             session.onLine = { [weak self] line in
                 self?.notes.modify(noteID) { $0.lines.append(line) }
             }
-            session.createdNote = existing == nil
-            if existing == nil {
-                notes.add(Note(id: noteID, kind: kind, title: kind == .meeting ? "Meeting" : "Voice note", body: "", transcripts: [], duration: 0))
-            }
+            session.createdNote = true
+            // Also covers clicking Start during a call that was already detected.
+            session.fromCall = callDetector.inCall
+            notes.add(Note(id: noteID, kind: .meeting, title: "Meeting", body: "", transcripts: [], duration: 0))
             liveSession = session
             sounds.play(.begin)
-            logger.info("Recording a \(kind.rawValue, privacy: .public) note")
+            // From the window, the notepad appears once the user switches away.
+            if settingsWindow.isKey || !settings.openNotepad {
+                showNotes()
+            } else {
+                notepad.show(session: session)
+            }
+            scheduleLengthLimit(for: session)
+            logger.info("Notetaker started\(session.fromCall ? " during a call" : "", privacy: .public)")
         } catch {
             logger.error("Recording failed to start: \(error.localizedDescription, privacy: .public)")
-            recordingError = "Couldn’t start recording: \(error.localizedDescription)"
+            recordingError = "Couldn’t start the Notetaker: \(error.localizedDescription)"
+            showNotes()
             applyMicWarmth()
         }
     }
 
-    func finishRecordingForQuit() async {
-        guard let session = liveSession, session.phase == .recording else { return }
-        let duration = session.elapsed
-        _ = await session.finish()
-        liveSession = nil
-        notes.modify(session.noteID) { note in
-            note.duration += duration
-            note.lines.sort { $0.start < $1.start }
+    private func scheduleLengthLimit(for session: LiveSession) {
+        let limit = TimeInterval(max(1, settings.maxMeetingHours) * 3600)
+        Task { [weak self, weak session] in
+            try? await Task.sleep(for: .seconds(max(0, limit - 120)))
+            guard let self, let session, liveSession === session, session.phase == .recording else { return }
+            let warning = "The Notetaker stops in 2 minutes, at the \(settings.maxMeetingHours)-hour limit you set."
+            session.notice = session.notice.map { "\($0)\n\(warning)" } ?? warning
+            try? await Task.sleep(for: .seconds(120))
+            guard liveSession === session, session.phase == .recording else { return }
+            stopRecording(automatic: true)
         }
     }
 
-    func stopRecording() {
-        guard let session = liveSession, session.phase == .recording else { return }
+    /// Saves the meeting before quitting; the write-up runs on next launch.
+    func finishRecordingForQuit() async {
+        if let finishTask {
+            await finishTask.value
+        } else if let session = liveSession, session.phase == .recording {
+            let duration = session.elapsed
+            let lines = await session.finish()
+            liveSession = nil
+            notepad.dismiss()
+            if lines.contains(where: { !$0.text.isEmpty }) {
+                notes.modify(session.noteID) { note in
+                    note.duration += duration
+                    note.lines.sort { $0.start < $1.start }
+                    note.title = Self.placeholderTitle(note)
+                    note.needsWriteUp = settings.notesUseAI
+                }
+            } else if notes.note(session.noteID)?.myNotes.isEmpty == true {
+                notes.delete(session.noteID)
+            }
+        }
+        notes.flush()
+    }
+
+    /// `automatic` when the call ended or the length limit hit: no alerts, no window.
+    func stopRecording(automatic: Bool = false) {
+        guard let session = liveSession, session.phase == .recording, finishTask == nil else { return }
         sounds.play(.release)
         let duration = session.elapsed
-        Task { [weak self] in
+        notepad.dismiss()
+        finishTask = Task { [weak self] in
             let lines = await session.finish()
             guard let self else { return }
             liveSession = nil
+            finishTask = nil
             applyMicWarmth()
-            finishNote(session.noteID, kind: session.kind, newLines: lines, duration: duration)
+            finishNote(session.noteID, newLines: lines, duration: duration, automatic: automatic)
         }
+    }
+
+    func showNotepadIfRecording() {
+        guard let session = liveSession, session.phase == .recording, settings.openNotepad else { return }
+        notepad.show(session: session)
+    }
+
+    private static func placeholderTitle(_ note: Note) -> String {
+        note.title == "Meeting" ? "Meeting on \(note.createdAt.formatted(.dateTime.month(.wide).day()))" : note.title
     }
 
     func discardRecording() {
         guard let session = liveSession else { return }
         session.discard()
         liveSession = nil
+        notepad.dismiss()
         sounds.play(.cancel)
         if session.createdNote {
             notes.delete(session.noteID)
@@ -868,78 +976,126 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         applyMicWarmth()
     }
 
-    private func finishNote(_ id: UUID, kind: Note.Kind, newLines: [TranscriptLine], duration: TimeInterval) {
+    private func finishNote(_ id: UUID, newLines: [TranscriptLine], duration: TimeInterval, automatic: Bool) {
         guard let note = notes.note(id) else { return }
-        let text = newLines.map(\.text).joined(separator: " ")
-        guard !text.isEmpty else {
-            // Drop a note that only this recording created.
-            if note.lines.isEmpty, note.body.isEmpty { notes.delete(id) }
-            recordingError = "Nothing was heard. Check your microphone in Settings › General."
+        guard newLines.contains(where: { !$0.text.isEmpty }) else {
+            if note.myNotes.isEmpty {
+                notes.delete(id)
+            } else {
+                notes.modify(id) { $0.title = Self.placeholderTitle($0) }
+            }
+            if !automatic {
+                recordingError = "Nothing was heard. Check your microphone in Settings › General."
+                showNotes()
+            }
             return
         }
         notes.modify(id) { note in
             note.duration += duration
             note.lines.sort { $0.start < $1.start }
-            if kind == .voice {
-                note.transcripts.append(text)
-                note.body += (note.body.isEmpty ? "" : "\n\n") + text
-                if note.transcripts.count == 1 { note.title = NotePrompt.fallbackTitle(for: text) }
-            } else if note.title == "Meeting" {
-                note.title = "Meeting on \(note.createdAt.formatted(.dateTime.month(.wide).day()))"
-            }
+            note.title = Self.placeholderTitle(note)
         }
         writeUpNote(id)
     }
 
-    /// Hand-edited notes are left alone; their new recordings were appended as-is.
-    func writeUpNote(_ id: UUID) {
-        guard settings.notesUseAI, cleanupConfigured,
-              let note = notes.note(id), !note.edited else { return }
-        let system: String
-        let user: String
-        switch note.kind {
-        case .voice:
-            guard !note.transcripts.isEmpty else { return }
-            system = NotePrompt.system(style: settings.noteStyle, vocabulary: settings.vocabularyEntries)
-            user = NotePrompt.user(transcript: note.transcripts.joined(separator: "\n\n"))
-        case .meeting:
-            guard !note.lines.isEmpty else { return }
-            let hasNotes = !note.myNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            system = MeetingPrompt.system(vocabulary: settings.vocabularyEntries, hasUserNotes: hasNotes)
-            user = MeetingPrompt.user(lines: note.lines, userNotes: note.myNotes)
-        }
+    /// Hand-edited notes are rewritten only when `replacingEdits`, after the user confirms.
+    func writeUpNote(_ id: UUID, replacingEdits: Bool = false) {
+        guard settings.notesUseAI, notesModel != nil, let note = notes.note(id), !note.formatting,
+              !note.edited || replacingEdits, note.kind == .meeting, !note.lines.isEmpty else { return }
+        let hasNotes = !note.myNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let system = MeetingPrompt.system(vocabulary: settings.vocabularyEntries, hasUserNotes: hasNotes)
+        let user = MeetingPrompt.user(lines: note.lines, userNotes: note.myNotes)
         // About a minute per hour of meeting on top of the base budget.
         let timeout = 90 + note.duration / 60
-        notes.modify(id, persist: false) { $0.formatting = true }
+        notes.modify(id, persist: false) {
+            $0.formatting = true
+            $0.writeUpError = nil
+        }
         Task { [weak self] in
             guard let self else { return }
             defer { notes.modify(id, persist: false) { $0.formatting = false } }
             do {
                 let reply = try await completeNote(system: system, user: user, timeout: timeout)
-                guard let parsed = NotePrompt.parse(reply) else { return }
-                guard notes.note(id)?.edited == false else { return }
+                guard let parsed = NotePrompt.parse(reply) else {
+                    notes.modify(id, persist: false) { $0.writeUpError = "The AI’s reply couldn’t be read." }
+                    return
+                }
+                // The user may have started editing while the AI was writing.
+                guard replacingEdits || notes.note(id)?.edited == false else { return }
                 notes.modify(id) {
                     $0.title = parsed.title
                     $0.body = parsed.body
+                    $0.edited = false
+                    $0.needsWriteUp = false
                 }
             } catch {
-                logger.error("Note write-up failed, kept the on-device text: \(error.localizedDescription, privacy: .public)")
+                logger.error("Note write-up failed: \(error.localizedDescription, privacy: .public)")
+                notes.modify(id, persist: false) { $0.writeUpError = Self.describe(error) }
             }
         }
     }
 
+    /// Answers from one meeting, or from recent meetings when `noteID` is nil.
+    func ask(_ question: String, about noteID: UUID?) async throws -> String {
+        guard settings.notesUseAI else { throw NotesAIError.turnedOff }
+        let source = noteID.flatMap(notes.note).map { [$0] } ?? Self.relevantMeetings(for: question, in: notes.notes)
+        guard !source.isEmpty else { return "There are no meetings to search yet." }
+        let meetings = source.map {
+            MeetingAskPrompt.Meeting(title: $0.title, date: $0.createdAt, notes: $0.body, myNotes: $0.myNotes, transcript: $0.transcriptText)
+        }
+        return try await completeNote(
+            system: MeetingAskPrompt.system,
+            user: MeetingAskPrompt.user(question: question, meetings: meetings),
+            timeout: 90
+        )
+    }
+
     private func completeNote(system: String, user: String, timeout: TimeInterval) async throws -> String {
-        switch settings.cleanupProvider {
-        case .claude:
-            guard let apiKey = claudeAPIKey else { throw CancellationError() }
-            return try await cleaner.complete(system: system, user: user, model: settings.claudeCleanupModel, apiKey: apiKey, timeout: timeout)
-        case .chatgpt:
+        switch notesModel {
+        case .claude(let model)?:
+            guard let apiKey = claudeAPIKey else { throw NotesAIError.notConfigured }
+            return try await cleaner.complete(system: system, user: user, model: model, apiKey: apiKey, timeout: timeout)
+        case .chatgpt(let slug)?:
             let token = try await chatGPT.accessToken()
             return try await chatGPTCleaner.complete(
-                instructions: system, user: user, model: settings.chatGPTModel,
-                effort: ChatGPTCleanupModel.effort(for: settings.chatGPTModel), accessToken: token, timeout: timeout
+                instructions: system, user: user, model: slug,
+                effort: ChatGPTCleanupModel.effort(for: slug), accessToken: token, timeout: timeout
             )
+        case nil:
+            throw NotesAIError.notConfigured
         }
+    }
+
+    private static func describe(_ error: Error) -> String {
+        if let error = error as? NotesAIError { return error.localizedDescription }
+        if (error as? URLError)?.code == .timedOut { return "The AI took too long to reply." }
+        return "The AI couldn’t write this note: \(error.localizedDescription)"
+    }
+
+    /// Meetings that mention the question's words first, then the newest.
+    private static func relevantMeetings(for question: String, in notes: [Note], limit: Int = 30) -> [Note] {
+        let words = question.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 3 }
+        func hits(_ note: Note) -> Int {
+            let text = (note.title + " " + note.body + " " + note.myNotes).lowercased()
+            return words.filter { text.contains($0) }.count
+        }
+        let meetings: [Note] = notes.filter { $0.kind == .meeting && $0.hasTranscript }
+        let scored: [(note: Note, hits: Int)] = meetings.map { ($0, hits($0)) }
+        let ranked = scored.sorted { a, b in
+            a.hits != b.hits ? a.hits > b.hits : a.note.createdAt > b.note.createdAt
+        }
+        let picked: [Note] = ranked.prefix(limit).map { $0.note }
+        return picked.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func openNotetakerSettings() {
+        showNotes()
+        notetakerSettingsShown = true
+    }
+
+    func canWriteUp(_ note: Note) -> Bool {
+        note.kind == .meeting && note.hasTranscript && !note.formatting && settings.notesUseAI
+            && notesModel != nil && liveSession?.noteID != note.id
     }
 
     /// Close matches apply at once; looser ones wait in Suggestions so a change of mind never becomes a rule.

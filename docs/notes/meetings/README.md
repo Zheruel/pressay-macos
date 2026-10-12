@@ -1,6 +1,6 @@
 # Meeting notes prompt
 
-Winner: `meeting-prompt.txt` (same as `meeting-prompt-v2.txt`). `{vocab}` is replaced with the user's vocabulary block, as in `../prompt-v4.txt`.
+Winner: `meeting-prompt.txt` (same as `meeting-prompt-v2.txt`). `{vocab}` is replaced with the user's vocabulary block, the same one AI Cleanup uses.
 
 ## Method
 
@@ -21,6 +21,7 @@ Each cell is overall / faithful, the mean over 12 meetings. Scores are only comp
 | R4 (2 passes) | v2 / v3b / v4 | **7.08** / 6.83 / 6.88 | **6.88** / 6.88 / 6.58 |
 | R4 faithful | v2 / v3b / v4 | **7.63** / 7.33 / 7.58 | **7.79** / 7.54 / 7.50 |
 | R5 (2 passes) | v2 / v5 | **7.29 / 7.79** / 7.00 / 7.63 | **6.83 / 7.83** / 6.54 / 7.54 |
+| R6 (2 passes) | v2 / v6 / v6b | **7.04 / 7.71** / 6.58 / 7.17 / 6.42 / 7.13 | **6.83 / 7.71** / 6.79 / 7.54 / 6.83 / 7.67 |
 
 What each version changed:
 
@@ -30,6 +31,8 @@ What each version changed:
 - **v3b:** v3 with a bold owner first (`**Tomasz**: ...`).
 - **v4:** caps topic sections at 2 to 6 bullets and adds a "Someone on the call" owner.
 - **v5:** v2 with a stricter title rule and an example of how the notes start.
+- **v6:** v2 with a Wispr-style body: a 1 to 2 sentence summary, sections chosen by meeting type (one per person in a standup; needs / concerns / pricing in a sales call; themes in a brainstorm; one per item in a review), and "  - " sub-bullets for who said what and details.
+- **v6b:** v6 without a Decisions section: each decision is a "Decided: " bullet in its topic section, and action items come right after the summary.
 
 ## Lessons
 
@@ -38,6 +41,7 @@ What each version changed:
 - Telling the model to name the outcome in the title raised title scores but led to overstated titles ("approved" for a conditional go-ahead). Labelling unnamed speakers "Someone on the call" made the judge mark actions down.
 - Haiku is unreliable about keeping line 1 a title. With v1 at effort low, 7 of 12 first lines broke the rule; with v2 at effort medium, 2 of 12 did (one was the summary paragraph, one was 11 words). Prompt changes (v5) did not fix this, so the app should clean up line 1 itself: strip `#`, and fall back if the line is too long. gpt-6.1-sol broke the title rule 0 times.
 - Haiku at effort medium is about equal to sol at effort low on quality (with the v2 prompt) and roughly 2x faster (about 10s against 16s per meeting). Haiku at effort low took about 4s but had weaker faithfulness and titles.
+- Wispr-style sections (R6) did not help. Per-person sections and "who said it" sub-bullets made Haiku misattribute statements (faithfulness 7.71 to 7.17), and folding decisions into topics cost structure. v2 stays. The app's note view also flattens indented bullets, so sub-bullets would need renderer support anyway.
 - Errors no prompt removed, so check for them when reviewing:
   - owners left unclear when an unnamed participant volunteered
   - hedges occasionally written as facts
