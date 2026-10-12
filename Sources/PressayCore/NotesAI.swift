@@ -266,6 +266,22 @@ public struct ActionItem: Hashable, Sendable {
         return result
     }
 
+    /// Whether this item is one already sent, even if a later write-up reworded it.
+    public func wasSent(_ sent: [String]) -> Bool {
+        let mine = Self.words(text)
+        return sent.contains { other in
+            let theirs = Self.words(other)
+            let union = mine.union(theirs).count
+            return union > 0 && Double(mine.intersection(theirs).count) / Double(union) >= 0.7
+        }
+    }
+
+    private static let fillerWords: Set<String> = ["the", "a", "an", "to", "and", "of", "for", "on", "in", "with", "by"]
+
+    private static func words(_ text: String) -> Set<String> {
+        Set(key(text).split(separator: " ").map(String.init)).subtracting(fillerWords)
+    }
+
     private static func key(_ text: String) -> String {
         text.lowercased().split { !$0.isLetter && !$0.isNumber }.joined(separator: " ")
     }

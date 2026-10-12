@@ -312,6 +312,13 @@ struct SettingsRootView: View {
                 .frame(maxWidth: 760)
                 .frame(maxWidth: .infinity)
                 .navigationTitle(section.title)
+                .toolbar {
+                    // Panes without toolbar items get a shorter, hard-edged toolbar that shifts the sidebar.
+                    ToolbarItem(placement: .primaryAction) {
+                        Color.clear.frame(width: 1, height: 28).accessibilityHidden(true)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                }
             }
         }
         .onReceive(coordinator.$settingsPaneRequest.compactMap { $0 }) { pane in
