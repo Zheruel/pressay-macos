@@ -90,6 +90,7 @@ struct ActionItemTests {
         #expect(items[2].owner == nil)
         #expect(ActionItem.otherOwners(in: body) == ["Leo"])
         #expect(ActionItem.parse("- [ ] Review plan (draft)").first?.text == "Review plan (draft)")
+        #expect(ActionItem.parse("- [ ] Send the deck (Friday)").first?.owner == nil)
     }
 
     @Test func togglesTheSameItemEvenAfterEdits() {

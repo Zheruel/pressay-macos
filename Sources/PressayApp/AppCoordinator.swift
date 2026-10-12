@@ -127,8 +127,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         try? history.applyRetention()
         reloadClaudeKey()
         callDetector.onEvent = { [weak self] in self?.handleCall($0) }
-        callSettingsWatch = settings.$detectCalls.combineLatest(settings.$stopWhenCallEnds)
-            .sink { [weak self] detect, stop in self?.applyCallDetection(detect: detect, stop: stop) }
+        callSettingsWatch = settings.$detectCalls.sink { [weak self] in self?.applyCallDetection($0) }
         for note in notes.notes where note.needsWriteUp { writeUpNote(note.id) }
         // Independent of TCC onboarding.
         Task { await prepareModel() }
@@ -895,8 +894,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         NotesModel.options(claude: claudeAPIKey != nil, chatGPT: chatGPT.isSignedIn)
     }
 
-    private func applyCallDetection(detect: Bool, stop: Bool) {
-        if detect || stop {
+    private func applyCallDetection(_ detect: Bool) {
+        if detect {
             callDetector.start()
         } else {
             callDetector.stop()

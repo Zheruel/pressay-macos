@@ -1080,7 +1080,8 @@ struct MyNotesEditor: View {
 /// The Markdown subset notes use: headings, lists, checkboxes, inline emphasis.
 struct MarkdownNoteBody: View {
     let markdown: String
-    var onToggleTask: (ActionItem) -> Void = { _ in }
+    /// Without it, tasks show as plain bullets.
+    var onToggleTask: ((ActionItem) -> Void)?
     /// Shown beside the heading of the first task list.
     var tasksAccessory: AnyView?
 
@@ -1128,16 +1129,21 @@ struct MarkdownNoteBody: View {
                 Text(number).monospacedDigit().foregroundStyle(.secondary)
                 Text(inline(text)).lineSpacing(3)
             }
+        case .task(let item) where onToggleTask == nil:
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("•").foregroundStyle(.secondary)
+                Text("\(Text(inline(item.text)))\(ownerText(item))")
+            }
         case .task(let item):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Button { onToggleTask(item) } label: {
+                Button { onToggleTask?(item) } label: {
                     Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(item.done ? Color.accentColor : .secondary)
                         .imageScale(.large)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(item.done ? "Mark as not done" : "Mark as done")
-                (Text(inline(item.text)).strikethrough(item.done) + ownerText(item))
+                Text("\(Text(inline(item.text)).strikethrough(item.done))\(ownerText(item))")
                     .foregroundStyle(item.done ? .secondary : .primary)
             }
         }
@@ -1204,10 +1210,11 @@ struct MarkdownNoteBody: View {
 struct RemindersButton: View {
     @ObservedObject var coordinator: AppCoordinator
     let note: Note
-    var mineOnly = false
+    /// The meeting page also takes tasks nobody owns; the Mine list shows only the user's.
+    var includeUnowned = true
 
     var body: some View {
-        let open = ActionItem.parse(note.body).filter { !$0.done && (!mineOnly || $0.isMine) }
+        let open = ActionItem.parse(note.body).filter { !$0.done && ($0.isMine || (includeUnowned && $0.owner == nil)) }
         let unsent = open.filter { !note.sentToReminders.contains($0.text) }
         if !open.isEmpty {
             if unsent.isEmpty {
@@ -1389,7 +1396,7 @@ private struct ActionItemsPage: View {
                         }
                         .buttonStyle(.plain)
                         Spacer()
-                        RemindersButton(coordinator: coordinator, note: group.note, mineOnly: scope == .mine)
+                        RemindersButton(coordinator: coordinator, note: group.note, includeUnowned: scope == .everyone)
                             .font(.callout)
                     }
                 }

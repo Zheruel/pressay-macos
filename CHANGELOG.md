@@ -2,7 +2,7 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.0] - 2026-10-12
 
 ### Added
 
@@ -12,10 +12,11 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 - A floating notepad while recording, with the timer, levels, an optional live transcript and your notes.
 - Notetaker settings (gear on the Notetaker page): AI model picker limited to the providers you have set up (Claude Haiku 5.5 or Sonnet 5.5; GPT-6.1 Sol or GPT-6 Luna), call detection, stop when the call ends, maximum length, notepad and live transcript.
 - Speaker names: tell Pressay who else was on the call (it suggests names from the action items). With one name, the transcript shows it instead of "Others", and names help the write-up attribute and spell people.
-- Action items across all meetings, filtered to yours or everyone's, with checkboxes and Add to Reminders.
+- Action items across all meetings, filtered to yours or everyone's. Ticking one here ticks it in the meeting notes, ticks survive a re-write-up, and each meeting can send your open items to Reminders.
 - Command Mode: hold Shift with the talk key and speak an instruction. With text selected it rewrites the selection ("make this more formal", "translate to German"); with nothing selected it writes new text ("write a reply saying Friday works"), or a shell command in a terminal. Uses your AI Cleanup provider.
 - AI Cleanup matches the app's style: casual in chat apps, full sentences and paragraphs in email, tidy paragraphs and lists in documents. Browser tabs are recognised by page title (Gmail, Slack, Google Docs). Turn it off under Settings › AI Cleanup.
 - Snippets: say a phrase like "my calendar link" and Pressay types the stored text, on its own or inside a dictation.
+- Command Mode reads the selection through Accessibility where it can and only falls back to copying it, keeps your clipboard intact, and is turned off when Shift is the talk key.
 - If a write-up fails, the note says why and offers Try Again.
 - Notes render nested bullets.
 

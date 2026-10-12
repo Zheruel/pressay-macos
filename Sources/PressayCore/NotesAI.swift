@@ -226,8 +226,16 @@ public struct ActionItem: Hashable, Sendable {
     private static func isOwner(_ text: String) -> Bool {
         let lower = text.lowercased()
         if lower == "me" || lower == "owner unclear" { return true }
-        return text.count <= 40 && text.split(separator: " ").count <= 4 && text.first?.isUppercase == true
+        let words = text.split(separator: " ")
+        return text.count <= 40 && words.count <= 4 && text.first?.isUppercase == true
+            && !text.contains(where: \.isNumber) && !words.contains { notNames.contains($0.lowercased()) }
     }
+
+    private static let notNames: Set<String> = [
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "today", "tomorrow",
+        "january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
+        "november", "december", "eod", "asap", "optional", "tentative", "draft",
+    ]
 
     /// Owners other than the user, for suggesting who was on the call.
     public static func otherOwners(in markdown: String) -> [String] {

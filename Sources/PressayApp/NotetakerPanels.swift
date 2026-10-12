@@ -52,6 +52,7 @@ final class NotepadPanelController {
     }
 
     func show(session: LiveSession) {
+        if let panel, panel.isVisible { return }
         let height: CGFloat = coordinator.settings.showLiveTranscript ? 460 : 300
         let panel = panel ?? FloatingPanel(size: NSSize(width: 340, height: height), titled: true)
         self.panel = panel
@@ -145,10 +146,7 @@ private struct NotepadView: View {
                         Text("Listening…").foregroundStyle(.secondary)
                     }
                     ForEach(Array(session.lines.suffix(40).enumerated()), id: \.offset) { _, line in
-                        (Text(line.speaker == .me ? "You  " : "Others  ")
-                            .foregroundStyle(line.speaker == .me ? Color.accentColor : .orange)
-                            .fontWeight(.semibold)
-                            + Text(line.text))
+                        Text("\(Text(line.speaker == .me ? "You  " : "Others  ").foregroundStyle(line.speaker == .me ? Color.accentColor : .orange).fontWeight(.semibold))\(line.text)")
                             .font(.callout)
                             .textSelection(.enabled)
                     }
