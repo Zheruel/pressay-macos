@@ -31,6 +31,7 @@ final class AppSettings: ObservableObject {
         static let maxMeetingHours = "maxMeetingHours"
         static let notesUseAI = "notesUseAI"
         static let meetingSystemAudio = "meetingSystemAudio"
+        static let separateVoices = "separateVoices"
         /// Legacy keys from removed Vibe Mode; cleared once at init.
         static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle"]
     }
@@ -77,6 +78,8 @@ final class AppSettings: ObservableObject {
     @Published var meetingSystemAudio: Bool {
         didSet { defaults.set(meetingSystemAudio, forKey: Key.meetingSystemAudio) }
     }
+    /// Labels the other people on a call "Speaker 1", "Speaker 2"… instead of one "Others".
+    @Published var separateVoices: Bool { didSet { defaults.set(separateVoices, forKey: Key.separateVoices) } }
     @Published private(set) var launchAtLoginError: String?
 
     /// Tuner-derived rules, merged into every cleanup pass with the curated entries.
@@ -117,6 +120,7 @@ final class AppSettings: ObservableObject {
         maxMeetingHours = defaults.object(forKey: Key.maxMeetingHours) as? Int ?? 3
         notesUseAI = defaults.object(forKey: Key.notesUseAI) as? Bool ?? true
         meetingSystemAudio = defaults.object(forKey: Key.meetingSystemAudio) as? Bool ?? true
+        separateVoices = defaults.object(forKey: Key.separateVoices) as? Bool ?? true
         holdKey = Self.readHoldKey(
             defaults, codeKey: Key.holdKeyCode, legacyKey: Key.holdKey, fallback: .rightOption
         )

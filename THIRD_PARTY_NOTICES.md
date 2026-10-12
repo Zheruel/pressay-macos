@@ -11,11 +11,18 @@ Pressay source code is MIT-licensed. The following components and downloaded ass
 
 The packaged application downloads the prebuilt `CTranscribe` XCFramework declared in `Package.swift`.
 
+## FluidAudio
+
+- Project: [FluidInference/FluidAudio](https://github.com/FluidInference/FluidAudio)
+- Use: on-device speaker diarization (LS-EEND) that tells the other people on a call apart
+- License: Apache-2.0
+
 ## Speech model weights
 
 Model weights are not committed to or redistributed by this repository. Pressay downloads the selected model from Hugging Face on first use.
 
 - [Whisper Large V3 Turbo](https://huggingface.co/openai/whisper-large-v3-turbo): base model released under the MIT License. Consult the downloaded GGUF repository's model card for conversion-specific notices.
+- [LS-EEND Core ML (AMI)](https://huggingface.co/FluidInference/ls-eend-coreml): MIT. Downloaded on the first meeting that records the call's audio.
 - [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3): CC BY 4.0. Copyright and attribution remain with NVIDIA and the model authors. Consult the model card before redistribution.
 
 The model-card terms are authoritative and may change independently of Pressay.

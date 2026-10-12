@@ -2,6 +2,17 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Tell speakers apart: the other people on a call are labelled Speaker 1, Speaker 2… instead of one "Others", on this Mac (up to four voices). After a meeting the AI names a speaker only when they introduced themselves or were addressed by name; rename any of them from the meeting header. Turn it off under Notetaker Settings › Calls.
+- Reminders recognise reworded action items, so re-writing a summary doesn't add them twice.
+
+### Fixed
+
+- The sidebar keeps the same look on every Settings pane.
+
 ## [1.8.0] - 2026-10-12
 
 ### Added

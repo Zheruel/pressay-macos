@@ -30,11 +30,13 @@ struct Note: Codable, Identifiable, Equatable {
     var needsWriteUp = false
     /// Who else was on the call, as the user typed them.
     var participants: [String] = []
+    /// Names for told-apart voices: index 0 is "Speaker 1"; empty for unnamed.
+    var speakerNames: [String] = []
     /// Action item lines already sent to Reminders, so they aren't added twice.
     var sentToReminders: [String] = []
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, createdAt, updatedAt, title, body, transcripts, edited, lines, duration, myNotes, needsWriteUp, participants, sentToReminders
+        case id, kind, createdAt, updatedAt, title, body, transcripts, edited, lines, duration, myNotes, needsWriteUp, participants, sentToReminders, speakerNames
     }
 
     init(id: UUID = UUID(), kind: Kind, title: String, body: String, transcripts: [String], lines: [TranscriptLine] = [], duration: TimeInterval) {
@@ -66,12 +68,38 @@ struct Note: Codable, Identifiable, Equatable {
         needsWriteUp = try c.decodeIfPresent(Bool.self, forKey: .needsWriteUp) ?? false
         participants = try c.decodeIfPresent([String].self, forKey: .participants) ?? []
         sentToReminders = try c.decodeIfPresent([String].self, forKey: .sentToReminders) ?? []
+        speakerNames = try c.decodeIfPresent([String].self, forKey: .speakerNames) ?? []
     }
 
     var transcriptText: String {
         guard !lines.isEmpty else { return transcripts.joined(separator: "\n\n") }
-        return lines.map { "[\(TranscriptLine.timestamp($0.start))] \($0.speaker == .me ? "Me" : "Others"): \($0.text)" }
-            .joined(separator: "\n")
+        return lines.map { $0.plain(names: speakerNames) }.joined(separator: "\n")
+    }
+
+    /// Adds AI-found names to the empty slots only.
+    static func merging(_ found: [Int: String], into names: [String]) -> [String] {
+        var names = names
+        for (voice, name) in found where voice >= 1 {
+            if names.count < voice { names += Array(repeating: "", count: voice - names.count) }
+            if names[voice - 1].isEmpty { names[voice - 1] = name }
+        }
+        return names
+    }
+
+    /// Who else was on the call, for the header: a label per told-apart voice, else the typed names.
+    var speakerLabels: [String] {
+        guard !voices.isEmpty else { return participants }
+        return voices.map { TranscriptLine(speaker: .others, start: 0, text: "", voice: $0).voiceLabel(names: speakerNames) ?? "" }
+    }
+
+    var hasNames: Bool { voices.isEmpty ? !participants.isEmpty : speakerNames.contains { !$0.isEmpty } }
+
+    /// Told-apart voices, in order: 1, 2, 3.
+    var voices: [Int] { Set(lines.compactMap(\.voice)).sorted() }
+
+    /// "You" for the user, then a name, "Speaker N" or the label for everyone else.
+    func label(for line: TranscriptLine) -> String {
+        line.speaker == .me ? "You" : line.voiceLabel(names: speakerNames) ?? othersLabel
     }
 
     /// The transcript's label for the other side: a name when there was only one other person.

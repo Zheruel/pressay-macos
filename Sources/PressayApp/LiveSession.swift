@@ -29,9 +29,12 @@ final class LiveSession: ObservableObject {
     var fromCall = false
 
     var onLine: ((TranscriptLine) -> Void)?
+    /// Test hook: the injected file has played to the end.
+    var onInjectedFileEnd: (() -> Void)?
 
     private var mic = LiveMicCapture()
     private let system: SystemAudioCapture?
+    private let voices: VoiceSeparator?
     private let pipeline: SegmentPipeline
     private let logger = Logger(subsystem: "dev.localflow.app", category: "meeting")
 
@@ -42,15 +45,20 @@ final class LiveSession: ObservableObject {
         transcriber: any SpeechTranscriber,
         vocabulary: [VocabularyParser.Entry],
         inputUID: String?,
-        captureSystemAudio: Bool
+        captureSystemAudio: Bool,
+        separateVoices: Bool = false
     ) throws {
         self.noteID = noteID
         self.kind = kind
         self.offset = offset
         system = kind == .meeting && captureSystemAudio ? SystemAudioCapture() : nil
+        voices = system != nil && separateVoices ? VoiceSeparator() : nil
 
         let (stream, continuation) = AsyncStream<SegmentPipeline.Item>.makeStream()
         pipeline = SegmentPipeline(continuation: continuation)
+        if let voices {
+            pipeline.othersTap = { voices.append($0) }
+        }
         workerTask = Task { [weak self] in
             for await item in stream {
                 let clip = AudioClip(samples: item.segment.samples)
@@ -66,7 +74,8 @@ final class LiveSession: ObservableObject {
                 guard let self, !Task.isCancelled else { continue }
                 pending -= 1
                 guard !cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                let line = TranscriptLine(speaker: item.speaker, start: offset + item.segment.start, text: cleaned)
+                let start = offset + item.segment.start
+                let line = TranscriptLine(speaker: item.speaker, start: start, text: cleaned, end: start + item.segment.duration)
                 let index = lines.firstIndex { $0.start > line.start } ?? lines.endIndex
                 lines.insert(line, at: index)
                 onLine?(line)
@@ -147,11 +156,13 @@ final class LiveSession: ObservableObject {
               (try? file.read(into: buffer)) != nil, let data = buffer.floatChannelData else { return }
         let mono = Array(UnsafeBufferPointer(start: data[0], count: Int(buffer.frameLength)))
         let samples = StreamResampler().convert(mono, rate: file.processingFormat.sampleRate)
+        let speed = ProcessInfo.processInfo.environment["PRESSAY_LIVE_SPEED"].flatMap(Double.init) ?? 1
         Task.detached { [pipeline] in
             for chunk in stride(from: 0, to: samples.count, by: 1_600) {
                 pipeline.append(Array(samples[chunk..<min(chunk + 1_600, samples.count)]), from: .others)
-                try? await Task.sleep(for: .milliseconds(100))
+                try? await Task.sleep(for: .milliseconds(100 / speed))
             }
+            await MainActor.run { [weak self] in self?.onInjectedFileEnd?() }
         }
     }
 
@@ -164,6 +175,11 @@ final class LiveSession: ObservableObject {
         system?.stop()
         pipeline.finish()
         await workerTask?.value
+        if let voices {
+            let turns = await voices.finish().map { VoiceTurn(start: offset + $0.start, end: offset + $0.end, speaker: $0.speaker) }
+            lines = VoiceLabeler.label(lines, turns: turns)
+            logger.info("Told apart \(Set(self.lines.compactMap(\.voice)).count, privacy: .public) voices")
+        }
         return lines
     }
 
@@ -175,6 +191,7 @@ final class LiveSession: ObservableObject {
         system?.stop()
         pipeline.finish()
         workerTask?.cancel()
+        voices?.cancel()
     }
 }
 
@@ -194,6 +211,8 @@ final class SegmentPipeline: @unchecked Sendable {
     private let logger = Logger(subsystem: "dev.localflow.app", category: "meeting")
 
     var onQueued: (@Sendable () -> Void)?
+    /// Sees every "Others" sample in order, on the segmenter queue.
+    var othersTap: (@Sendable ([Float]) -> Void)?
     var onLevel: (@Sendable (TranscriptLine.Speaker, Float) -> Void)?
 
     init(continuation: AsyncStream<Item>.Continuation) {
@@ -208,6 +227,7 @@ final class SegmentPipeline: @unchecked Sendable {
             stat.samples += samples.count
             stat.peak = max(stat.peak, samples.reduce(0) { max($0, abs($1)) })
             stats[speaker] = stat
+            if speaker == .others { othersTap?(samples) }
             var segmenter = segmenters[speaker] ?? Self.makeSegmenter()
             let done = segmenter.append(samples)
             segmenters[speaker] = segmenter

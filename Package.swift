@@ -12,7 +12,10 @@ let package = Package(
         .executable(name: "Pressay", targets: ["PressayApp"]),
         .executable(name: "PressayBench", targets: ["PressayBench"]),
     ],
-    dependencies: [],
+    dependencies: [
+        // Apache-2.0. On-device speaker diarization for the other side of calls.
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.7"),
+    ],
     targets: [
         .target(name: "PressayCore"),
         .target(name: "PressayObjCShim", publicHeadersPath: "include"),
@@ -61,6 +64,7 @@ let package = Package(
                 "PressayCore",
                 "PressayObjCShim",
                 "PressayTranscription",
+                .product(name: "FluidAudio", package: "FluidAudio"),
             ]
         ),
         .testTarget(
