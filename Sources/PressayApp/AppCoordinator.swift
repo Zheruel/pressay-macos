@@ -46,7 +46,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     /// Backstop for the readiness cue when a device never reports live audio.
     private var armingTimeoutTask: Task<Void, Never>?
     private var lastDictationEnded: Date?
-    private var outputActivity: OutputActivityObserver?
     /// Parks warming after a failed open so a broken device can't spin.
     private var warmUpFailed = false
     private var keyPressedAt = Date.distantPast
@@ -122,12 +121,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         settings.refreshLaunchAtLogin()
         applyTranscriptionLanguage()
         applyMicWarmth()
-        // Pause video, dictate, resume is common, so react to playback starting inside the warm window.
-        let observer = OutputActivityObserver { [weak self] _ in
-            self?.applyMicWarmth()
-        }
-        observer.start()
-        outputActivity = observer
         try? history.applyRetention()
         reloadClaudeKey()
         callDetector.onEvent = { [weak self] in self?.handleCall($0) }
@@ -669,7 +662,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             """
             warmth: enabled=\(conditions.enabled, privacy: .public) \
             bluetooth=\(conditions.isBluetooth, privacy: .public) \
-            otherAppPlaying=\(conditions.outputDeviceInUse, privacy: .public) \
             everDictated=\(conditions.lastDictationEnded != nil, privacy: .public) \
             warm=\(self.recorder.isWarm, privacy: .public) → \
             \(shouldWarm ? "warm" : "cool", privacy: .public)
@@ -720,11 +712,18 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
+    /// The mic the recorder will open: the chosen one while it is connected, else the system default.
+    private var inputIsBluetooth: Bool {
+        if let uid = settings.inputDeviceUID, let device = AudioDeviceMonitor.device(forUID: uid) {
+            return device.isBluetooth
+        }
+        return AudioDeviceMonitor.defaultInputIsBluetooth
+    }
+
     private func warmConditions(at now: Date) -> MicWarmPolicy.Conditions {
         MicWarmPolicy.Conditions(
             enabled: settings.keepMicWarm,
-            isBluetooth: AudioDeviceMonitor.defaultInputIsBluetooth,
-            outputDeviceInUse: AudioDeviceMonitor.otherProcessIsPlaying,
+            isBluetooth: inputIsBluetooth,
             lastDictationEnded: lastDictationEnded
         )
     }

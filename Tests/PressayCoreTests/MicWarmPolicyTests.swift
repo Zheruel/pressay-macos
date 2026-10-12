@@ -7,13 +7,11 @@ final class MicWarmPolicyTests: XCTestCase {
     private func conditions(
         enabled: Bool = true,
         isBluetooth: Bool = false,
-        outputDeviceInUse: Bool = false,
         endedSecondsAgo: TimeInterval? = 1
     ) -> MicWarmPolicy.Conditions {
         MicWarmPolicy.Conditions(
             enabled: enabled,
             isBluetooth: isBluetooth,
-            outputDeviceInUse: outputDeviceInUse,
             lastDictationEnded: endedSecondsAgo.map { epoch.addingTimeInterval(-$0) }
         )
     }
@@ -50,26 +48,10 @@ final class MicWarmPolicyTests: XCTestCase {
         )
     }
 
-    /// Holding a headset in its call profile degrades playback.
-    func testBluetoothYieldsToPlayback() {
-        XCTAssertFalse(
-            MicWarmPolicy.shouldStayWarm(
-                conditions(isBluetooth: true, outputDeviceInUse: true), now: epoch
-            )
-        )
-        XCTAssertTrue(
-            MicWarmPolicy.shouldStayWarm(
-                conditions(isBluetooth: true, outputDeviceInUse: false), now: epoch
-            )
-        )
-    }
-
-    func testWiredInputIgnoresPlayback() {
-        XCTAssertTrue(
-            MicWarmPolicy.shouldStayWarm(
-                conditions(isBluetooth: false, outputDeviceInUse: true), now: epoch
-            )
-        )
+    /// An open headset mic forces its call profile, cutting and degrading playback.
+    func testBluetoothIsNeverKeptWarm() {
+        XCTAssertFalse(MicWarmPolicy.shouldStayWarm(conditions(isBluetooth: true, endedSecondsAgo: 1), now: epoch))
+        XCTAssertNil(MicWarmPolicy.expiry(conditions(isBluetooth: true, endedSecondsAgo: 1), now: epoch))
     }
 
     func testExpiryIsTheEndOfTheWindow() {

@@ -36,7 +36,7 @@ No account, no telemetry, no subscription. Audio never leaves the Mac.
 - **Snippets.** Say "my calendar link" and Pressay types the URL. Works inside any dictation.
 - **Notetaker.** Offers to take notes when a call starts. Records your mic as "You" and tells the other people on the call apart on-device (Speaker 1, Speaker 2, or their names), so it works with Zoom, Meet, Teams or Slack and no bot joins the call. When the call ends you get a titled note with a summary, decisions, action items with owners, and open questions. Ask anything about one meeting or all of them, and keep your action items in one list or send them to Reminders.
 - **A dictionary that learns.** Retype a word Pressay got wrong and it learns the spelling. Names that keep recurring are suggested. Both the on-device rules and AI Cleanup use the dictionary.
-- **Fast start.** The mic stays warm for 45 s after a dictation, with a 0.5 s pre-roll, so your first word is never clipped. The start sound plays only once real audio arrives.
+- **Fast start.** A built-in or wired mic stays warm for 45 s after a dictation, with a 0.5 s pre-roll, so your first word is never clipped. Bluetooth headphones are never held open, so they stay in music mode between dictations. The start sound plays only once real audio arrives.
 
 ## How it works
 
@@ -122,7 +122,7 @@ The meeting prompt was tuned over six blind-judged rounds on 12 meetings: [`docs
 
 The speech model downloads once from Hugging Face. After that, dictation works offline.
 
-**Keep the microphone ready** keeps the audio stream open for 45 s after a dictation, so macOS shows the orange mic indicator during that time. Only a half-second ring buffer is kept, and it is overwritten continuously. The mic closes on sleep and screen lock, yields when another app plays audio, and the feature can be turned off in Settings.
+**Keep the microphone ready** keeps the audio stream open for 45 s after a dictation, so macOS shows the orange mic indicator during that time. Only a half-second ring buffer is kept, and it is overwritten continuously. The mic closes on sleep and screen lock, is never kept open on Bluetooth headphones (an open mic switches them to call audio), and the feature can be turned off in Settings.
 
 ## Install from source
 

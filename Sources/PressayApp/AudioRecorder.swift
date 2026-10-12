@@ -257,6 +257,12 @@ final class AudioRecorder: @unchecked Sendable {
     private func handleConfigurationChange() {
         guard engineOpen else { return }
         logger.info("configuration change while \(self.isRecording ? "recording" : "warm", privacy: .public)")
+        // Between dictations, don't follow the system onto a new device: it may be a headset,
+        // where an open mic switches playback to call audio. The next dictation opens it cold.
+        guard isRecording else {
+            closeEngine()
+            return
+        }
 
         let input = engine.inputNode
         try? catchingObjCException { input.removeTap(onBus: 0) }
