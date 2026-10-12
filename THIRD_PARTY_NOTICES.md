@@ -22,12 +22,7 @@ The model-card terms are authoritative and may change independently of Pressay.
 
 ## Dictation earcons
 
-`Config/Sounds/dictation-begin.wav` and `dictation-release.wav` are modified from these Freesound recordings by AbdrTar:
-
-- [Recording Start](https://freesound.org/people/AbdrTar/sounds/519985/)
-- [Recording End](https://freesound.org/people/AbdrTar/sounds/519986/)
-
-The source recordings are published under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Attribution is not required, but is included with thanks. Transformation details are documented in [`Config/Sounds/README.md`](Config/Sounds/README.md).
+The `Config/Sounds/*.wav` earcons are synthesized by Pressay's own `scripts/generate-earcons.py` and contain no third-party audio. Earlier releases derived the begin/release cues from CC0 recordings by AbdrTar on Freesound ([Recording Start](https://freesound.org/people/AbdrTar/sounds/519985/), [Recording End](https://freesound.org/people/AbdrTar/sounds/519986/)); thanks for those.
 
 ## Apple frameworks
 

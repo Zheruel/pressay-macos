@@ -1,16 +1,21 @@
 # Pressay earcons
 
-`dictation-begin.wav` and `dictation-release.wav` are derived from the matched
-“Recording Start” and “Recording End” cues by AbdrTar on Freesound:
+All cues are synthesized by `scripts/generate-earcons.py` (no third-party audio):
 
-https://freesound.org/people/AbdrTar/sounds/519985/
-https://freesound.org/people/AbdrTar/sounds/519986/
+| File | Sound | Length |
+| --- | --- | ---: |
+| `dictation-begin.wav` | Two soft mallet notes rising a fourth (E5 → A5): "open" | 170 ms |
+| `dictation-release.wav` | The mirror, falling A5 → E5 and softer: "closed" | 160 ms |
+| `dictation-cancel.wav` | One muted low tap | 90 ms |
+| `dictation-error.wav` | Two muted notes falling a minor third | 200 ms |
+| `dictation-learned.wav` | Rising three-note arpeggio for learned words | 300 ms |
 
-Pressay keeps the source pair's gentle rising/falling relationship, shifts the
-notes five semitones lower, trims each cue to 135 ms, removes sub-bass and sharp
-upper harmonics, lowers the peak to about -28 dBFS for comfortable frequent
-use, adds a soft attack and click-safe fades, and converts the result to 48 kHz
-stereo PCM.
+Each note is a struck tuned bar: marimba-ratio partials with faster-decaying
+upper modes, a ~3 ms felt-mallet attack, a 2 ms noise tick for tactility, and
+three low-passed early reflections for a small-room tail. Peaks sit between
+-25 and -29 dBFS (RMS matched to the previous cues) for comfortable frequent
+use, with a click-safe fade to digital silence.
 
-Both source recordings are published under CC0 1.0. See the root
-`THIRD_PARTY_NOTICES.md` for links and licensing details.
+Lengths must match `DictationSoundPlayer.Cue.duration`; the begin length also
+sizes the window trimmed from captured audio. Regenerate with
+`python3 scripts/generate-earcons.py`.

@@ -15,6 +15,15 @@ final class AppSettings: ObservableObject {
         static let hasUsedDictation = "hasUsedDictation"
         static let keepMicWarm = "keepMicWarm"
         static let inputDevice = "inputDeviceUID"
+        static let claudeCleanup = "claudeCleanup"
+        static let claudeCleanupModel = "claudeCleanupModel"
+        static let cleanupProvider = "cleanupProvider"
+        static let chatGPTModel = "chatGPTModel"
+        static let chatGPTWelcomeShown = "chatGPTWelcomeShown"
+        static let learnFromEdits = "learnFromEdits"
+        static let noteStyle = "noteStyle"
+        static let notesUseAI = "notesUseAI"
+        static let meetingSystemAudio = "meetingSystemAudio"
         /// Vibe Mode (removed) persisted these; cleared once at init.
         static let retired = ["polishHoldKeyCode", "polishModel"]
     }
@@ -32,11 +41,31 @@ final class AppSettings: ObservableObject {
     @Published var keepMicWarm: Bool { didSet { defaults.set(keepMicWarm, forKey: Key.keepMicWarm) } }
     /// CoreAudio UID of the dictation input, or nil to follow the system default.
     @Published var inputDeviceUID: String? { didSet { defaults.set(inputDeviceUID, forKey: Key.inputDevice) } }
+    /// On by default so saving a key is the single opt-in step.
+    @Published var claudeCleanup: Bool { didSet { defaults.set(claudeCleanup, forKey: Key.claudeCleanup) } }
+    @Published var claudeCleanupModel: ClaudeCleanupModel {
+        didSet { defaults.set(claudeCleanupModel.rawValue, forKey: Key.claudeCleanupModel) }
+    }
+    @Published var cleanupProvider: CleanupProvider {
+        didSet { defaults.set(cleanupProvider.rawValue, forKey: Key.cleanupProvider) }
+    }
+    @Published var chatGPTModel: String { didSet { defaults.set(chatGPTModel, forKey: Key.chatGPTModel) } }
+    @Published var chatGPTWelcomeShown: Bool {
+        didSet { defaults.set(chatGPTWelcomeShown, forKey: Key.chatGPTWelcomeShown) }
+    }
+    @Published var learnFromEdits: Bool { didSet { defaults.set(learnFromEdits, forKey: Key.learnFromEdits) } }
+    @Published var noteStyle: NoteStyle { didSet { defaults.set(noteStyle.rawValue, forKey: Key.noteStyle) } }
+    /// Off keeps notes on-device.
+    @Published var notesUseAI: Bool { didSet { defaults.set(notesUseAI, forKey: Key.notesUseAI) } }
+    @Published var meetingSystemAudio: Bool {
+        didSet { defaults.set(meetingSystemAudio, forKey: Key.meetingSystemAudio) }
+    }
     @Published private(set) var launchAtLoginError: String?
 
     /// Rules the vocabulary tuner derived from transcripts; merged into every
     /// cleanup pass alongside the curated entries.
     let learnedVocabulary: LearnedVocabularyStore
+    let vocabularySuggestions: VocabularySuggestionStore
     @Published var launchAtLogin: Bool {
         didSet {
             guard !isRollingBackLaunchAtLogin else { return }
@@ -60,6 +89,11 @@ final class AppSettings: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         learnedVocabulary = LearnedVocabularyStore(defaults: defaults)
+        vocabularySuggestions = VocabularySuggestionStore(defaults: defaults)
+        learnFromEdits = defaults.object(forKey: Key.learnFromEdits) as? Bool ?? true
+        noteStyle = NoteStyle(rawValue: defaults.string(forKey: Key.noteStyle) ?? "") ?? .default
+        notesUseAI = defaults.object(forKey: Key.notesUseAI) as? Bool ?? true
+        meetingSystemAudio = defaults.object(forKey: Key.meetingSystemAudio) as? Bool ?? true
         holdKey = Self.readHoldKey(
             defaults, codeKey: Key.holdKeyCode, legacyKey: Key.holdKey, fallback: .rightOption
         )
@@ -89,6 +123,13 @@ final class AppSettings: ObservableObject {
         // to fix, and it only holds the stream between back-to-back dictations.
         keepMicWarm = defaults.object(forKey: Key.keepMicWarm) as? Bool ?? true
         inputDeviceUID = defaults.string(forKey: Key.inputDevice)
+        claudeCleanup = defaults.object(forKey: Key.claudeCleanup) as? Bool ?? true
+        claudeCleanupModel = ClaudeCleanupModel(
+            rawValue: defaults.string(forKey: Key.claudeCleanupModel) ?? ""
+        ) ?? .default
+        cleanupProvider = CleanupProvider(rawValue: defaults.string(forKey: Key.cleanupProvider) ?? "") ?? .claude
+        chatGPTModel = defaults.string(forKey: Key.chatGPTModel) ?? ChatGPTCleanupModel.defaultSlug
+        chatGPTWelcomeShown = defaults.bool(forKey: Key.chatGPTWelcomeShown)
         let serviceStatus = SMAppService.mainApp.status
         launchAtLogin = Self.launchAtLoginIsOn(serviceStatus)
         launchAtLoginError = Self.launchAtLoginMessage(for: serviceStatus)
@@ -147,6 +188,34 @@ final class AppSettings: ObservableObject {
         vocabularyEntries.map(\.preferred)
     }
 
+    /// Every dictionary term and covered heard spelling, lowercased.
+    var knownVocabularyFolds: Set<String> {
+        Set(vocabularyEntries.flatMap { [$0.preferred] + $0.aliases }.map { $0.lowercased() })
+    }
+
+    func addVocabularyWord(_ preferred: String, aliases: [String] = []) {
+        var line = preferred
+        if !aliases.isEmpty { line += " <= " + aliases.joined(separator: ", ") }
+        var source = vocabularySource.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !source.contains("# Custom") { source += "\n\n# Custom" }
+        source += "\n" + line
+        vocabularySource = source
+    }
+
+    /// An alias becomes a learned rule (lifting any earlier removal); a new word joins the list.
+    func accept(_ suggestion: VocabularySuggestion) {
+        if let heard = suggestion.heard {
+            learnedVocabulary.unblock(heard)
+            learnedVocabulary.mergeRules(
+                [LearnedRule(heard: heard, preferred: suggestion.preferred, count: suggestion.count, source: .suggestion)],
+                source: .suggestion
+            )
+        } else {
+            addVocabularyWord(suggestion.preferred)
+        }
+        vocabularySuggestions.remove(suggestion)
+    }
+
     func restoreCuratedVocabulary() {
         vocabularySource = CuratedVocabulary.source
     }
@@ -172,5 +241,26 @@ final class AppSettings: ObservableObject {
             return legacy
         }
         return fallback
+    }
+}
+
+/// Claude with the user's API key, or OpenAI billed to the user's ChatGPT plan.
+enum CleanupProvider: String, CaseIterable, Identifiable {
+    case claude
+    case chatgpt
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .claude: "Claude"
+        case .chatgpt: "ChatGPT"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .claude: "Your Anthropic API key. Fastest."
+        case .chatgpt: "Your Plus or Pro plan, at no extra cost."
+        }
     }
 }

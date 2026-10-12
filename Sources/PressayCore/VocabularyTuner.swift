@@ -16,6 +16,10 @@ public struct LearnedRule: Codable, Equatable, Sendable {
     public enum Source: String, Codable, Sendable {
         case det
         case k3
+        /// The user retyped the word after Pressay inserted it.
+        case edit
+        /// The user accepted a suggestion.
+        case suggestion
     }
 
     public let heard: String
@@ -77,7 +81,7 @@ public enum VocabularyTuner {
             .map { TunerCandidate(term: $0.key, count: $0.value, excerpt: excerpts[$0.key] ?? "") }
     }
 
-    static func tolerance(forKeyLength length: Int) -> Int {
+    public static func tolerance(forKeyLength length: Int) -> Int {
         if length <= 3 { return 0 }
         if length <= 7 { return 1 }
         return 2
@@ -306,13 +310,13 @@ public enum VocabularyTuner {
     /// "Whisperflow I" was accepted by the LLM judge and then swallowed the
     /// pronoun from every "Whisperflow I think…". A mishearing never needs a
     /// function word on its edge.
-    static func hasFunctionWordEdge(_ term: String) -> Bool {
+    public static func hasFunctionWordEdge(_ term: String) -> Bool {
         let words = term.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" })
         guard words.count > 1, let first = words.first, let last = words.last else { return false }
         return functionWords.contains(String(first)) || functionWords.contains(String(last))
     }
 
-    static func isCandidateTerm(_ word: String) -> Bool {
+    public static func isCandidateTerm(_ word: String) -> Bool {
         guard word.count >= 3 else { return false }
         let fold = word.lowercased()
         return !EnglishWordList.contains(fold) && !hasEnglishStem(fold)

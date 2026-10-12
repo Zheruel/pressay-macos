@@ -127,6 +127,11 @@ final class LearnedVocabularyStore: ObservableObject {
         persist()
     }
 
+    func unblock(_ heard: String) {
+        guard blocklist.remove(heard.lowercased()) != nil else { return }
+        persist()
+    }
+
     func isCovered(_ term: String) -> Bool {
         records.contains { $0.heard.caseInsensitiveCompare(term) == .orderedSame }
     }
@@ -159,5 +164,73 @@ final class LearnedVocabularyStore: ObservableObject {
     private func persist() {
         defaults.set(try? JSONEncoder().encode(records), forKey: Key.rules)
         defaults.set(Array(blocklist), forKey: Key.blocklist)
+    }
+}
+
+/// Mined suggestions are replaced daily; edit suggestions accumulate; dismissed ones never return.
+@MainActor
+final class VocabularySuggestionStore: ObservableObject {
+    private enum Key {
+        static let suggestions = "vocabularySuggestions.pending"
+        static let dismissed = "vocabularySuggestions.dismissed"
+        static let lastMined = "vocabularySuggestions.lastMined"
+    }
+
+    @Published private(set) var suggestions: [VocabularySuggestion] = []
+    private var dismissed: Set<String>
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        dismissed = Set(defaults.stringArray(forKey: Key.dismissed) ?? [])
+        if let data = defaults.data(forKey: Key.suggestions),
+           let decoded = try? JSONDecoder().decode([VocabularySuggestion].self, from: data) {
+            suggestions = decoded
+        }
+    }
+
+    var lastMined: Date? { defaults.object(forKey: Key.lastMined) as? Date }
+
+    func replaceMined(_ mined: [VocabularySuggestion], known: Set<String>) {
+        let kept = suggestions.filter { $0.origin == .edit && !isKnown($0, known) }
+        let fresh = mined.filter { !dismissed.contains($0.id) && !isKnown($0, known) }
+        let keptIDs = Set(kept.map(\.id))
+        suggestions = kept + fresh.filter { !keptIDs.contains($0.id) }
+        defaults.set(Date(), forKey: Key.lastMined)
+        persist()
+    }
+
+    func add(_ suggestion: VocabularySuggestion) {
+        guard !dismissed.contains(suggestion.id) else { return }
+        if let index = suggestions.firstIndex(where: { $0.id == suggestion.id }) {
+            let existing = suggestions[index]
+            suggestions[index] = VocabularySuggestion(
+                heard: existing.heard, preferred: existing.preferred, origin: existing.origin,
+                count: existing.count + 1, example: suggestion.example
+            )
+        } else {
+            suggestions.insert(suggestion, at: 0)
+        }
+        persist()
+    }
+
+    func dismiss(_ suggestion: VocabularySuggestion) {
+        dismissed.insert(suggestion.id)
+        remove(suggestion)
+    }
+
+    func remove(_ suggestion: VocabularySuggestion) {
+        suggestions.removeAll { $0.id == suggestion.id }
+        persist()
+    }
+
+    private func isKnown(_ suggestion: VocabularySuggestion, _ known: Set<String>) -> Bool {
+        if let heard = suggestion.heard { return known.contains(heard.lowercased()) }
+        return known.contains(suggestion.preferred.lowercased())
+    }
+
+    private func persist() {
+        defaults.set(try? JSONEncoder().encode(suggestions), forKey: Key.suggestions)
+        defaults.set(Array(dismissed), forKey: Key.dismissed)
     }
 }

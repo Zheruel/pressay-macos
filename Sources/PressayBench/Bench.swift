@@ -96,8 +96,27 @@ struct Bench {
             try runManifestFromAudio(options: options, manifestURL: manifestURL)
         case "post":
             try await runPost(options: options)
+        case "discover":
+            try runDiscover(options: options)
         default:
             throw BenchError.usage("unknown subcommand \(command)")
+        }
+    }
+
+    /// Dictionary suggestions mined from `[{raw, polished, date, lm}]`.
+    static func runDiscover(options: [String: String]) throws {
+        guard let input = options["input"] else {
+            throw BenchError.usage("discover needs --input dictations.json [--vocabulary vocab.txt]")
+        }
+        struct Row: Decodable { let raw: String; let polished: String; let date: Double; let lm: Bool }
+        let rows = try JSONDecoder().decode([Row].self, from: Data(contentsOf: URL(fileURLWithPath: input)))
+        let source = try options["vocabulary"].map { try String(contentsOfFile: $0, encoding: .utf8) } ?? CuratedVocabulary.source
+        let known = Set(VocabularyParser.parse(source).flatMap { [$0.preferred] + $0.aliases }.map { $0.lowercased() })
+        let dictations = rows.map {
+            VocabularyDiscovery.Dictation(raw: $0.raw, polished: $0.polished, date: Date(timeIntervalSince1970: $0.date), usedLanguageModel: $0.lm)
+        }
+        for suggestion in VocabularyDiscovery.suggestions(from: dictations, known: known) {
+            print("\(suggestion.origin.rawValue)\t\(suggestion.count)\t\(suggestion.heard ?? "-") → \(suggestion.preferred)\t\(suggestion.example)")
         }
     }
 

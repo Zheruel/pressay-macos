@@ -5,7 +5,7 @@
 <h1 align="center">Pressay</h1>
 
 <p align="center">
-  <strong>Quality-first voice dictation for AI prompts on macOS.</strong><br>
+  <strong>Private, quality-first voice dictation and meeting notes for macOS.</strong><br>
   Hold. Speak. Release. Your words appear at the cursor.
 </p>
 
@@ -16,237 +16,147 @@
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-7C3AED"></a>
 </p>
 
-Pressay is a native, hold-to-talk dictation app built for people who communicate with coding agents all day. Standard dictation records only while a shortcut is held, transcribes locally on Apple Silicon, cleans up predictable speech artifacts, and inserts the result into the field that was focused when recording began.
+Pressay is a native hold-to-talk dictation app for people who write to coding agents, chats and docs all day. Speech is transcribed on your Mac. Optional AI Cleanup, on your own Claude key or ChatGPT plan, turns the transcript into clean text. Pressay also records meetings: a live on-device transcript of you and the call, then a written-up note.
 
-It is deliberately not an always-listening assistant. There is no account, telemetry, subscription, or cloud transcription.
+No account, no telemetry, no subscription. Audio never leaves the Mac.
 
 > [!IMPORTANT]
-> Pressay 1.5 targets Apple Silicon Macs running macOS 26 or newer. Shared builds are not notarized yet, so building from source is the most reliable installation path.
+> Requires an Apple Silicon Mac on macOS 26 or newer. Builds are not notarized yet, so building from source is the most reliable install.
 
-## Why Pressay
+## Features
 
-- **Quality first.** Qwen3-ASR 1.7B is the English default — judged level with Wispr Flow's cloud transcript on real dictations. Five ranked engines ship: Voxtral Mini 3B, Whisper Large V3 Turbo (100 languages), Qwen3-ASR 0.6B and Fun-ASR MLT Nano trade accuracy for size or speed. Each model offers only the languages it can actually decode.
-- **Fast local inference.** `transcribe.cpp` runs GGUF models through ggml and Metal, with the model and Metal pipeline warmed before the first dictation.
-- **Optional structure.** A Structured Dictation toggle adds punctuation, paragraphs, and bullet lists to longer dictations — deterministically, on-device.
-- **Cursor-first UX.** A clipboard-preserving synthetic paste handles native, web, and Electron editors; direct Accessibility replacement is the fallback.
-- **Learns your vocabulary.** A curated coding glossary, user rules, and local phonetic learning preserve repository names, products, acronyms, and casing.
-- **Private by default.** Microphone audio never leaves the Mac. Standard dictation text stays local. No captured application context is retained.
+- **Dictation anywhere.** Hold Right Option (configurable), speak, release. The text lands in the field that was focused when you started, in native, web and Electron apps. The clipboard is preserved.
+- **Accurate local speech recognition.** Qwen3-ASR 1.7B runs on Metal through `transcribe.cpp`. Voxtral Mini 3B, Whisper Large V3 Turbo (100 languages), Qwen3-ASR 0.6B and Fun-ASR MLT Nano are also available.
+- **AI Cleanup (optional).** Fixes misheard words, removes fillers and false starts, and formats lists and paragraphs, without changing what you said. Runs on your Anthropic API key or your ChatGPT Plus/Pro plan. Only text is sent.
+- **Meeting notes.** Records your mic as "You" and everything the Mac plays as "Others", so it works with Zoom, Meet, Teams or Slack and no bot joins the call. The transcript appears live. On Stop you get a titled note with a summary, decisions, action items with owners, and open questions. Your own typed notes are worked in.
+- **Voice notes.** Talk to yourself; get an organized note with a to-do list.
+- **A dictionary that learns.** Retype a word Pressay got wrong and it learns the spelling. Names that keep recurring are suggested. Both the on-device rules and AI Cleanup use the dictionary.
+- **Fast start.** The mic stays warm for 45 s after a dictation, with a 0.5 s pre-roll, so your first word is never clipped. The start sound plays only once real audio arrives.
 
 ## How it works
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" width="100%" alt="Pressay architecture: audio is recorded, transcribed, cleaned, optionally structured, and inserted locally; only the optional vocabulary review sends candidate terms to Kimi">
+  <img src="docs/assets/architecture.svg" width="100%" alt="Pressay architecture: audio is recorded and transcribed on the Mac, cleaned by AI or on-device rules, and pasted at the cursor; only transcript text is sent to Claude or ChatGPT when AI Cleanup is on">
 </p>
 
-| Shortcut | Default | Result | Network |
-| --- | --- | --- | --- |
-| Dictate | Right Option | Faithful transcript with deterministic cleanup | None after model download |
-| Escape | Escape while recording | Cancels without inserting | None |
+Without AI Cleanup, a deterministic on-device pipeline applies the dictionary, cleans up common speech artifacts and, for longer dictations, adds punctuation, paragraphs and bullet lists. With AI Cleanup on, the model does that job. Terminals and dictations of three words or fewer always skip the AI. On a timeout, error or usage limit, Pressay inserts the on-device result.
 
-The hold key is configurable. Pressay captures the destination before its nonactivating overlay appears, so the result returns to the right app and selection.
+## AI Cleanup
 
-## Structured Dictation
+Choose a provider under **Settings › AI Cleanup**.
 
-Longer dictations read better with sentences, paragraphs, and lists. The **Structured dictation** toggle in Settings applies a deterministic structuring pass after the normal cleanup:
+| Provider | Model | Quality | Added latency | Cost |
+| --- | --- | ---: | ---: | --- |
+| Anthropic API key | **Claude Haiku 5.5** (recommended) | 8.7 | ~1.0 s | under $1/month at 100 dictations/day |
+| | Claude Sonnet 5.5 | 8.9 | ~1.3 s | ~$5/month |
+| ChatGPT Plus or Pro | **GPT-6.1 Sol** (recommended) | best on plan | ~3.3 s | included in your plan's usage limits |
+| | GPT-6 Luna | | ~2.5 s | included |
+| None | On-device rules | 7.6 | none | free |
 
-<p align="center">
-  <img src="docs/assets/structured-dictation.svg" width="100%" alt="A rambling raw transcript is deterministically formatted on-device: spoken enumerations become a bullet list, capitalization is repaired, and the topic shift becomes a new paragraph, with every spoken word preserved">
-</p>
+Scores are 0–10 from a blind, judged replay of 102 real dictations; Wispr Flow's own cleanup scored 7.7 on the same clips. In a separate replay of the ChatGPT options, Sol scored 7.96, Sonnet 7.85, Haiku 7.67 and Luna 7.42. Method and data: [`docs/claude-cleanup/`](docs/claude-cleanup/README.md).
 
-- Repairs missing terminal punctuation on near-punctuationless transcripts.
-- Splits sentences with abbreviation and identifier guards (`e.g.`, `node.js`, `3.5` never split).
-- Turns spoken enumerations ("first… second… finally…") into `-` bullet lists.
-- Breaks paragraphs at discourse markers ("also", "by the way", "moving on") and caps paragraph length.
+ChatGPT sign-in runs in your browser (OAuth with PKCE). Pressay never sees your password. Your API key is stored in the macOS keychain.
 
-It never reorders, adds, or removes the words you spoke — the spoken ordinal markers of a list are the only thing it drops — and it never touches short dictations or terminal apps. Everything runs on-device with zero added latency; it is on by default and can be switched off in Settings.
+## Meeting notes
 
-## The configuration we ship
+Open **Notes** from the menu bar and click **Record Meeting**.
 
-Pressay has one quality-first default instead of exposing a wall of decoder knobs:
+- Your mic is recorded with echo cancellation. Call audio comes from a Core Audio process tap; the first meeting asks for **System Audio Recording** permission.
+- Each utterance is transcribed on the Mac as soon as the speaker pauses.
+- On **Stop**, your AI Cleanup provider writes the note. Switch between Note and Transcript, resume the meeting later, edit, copy or share.
+- Audio is never saved. Only the transcript and your notes go to the AI provider, and only when you stop.
 
-| Layer | Shipping choice | Why |
+The meeting prompt was tuned over five blind-judged rounds on 12 meetings: [`docs/notes/meetings/`](docs/notes/meetings/README.md).
+
+## Pressay vs. Wispr Flow
+
+| | Pressay | Wispr Flow |
 | --- | --- | --- |
-| Audio | Segmented `AVAudioEngine` capture, 16 kHz mono resampling, conservative edge trimming | Handles Bluetooth/device changes without clipping first or last words |
-| Capture start | Mic held warm for 45 s after a dictation, with a 0.5 s pre-roll buffer | A cold Bluetooth mic needs 550–710 ms before it delivers real audio, all of it after the key is already down. Warm capture removes that window entirely, and the pre-roll recovers speech from before the key press |
-| Start cue | Earcon fires on the first real audio sample, not on the key press | The cue is a promise that the mic is listening; playing it early is what teaches people to talk into a dead mic |
-| ASR | Qwen3-ASR 1.7B Q6_K GGUF via `transcribe.cpp` | Best whole-transcript accuracy in a blind-judged replay of real dictations (9.0/10 against Wispr Flow's 9.05), and silent on near-silent clips where Whisper and Fun-ASR invent text |
-| Language | Per-model — only what the engine can decode | Qwen and Fun-ASR run English-only, Voxtral offers eight plus detection, Whisper all 19; the picker follows the selected model |
-| Cleanup | Deterministic text and vocabulary pipeline | Predictable, quick, and preserves protected tokens |
-| Structure | Optional deterministic structuring pass | Readability without an LLM rewriting what was said |
-| Multilingual option | Whisper Large V3 Turbo Q8 GGUF via `transcribe.cpp` | 100 languages, and the only engine that chunks long audio inside the runtime |
-| Quality option | Voxtral Mini 3B Q4 GGUF via `transcribe.cpp` | Within judge noise of the default on real dictations, at about 2.4x the latency and 1.7x the memory; eight languages plus detection |
-| Long dictations | Split at a silence boundary past 60 s | The context-bound engines cannot take a 100-second clip in one run, and decode token by token — so two short passes beat one long one. Halves the worst-case wait at identical quality, and keeps the chosen model rather than falling back to Whisper, which is the engine that collapses long clips |
+| Speech recognition | On your Mac | Cloud |
+| Audio leaves your Mac | Never | Yes |
+| Account required | No | Yes |
+| Price | Free, MIT. AI Cleanup uses your own key or ChatGPT plan | Subscription |
+| Cleanup quality (102 dictations, 0–10) | 8.7 Haiku · 8.9 Sonnet | 7.7 |
+| Meeting notes without a bot | Yes, on-device transcript | Yes |
+| Works offline | Yes, without AI Cleanup | No |
+| Platforms | macOS 26+, Apple Silicon | macOS, Windows, iOS |
 
-### How the shipping models compare
+## Privacy
 
-In 1.4, thirteen engines were replayed through the same 184-clip corpus. Two of its measurements:
+| Data | Where it goes | Retention |
+| --- | --- | --- |
+| Microphone and call audio | Processed on the Mac only | Dictation audio 7 days by default; meeting audio never stored |
+| Dictation transcript | On the Mac. Sent to your AI provider only if AI Cleanup is on | 30 days by default |
+| Meeting transcript and your notes | On the Mac. Sent to your AI provider when you stop, to write the note | Until you delete the note |
+| Text around the cursor | Read briefly to find the insertion target | Never stored |
+| Telemetry | None | — |
 
-<p align="center">
-  <img src="docs/assets/asr-model-comparison.svg" width="100%" alt="Fun-ASR MLT Nano and Voxtral Mini never collapsed a long dictation while Whisper V3 Turbo collapsed 3 of 47; Fun-ASR is also the fastest at a 0.14 second median">
-</p>
+The speech model downloads once from Hugging Face. After that, dictation works offline.
 
-The 1.4 corpus sweep, which picked the previous default (superseded by the [real-dictation replay](docs/benchmarks.md#real-dictation-judged-replay-october-2026)):
-
-| Engine | Download | Long-clip collapse | Technical terms | Median latency |
-| --- | ---: | ---: | ---: | ---: |
-| **Fun-ASR MLT Nano** | 691 MB | **0/47** | **86%** | **0.14 s** |
-| Whisper V3 Turbo | 886 MB | 3/47 | 75% | 0.39 s |
-| Voxtral Mini 3B | 2.98 GB | **0/47** | 81% | 1.1 s |
-
-"Collapse" counts dictations over 15 seconds that came back with no capitals and no punctuation —
-the failure that motivated the 1.3 Voxtral option. Fun-ASR removes it outright while also being the
-fastest and smallest engine measured. Thirteen engines were measured; the other ten are in the [benchmark notes](docs/benchmarks.md)
-along with the method and what these numbers do not prove.
-
-<p align="center">
-  <img src="docs/assets/asr-selection.svg" width="100%" alt="Technical-term accuracy across thirteen engines: Fun-ASR MLT Nano leads at 86%, Voxtral Mini 81%, Whisper V3 Turbo 75%, and the rest cluster below 60% regardless of size">
-</p>
-
-### Why normal dictation does not use an LLM
-
-We replayed 31 real dictations through four guarded on-device language-model prompt variants. Even the best variant changed a protected token on 2 of 31 clips. For standard dictation, that is the wrong failure mode.
-
-<p align="center">
-  <img src="docs/assets/polish-safety.svg" width="100%" alt="Protected-token validator pass rate for four on-device language model cleanup variants">
-</p>
-
-Pressay therefore keeps the whole dictation path deterministic — including the optional structuring pass, which only adds punctuation, paragraph breaks, and bullets. Read the [benchmark notes](docs/benchmarks.md) for the corpus, method, limitations, and sanitized data.
-
-## Privacy model
-
-| Data | Standard dictation | Optional Kimi features | Retention |
-| --- | --- | --- | --- |
-| Microphone audio | Processed locally | Never sent | 7 days by default |
-| Transcript | Stored locally | Never sent | 30 days by default |
-| Vocabulary candidates | Learned locally | Periodic review may send candidate terms and short transcript excerpts | Local learned rules follow history retention |
-| Text around the cursor | Read transiently during Accessibility target capture | Never sent | Never stored |
-| Telemetry or analytics | None | None | Never collected |
-
-The first model download comes from Hugging Face. A Kimi API key is optional, stored in the macOS login keychain, and only enables the explicitly labeled cloud features. Pressay remains fully useful without it.
-
-**Keep the microphone ready** trades a visible signal for capture latency, so it is worth stating plainly. With it on, the audio stream stays open for 45 s after a dictation and macOS keeps the orange recording indicator lit for that time. What is kept is the audio from while the hold key is down, plus up to the half second immediately before it — that pre-roll is what stops a dictation losing its first word when you press and speak in one motion. Nothing older survives: it passes through a half-second ring buffer that is overwritten continuously and discarded when the stream closes. The mic is never opened before your first dictation of a session, it closes on sleep and screen lock, it yields as soon as another app starts playing audio, and the whole behaviour can be switched off in Settings.
-
-Pinned or corrected history records are retained until you delete them. Delete history from the full app window at any time.
+**Keep the microphone ready** keeps the audio stream open for 45 s after a dictation, so macOS shows the orange mic indicator during that time. Only a half-second ring buffer is kept, and it is overwritten continuously. The mic closes on sleep and screen lock, yields when another app plays audio, and the feature can be turned off in Settings.
 
 ## Install from source
 
-### Requirements
-
-- Apple Silicon Mac
-- macOS 26+
-- Xcode 26+ with the macOS 26 SDK
-- Around 3 GB of free space for the default Qwen3-ASR model and build artifacts (other engines add 0.7–3 GB each if selected; only the selected model is downloaded, and artifacts from models Pressay no longer ships are removed automatically)
+Requirements: Apple Silicon, macOS 26+, Xcode 26+ and about 3 GB of free space.
 
 ```bash
 git clone https://github.com/Zheruel/pressay-macos.git
 cd pressay-macos
 make test
-make app
-open .build/Pressay.app
-```
-
-On first launch, the setup assistant requests:
-
-1. Microphone access — record while a hold key is pressed, plus the half second before it. The stream may also stay open for up to 45 s between dictations so the next one does not clip your first word (see **Keep the microphone ready** in Settings).
-2. Accessibility — insert the finished text into the focused field.
-3. Input Monitoring — observe the global hold shortcut.
-
-The first launch also downloads and warms the selected speech model. Later transcription is offline.
-
-To install the current build in `/Applications`:
-
-```bash
 make install
 ```
 
-To create a drag-to-install disk image:
+`make app` builds `.build/Pressay.app` without installing; `make dmg` builds a disk image. On first launch Pressay asks for Microphone, Accessibility (to insert text) and Input Monitoring (for the hold key), then downloads and warms the speech model.
 
-```bash
-make dmg
-open .build/Pressay-*.dmg
-```
-
-### Signing without a paid Apple Developer account
-
-The build script uses a compatible signing identity when one is present and otherwise applies an ad-hoc signature. Ad-hoc builds work for local development, but macOS may ask for permissions again after the app changes.
-
-For stable permissions on one development Mac, create the local certificate once:
+Without a paid Apple Developer account, builds are ad-hoc signed and macOS may ask for permissions again after each update. For stable permissions on one Mac, run once:
 
 ```bash
 ./scripts/create-local-signing-certificate.sh
-make install
 ```
 
-That certificate is trusted only on that Mac and cannot produce a notarized public release. Friends testing an ad-hoc build must explicitly approve it in Privacy & Security on first launch.
+## Dictionary
 
-## Vocabulary
-
-Pressay ships with a curated vocabulary for coding agents and team communication. It also learns phonetic corrections from recent dictations and applies them deterministically after ASR.
-
-Add custom entries in **Settings → Dictionary**, one per line:
+Add words under **Settings › Dictionary**, one per line. Optionally add what they get misheard as:
 
 ```text
-WhisperKit <= whisper kit
-Core ML <= core ml, core em el
+Supabase
 myRepository <= my repository
 ```
 
-The preferred spelling appears on the left; comma-separated forms on the right are corrected to it. Learned rules are visible and removable. Optional Kimi review only accepts corrections that map back to trusted vocabulary anchors.
-
-## Project layout
-
-```text
-Sources/
-├── PressayApp/             SwiftUI/AppKit app, permissions, audio, insertion
-├── PressayCore/            Domain types, cleanup, vocabulary, retention
-├── PressayTranscription/   transcribe.cpp-backed ASR
-├── PressayPostProcessing/  Experimental on-device benchmark module
-├── PressayBench/           Corpus replay and tuning CLI
-└── TranscribeCpp/            Vendored Swift wrapper for the native runtime
-Tests/PressayCoreTests/      Deterministic pipeline tests
-Config/                       App metadata, icons, entitlements, and earcons
-scripts/                      Build, install, signing, and DMG tooling
-```
-
-All modules and targets use the `Pressay` name. The bundle identifier and keychain service intentionally remain `dev.localflow.app` — they anchor macOS permission grants and stored data from earlier builds.
+Learned words and suggestions appear in the same pane and can be removed at any time.
 
 ## Development
 
 ```bash
 make build
 make test
-make app
 ```
 
-CI runs the test suite and a full bundle build (assembly, ad-hoc signing, `codesign --verify`) on every pull request. Pushing a `vX.Y.Z` tag that matches the `Config/Info.plist` version triggers the release workflow, which publishes the DMG as a GitHub release.
-
-`PressayBench` can replay a private calibration manifest without checking audio or transcripts into Git:
-
-```bash
-swift run PressayBench manifest-from-audio --manifest /path/to/manifest.json
-swift run PressayBench asr --manifest /path/to/manifest.json
-swift run PressayBench structure --manifest /path/to/manifest.json
-swift run PressayBench tune-eval --timeline /path/to/timeline.json
+```text
+Sources/
+├── PressayApp/             SwiftUI/AppKit app: audio, overlay, insertion, notes
+├── PressayCore/            Cleanup, AI providers, vocabulary, prompts, retention
+├── PressayTranscription/   transcribe.cpp-backed ASR
+├── PressayPostProcessing/  Experimental on-device benchmark module
+├── PressayBench/           Corpus replay and tuning CLI
+└── TranscribeCpp/          Vendored Swift wrapper for the native runtime
 ```
 
-Keep benchmark audio, transcripts, API keys, and generated results outside the repository. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+CI runs the tests and a full app build on every pull request. Pushing a `vX.Y.Z` tag that matches `Config/Info.plist` publishes a DMG release. The bundle identifier stays `dev.localflow.app` so permission grants from earlier builds carry over.
+
+Benchmarks: [ASR](docs/benchmarks.md), [AI Cleanup](docs/claude-cleanup/README.md), [meeting notes](docs/notes/meetings/README.md). Keep audio, transcripts and API keys out of the repository. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Known limitations
 
 - macOS 26+ and Apple Silicon only.
-- Meeting transcription, diarization, always-listening mode, mobile, Windows, and cloud ASR are out of scope.
-- Insertion depends on Accessibility behavior in the target app. Pressay preserves the clipboard and falls back cleanly, but custom editors can still behave differently.
-- Accuracy varies with microphones, accents, background noise, and domain vocabulary. Review critical text before executing destructive agent actions.
-- Public notarized binaries are not available yet.
+- Meeting transcripts label speakers only as You and Others; there is no diarization.
+- Insertion relies on Accessibility; some custom editors behave differently.
+- Accuracy varies with microphone, accent and noise. Review text before running destructive agent commands.
+- No notarized binaries yet.
 
 ## Acknowledgements
 
-- [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) for a unified ggml/Metal speech runtime.
-- [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-1.7B), [FunAudioLLM Fun-ASR MLT Nano 2512](https://huggingface.co/FunAudioLLM/Fun-ASR-MLT-Nano-2512), [OpenAI Whisper Large V3 Turbo](https://huggingface.co/openai/whisper-large-v3-turbo), and [Mistral Voxtral Mini 3B](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507) for the speech models.
-- [Freesound](https://freesound.org/) contributor AbdrTar for the CC0 recording cues from which Pressay's earcons are derived.
+- [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) for the ggml/Metal speech runtime.
+- [Qwen3-ASR](https://huggingface.co/Qwen/Qwen3-ASR-1.7B), [Fun-ASR MLT Nano](https://huggingface.co/FunAudioLLM/Fun-ASR-MLT-Nano-2512), [Whisper Large V3 Turbo](https://huggingface.co/openai/whisper-large-v3-turbo) and [Voxtral Mini 3B](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507) for the speech models.
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licensing details.
-
-## License
-
-Pressay source code is released under the [MIT License](LICENSE). Downloaded model weights and third-party components remain subject to their own licenses.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Source code is [MIT](LICENSE); model weights keep their own licenses.

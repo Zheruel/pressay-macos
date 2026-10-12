@@ -325,8 +325,10 @@ final class TextProcessingTests: XCTestCase {
         XCTAssertEqual(trimmed.max(), 0.04)
     }
 
-    func testProcessingPolicyKeepsNormalPathFastAndAllowsLongPrompts() {
-        XCTAssertEqual(DictationProcessingPolicy.asrTimeout(duration: 10), 1.85)
-        XCTAssertGreaterThan(DictationProcessingPolicy.asrTimeout(duration: 110), 10)
+    func testASRTimeoutIsAHangGuardNotALatencyTarget() {
+        // Short clips once got 1.85 s and were dropped when the Mac was busy.
+        for duration in [1.0, 12, 29, 120] {
+            XCTAssertGreaterThanOrEqual(DictationProcessingPolicy.asrTimeout(duration: duration), 20)
+        }
     }
 }
