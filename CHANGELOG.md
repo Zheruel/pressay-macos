@@ -2,6 +2,12 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.2] - 2026-10-12
+
+### Fixed
+
+- Videos and music no longer cut out on Bluetooth headphones. Pressay used to keep the headphones' mic open after a dictation, which switches AirPods and similar to call audio; when something else was playing, it could flip between call and music mode every few seconds. A Bluetooth mic is now open only while you hold the key. Built-in and wired mics still stay ready for 45 s.
+
 ## [1.9.1] - 2026-10-12
 
 ### Changed

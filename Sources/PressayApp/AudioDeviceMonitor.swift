@@ -21,21 +21,6 @@ enum AudioDeviceMonitor {
         systemDevice(selector: kAudioHardwarePropertyDefaultOutputDevice)
     }
 
-    /// True when a process other than Pressay is playing audio. Not
-    /// `kAudioDevicePropertyDeviceIsRunningSomewhere`: on Bluetooth our own warm mic flips it
-    /// true, so the guard would close its own stream and oscillate. PID attribution avoids that.
-    static var otherProcessIsPlaying: Bool {
-        let ourPID = ProcessInfo.processInfo.processIdentifier
-        return processObjects().contains { process in
-            guard uint32Property(process, kAudioProcessPropertyIsRunningOutput) == 1 else {
-                return false
-            }
-            // An unreadable PID isn't evidence of playback; else one HAL hiccup suppresses warmth for good.
-            guard let owner = pid(of: process) else { return false }
-            return owner != ourPID
-        }
-    }
-
     private static func pid(of process: AudioObjectID) -> pid_t? {
         var value = pid_t(-1)
         var size = UInt32(MemoryLayout<pid_t>.size)
@@ -199,81 +184,5 @@ enum AudioDeviceMonitor {
             buffer.assumingMemoryBound(to: AudioBufferList.self)
         )
         return list.reduce(UInt32(0)) { $0 + $1.mNumberChannels }
-    }
-}
-
-/// Reports playback start/stop on the default output. A one-shot check at dictation end
-/// misses the common pause → dictate → resume pattern inside the warm window.
-@MainActor
-final class OutputActivityObserver {
-    private let handler: (Bool) -> Void
-    private var observedDevice: AudioDeviceID?
-    private var activityBlock: AudioObjectPropertyListenerBlock?
-    private var defaultDeviceBlock: AudioObjectPropertyListenerBlock?
-
-    init(handler: @escaping (Bool) -> Void) {
-        self.handler = handler
-    }
-
-    // No assumeIsolated: deinit on a @MainActor class is nonisolated and may
-    // run on any thread, where that would trap. Listener blocks are released
-    // with the object, and stop() is called explicitly on teardown paths.
-    deinit {}
-
-    func start() {
-        guard defaultDeviceBlock == nil else { return }
-        var address = AudioDeviceMonitor.globalAddress(kAudioHardwarePropertyDefaultOutputDevice)
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                // The headset itself can change mid-session; follow it.
-                self.retarget()
-                self.handler(AudioDeviceMonitor.otherProcessIsPlaying)
-            }
-        }
-        defaultDeviceBlock = block
-        AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject), &address, DispatchQueue.main, block
-        )
-        retarget()
-    }
-
-    func stop() {
-        if let defaultDeviceBlock {
-            var address = AudioDeviceMonitor.globalAddress(kAudioHardwarePropertyDefaultOutputDevice)
-            AudioObjectRemovePropertyListenerBlock(
-                AudioObjectID(kAudioObjectSystemObject), &address, DispatchQueue.main, defaultDeviceBlock
-            )
-        }
-        defaultDeviceBlock = nil
-        detach()
-    }
-
-    private func retarget() {
-        let next = AudioDeviceMonitor.defaultOutputDeviceID
-        guard next != observedDevice else { return }
-        detach()
-        guard let next else { return }
-
-        var address = AudioDeviceMonitor.globalAddress(kAudioDevicePropertyDeviceIsRunningSomewhere)
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            MainActor.assumeIsolated {
-                self?.handler(AudioDeviceMonitor.otherProcessIsPlaying)
-            }
-        }
-        activityBlock = block
-        observedDevice = next
-        AudioObjectAddPropertyListenerBlock(next, &address, DispatchQueue.main, block)
-    }
-
-    private func detach() {
-        if let observedDevice, let activityBlock {
-            var address = AudioDeviceMonitor.globalAddress(kAudioDevicePropertyDeviceIsRunningSomewhere)
-            AudioObjectRemovePropertyListenerBlock(
-                observedDevice, &address, DispatchQueue.main, activityBlock
-            )
-        }
-        observedDevice = nil
-        activityBlock = nil
     }
 }

@@ -477,7 +477,7 @@ private struct GeneralSettingsView: View {
 
                 Toggle(isOn: $settings.keepMicWarm) {
                     Text("Keep microphone ready")
-                    Text("Keeps the mic on for \(Int(DictationProcessingPolicy.micWarmWindow)) seconds after you dictate, so your first word isn’t cut off.")
+                    Text("Keeps the mic on for \(Int(DictationProcessingPolicy.micWarmWindow)) seconds after you dictate, so the next one starts instantly. Never with Bluetooth headphones: an open mic switches them to call audio.")
                 }
                 .onChange(of: settings.keepMicWarm) { _, _ in coordinator.applyMicWarmth() }
             }
