@@ -1,17 +1,8 @@
 import Foundation
 
-/// One-time cleanups of persisted learned rules when the matcher changes.
 public enum LearnedRuleMigration {
-    /// Version 1: the deterministic matcher gained gates (minimum key length,
-    /// distance-scaled evidence) after v0 stores accumulated false positives
-    /// like "mix → macOS". Det rules are dropped wholesale — the daily pass
-    /// rebuilds them from the 30-day history under the fixed matcher — while
-    /// k3 rules, the blocklist, and seen candidates are untouched.
-    ///
-    /// Version 2: det rules gained spelling agreement after a larger vocabulary
-    /// let the daily pass propose "backend → Cognito"; they are rebuilt again.
-    /// K3 rules survive unless a function word sits on their edge
-    /// ("Whisperflow I"), which the judge filter now rejects.
+    /// v1: drop det rules (pre-gate false positives like "mix → macOS"); the daily pass rebuilds them.
+    /// v2: rebuild det rules for spelling agreement; drop k3 rules with a function word on an edge.
     public static let schemaVersion = 2
 
     public static func survivesV1(source: String) -> Bool {
@@ -23,11 +14,8 @@ public enum LearnedRuleMigration {
     }
 }
 
-/// Usage-based lifetime for learned rules. A learned word is part of the
-/// user's current vocabulary and stays as long as it keeps appearing in
-/// transcripts; only genuinely abandoned words age out. Deliberately much
-/// longer than the 30-day transcript window — history retention is a privacy
-/// setting, not a vocabulary one.
+/// Learned words live while they keep appearing. Deliberately longer than the 30-day transcript
+/// window: history retention is a privacy setting, not a vocabulary one.
 public enum LearnedRuleRetention {
     public static let unusedLifetime: TimeInterval = 90 * 24 * 3_600
 

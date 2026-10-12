@@ -24,8 +24,7 @@ final class StateAndRetentionTests: XCTestCase {
         XCTAssertEqual(state.phase, .recording)
     }
 
-    /// A quick tap can release the key before a cold mic ever reports audio;
-    /// that must still hand off to processing instead of stranding the session.
+    /// A quick tap can release before a cold mic reports audio.
     func testReleaseWhileArmingStillStops() {
         var state = DictationStateMachine()
         XCTAssertTrue(state.arm())

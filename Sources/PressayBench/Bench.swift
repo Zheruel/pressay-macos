@@ -228,8 +228,7 @@ struct Bench {
             }
         }
 
-        // Determinism check across reps, and drift vs the stored production
-        // transcript.
+        // Determinism across reps, and drift vs the stored production transcript.
         var reference: [String: String] = [:]
         for row in rows where row.rep == 1 && row.error == nil {
             reference[row.id] = normalized(row.text)
@@ -395,7 +394,6 @@ struct Bench {
         }
         print("structure bake-off: \(texts.count) transcripts (\(withApple ? "rules + apple" : "rules only"))")
 
-        // Phase B: candidates over the cleaned transcripts.
         let vocabulary = VocabularyParser.parse(CuratedVocabulary.source)
         let terms = vocabulary.map(\.preferred)
         let validator = ProtectedTokenValidator()

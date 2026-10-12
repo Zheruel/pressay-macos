@@ -274,7 +274,6 @@ enum AppInfo {
 
 // MARK: - Settings shell
 
-/// Native split view styled like macOS 26 System Settings.
 struct SettingsRootView: View {
     @ObservedObject var coordinator: AppCoordinator
     // PRESSAY_PANE opens a given pane, for design review.

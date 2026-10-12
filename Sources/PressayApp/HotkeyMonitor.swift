@@ -28,10 +28,8 @@ final class HotkeyMonitor: @unchecked Sendable {
             | CGEventMask(1 << CGEventType.tapDisabledByTimeout.rawValue)
             | CGEventMask(1 << CGEventType.tapDisabledByUserInput.rawValue)
 
-        // A non-modifier hold key must be swallowed while held, or its
-        // keyDown/autorepeat/keyUp would type into the app being dictated
-        // into; that needs an intercepting tap. Modifier keys produce no text,
-        // so they keep the lighter listen-only tap.
+        // A non-modifier hold key must be swallowed (intercepting tap) or it types
+        // into the target app; modifiers produce no text, so listen-only suffices.
         let pointer = Unmanaged.passUnretained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -56,8 +54,7 @@ final class HotkeyMonitor: @unchecked Sendable {
         if let runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes) }
         eventTap = nil
         runLoopSource = nil
-        // Tearing down mid-press would otherwise strand the coordinator in the
-        // recording phase with no release event ever arriving.
+        // Otherwise a mid-press teardown strands the coordinator in recording.
         if isPressed {
             isPressed = false
             notify { $0.holdKeyCancelled(self) }
@@ -75,8 +72,7 @@ final class HotkeyMonitor: @unchecked Sendable {
     /// Cmd+A with "A" bound is a shortcut, not a push-to-talk press.
     private static let chordMask = CGEventFlags([.maskCommand, .maskControl, .maskAlternate])
 
-    /// Returns true when the event was consumed (only ever for a bound
-    /// non-modifier key on an intercepting tap).
+    /// True when consumed (only for a bound non-modifier key on an intercepting tap).
     private func handle(type: CGEventType, event: CGEvent) -> Bool {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let eventTap { CGEvent.tapEnable(tap: eventTap, enable: true) }
@@ -101,8 +97,6 @@ final class HotkeyMonitor: @unchecked Sendable {
             setPressed(holdKey.isDownAsModifier(inFlags: event.flags.rawValue))
             return false
         }
-        // A chord containing the hold key is a shortcut for the focused app:
-        // pass it through untouched and don't start a session.
         guard event.flags.intersection(Self.chordMask).isEmpty else { return false }
         switch type {
         case .keyDown: setPressed(true) // autorepeat keyDowns are no-ops while pressed
@@ -129,9 +123,7 @@ final class HotkeyMonitor: @unchecked Sendable {
         return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(key.keyCode))
     }
 
-    /// The tap source lives on the main run loop, so callbacks are already on
-    /// the main thread; synchronous delivery keeps press/release ordered,
-    /// which separately rooted Tasks would not guarantee.
+    /// Callbacks arrive on the main run loop; synchronous delivery keeps press/release ordered, separate Tasks would not.
     private func notify(_ action: @MainActor (HoldHotkeyDelegate) -> Void) {
         MainActor.assumeIsolated {
             if let delegate { action(delegate) }

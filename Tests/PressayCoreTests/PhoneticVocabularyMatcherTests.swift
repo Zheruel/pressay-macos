@@ -22,18 +22,17 @@ final class PhoneticVocabularyMatcherTests: XCTestCase {
     }
 
     func testFixesMishearingsNoAliasLists() {
-        // All observed in real dictation history.
         XCTAssertEqual(correct("the data in Superbase is stale"), "the data in Supabase is stale")
         XCTAssertEqual(correct("I gave it to Grockpot."), "I gave it to Grokbot.")
         XCTAssertEqual(correct("try DeepGrim instead"), "try Deepgram instead")
         XCTAssertEqual(correct("Polymark, again"), "Polymarket, again")
         XCTAssertEqual(correct("both PolyMarkets"), "both Polymarkets")
-        // The "s" here is part of the match, not a plural (learned in history).
+        // The "s" is part of the match, not a plural.
         XCTAssertEqual(correct("ask codecs"), "ask Codex")
     }
 
     func testLeavesNearbyRealWordsAlone() {
-        // Each of these matched a term under looser gates during the replay.
+        // Each matched a term under looser gates.
         for text in [
             "search the codebase", "flights to Singapore", "caffeinate the Mac",
             "a toolkit for Trinidad", "the timeframe is fine", "Croatian food",
@@ -73,7 +72,7 @@ final class PhoneticVocabularyMatcherTests: XCTestCase {
     }
 
     func testShortKeysAreNeverMatched() {
-        // "Kimmy" keys to KM: too short to tell apart from ordinary speech.
+        // "Kimmy" keys to KM.
         let short = VocabularyParser.parse("Kimi")
         XCTAssertEqual(PhoneticVocabularyMatcher.correct("Kimmy", entries: short), "Kimmy")
     }

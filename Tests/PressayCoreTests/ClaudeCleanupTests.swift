@@ -114,7 +114,6 @@ final class ClaudeCleanupTests: XCTestCase {
     }
 }
 
-/// Serves canned responses so the client is tested without network access.
 private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     typealias Handler = @Sendable (URLRequest) -> (Int, String)
     nonisolated(unsafe) static var handlers: [String: Handler] = [:]

@@ -4,7 +4,6 @@ import XCTest
 final class AudioChunkingTests: XCTestCase {
     private let sampleRate = 16_000
 
-    /// speech · silence · speech, with the gap centred on `gapCentre` seconds.
     private func clipWithGap(
         totalSeconds: Double, gapCentre: Double, gapSeconds: Double
     ) -> [Float] {
@@ -12,7 +11,6 @@ final class AudioChunkingTests: XCTestCase {
         let gapStart = Int((gapCentre - gapSeconds / 2) * Double(sampleRate))
         let gapEnd = Int((gapCentre + gapSeconds / 2) * Double(sampleRate))
         for index in samples.indices where index < gapStart || index >= gapEnd {
-            // Deterministic non-zero "speech" — amplitude is all that matters.
             samples[index] = index.isMultiple(of: 2) ? 0.5 : -0.5
         }
         return samples
@@ -27,7 +25,7 @@ final class AudioChunkingTests: XCTestCase {
     }
 
     func testSplitFindsAnOffCentreGapWithinTheSearchWindow() throws {
-        // Pause at 8s while the midpoint is 10s: still inside the ±3s window.
+        // Midpoint is 10 s; the search window is ±3 s.
         let samples = clipWithGap(totalSeconds: 20, gapCentre: 8, gapSeconds: 0.8)
         let point = AudioChunking.quietestSplitPoint(
             samples: samples, sampleRate: sampleRate, near: samples.count / 2)
@@ -43,8 +41,6 @@ final class AudioChunkingTests: XCTestCase {
 
     func testSplitPointFallsBackToTheMidpoint() {
         let samples = clipWithGap(totalSeconds: 20, gapCentre: 10, gapSeconds: 0)
-        // No pause available, but the caller must still get a usable cut
-        // rather than losing the tail of the dictation.
         XCTAssertEqual(
             AudioChunking.splitPoint(samples: samples, sampleRate: sampleRate),
             samples.count / 2)
@@ -64,7 +60,6 @@ final class AudioChunkingTests: XCTestCase {
             samples: [], sampleRate: sampleRate, near: 0))
         XCTAssertNil(AudioChunking.quietestSplitPoint(
             samples: [0.1, 0.2], sampleRate: 0, near: 1))
-        // Silence throughout: no frame is quieter than the whole, so no pause.
         XCTAssertNil(AudioChunking.quietestSplitPoint(
             samples: [Float](repeating: 0, count: sampleRate), sampleRate: sampleRate,
             near: sampleRate / 2))
@@ -80,8 +75,6 @@ final class AudioChunkingTests: XCTestCase {
     }
 
     func testJoinDropsEmptyChunks() {
-        // A chunk filtered out as a hallucination must not leave a double
-        // space or a leading space in the inserted text.
         XCTAssertEqual(AudioChunking.join(["Real speech.", "", "More speech."]),
                        "Real speech. More speech.")
         XCTAssertEqual(AudioChunking.join(["", "Only this."]), "Only this.")

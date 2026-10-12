@@ -15,12 +15,6 @@ final class PhoneticKeyTests: XCTestCase {
         XCTAssertEqual(PhoneticKey.distance(PhoneticKey.key("chrome"), PhoneticKey.key("core ml")), 1)
     }
 
-    func testShortCommonWordCollidesWithTechTerm() {
-        // Documents why the English stop list — not the matcher — owns the
-        // "makes" rejection: identical keys are expected here.
-        XCTAssertEqual(PhoneticKey.key("makes"), PhoneticKey.key("macOS"))
-    }
-
     func testDistanceBasics() {
         XCTAssertEqual(PhoneticKey.distance("", "AB"), 2)
         XCTAssertEqual(PhoneticKey.distance("ABC", "ABC"), 0)

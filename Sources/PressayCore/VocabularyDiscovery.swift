@@ -1,6 +1,5 @@
 import Foundation
 
-/// A word as typed or transcribed, with its character offsets in the text.
 public struct PositionedWord: Equatable, Sendable {
     public let text: String
     /// Character offsets (not UTF-16) into the source string.

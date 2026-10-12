@@ -12,7 +12,7 @@ public enum TranscriptStructurer {
         /// search query has nothing to structure.
         public var minimumWordCount: Int
         /// Insert sentence breaks before strong spoken connectors when the
-        /// text has almost no terminal punctuation (Parakeet-style output).
+        /// text has almost no terminal punctuation.
         public var repairMissingPunctuation: Bool
         public var maxSentencesPerParagraph: Int
 
@@ -112,8 +112,8 @@ public enum TranscriptStructurer {
     /// already-split paragraph — that keeps structuring idempotent.
     private static let minimumRunWords = 15
 
-    /// Breaks up punctuationless run-ons (Parakeet-style output) at strong
-    /// connectors; punctuated Whisper output is left alone.
+    /// Breaks up punctuationless run-ons at strong connectors; punctuated
+    /// output is left alone.
     private static func repairPunctuation(in text: String) -> String {
         guard let regex = breakConnectors else { return text }
         var result = text

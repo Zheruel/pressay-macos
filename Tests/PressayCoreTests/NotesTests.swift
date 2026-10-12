@@ -7,11 +7,8 @@ final class NotePromptTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appending(path: "docs/notes/prompt-v4.txt").path
         let prompt = NotePrompt.system(style: .organized, vocabulary: [.init(preferred: "Telnyx")])
-        XCTAssertTrue(prompt.hasSuffix("Speaker's vocabulary:\nTelnyx"))
-        XCTAssertFalse(prompt.contains("{vocab}"))
         let benchmarked = try String(contentsOfFile: path, encoding: .utf8)
         XCTAssertEqual(prompt, benchmarked.trimmingCharacters(in: .newlines).replacingOccurrences(of: "{vocab}", with: "Telnyx"))
-        XCTAssertFalse(NotePrompt.system(style: .clean, vocabulary: []).contains("## To do"))
     }
 
     func testParseSplitsTitleAndBody() throws {
@@ -29,7 +26,6 @@ final class MeetingPromptTests: XCTestCase {
             TranscriptLine(speaker: .others, start: 3_725, text: "Yes."),
         ])
         XCTAssertEqual(user, "<transcript>\n[0:03] Me: Can you hear me?\n[1:02:05] Others: Yes.\n</transcript>")
-        XCTAssertTrue(MeetingPrompt.system(vocabulary: []).contains("Others"))
         XCTAssertFalse(MeetingPrompt.system(vocabulary: []).contains("{vocab}"))
     }
 

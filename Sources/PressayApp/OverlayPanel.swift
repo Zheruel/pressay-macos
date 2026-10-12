@@ -2,7 +2,6 @@ import AppKit
 import PressayCore
 import SwiftUI
 
-/// Visual identity of the recording overlay: the purple→blue voice gradient.
 enum OverlayStyle {
     case dictation
 

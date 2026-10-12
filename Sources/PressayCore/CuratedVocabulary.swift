@@ -1,10 +1,7 @@
 import Foundation
 
-/// Conservative defaults for agent-driven software work, pruned to terms that
-/// fire in practice and seeded with audited mishearings (Kimmy, Cloud Code,
-/// Entropic, Whisperflow, Rumpod, SoonerCloud). Common English words with
-/// technical meanings (Go, React, REST, Linear, Terminal) are omitted because
-/// global rewriting would corrupt ordinary messages.
+/// Defaults for agent-driven software work, seeded with audited mishearings. Common words with
+/// technical meanings (Go, React, REST, Linear, Terminal) are omitted: global rewriting would corrupt ordinary messages.
 package enum CuratedVocabulary {
     package static let source = """
     # Communication and AI agents

@@ -12,6 +12,10 @@ On a ChatGPT plan, **GPT-6.1 Sol at effort `low`** is the default (see below).
 
 Keep **Qwen3-ASR 1.7B** as the speech model. Claude cannot recover words the ASR got wrong, so smaller ASR models lose quality even after cleanup.
 
+<p align="center">
+  <img src="../assets/ai-cleanup-benchmark.svg" width="100%" alt="Cleanup quality out of 10: Claude Sonnet 5.5 8.9, Claude Haiku 5.5 8.7, Wispr Flow 7.7, on-device rules 7.6">
+</p>
+
 ## Setup
 
 - Corpus: 104 real dictations (22 min). 24 recorded in Wispr Flow (with Wispr's cleaned output as a reference candidate), 80 recent Pressay dictations. 102 contain speech.

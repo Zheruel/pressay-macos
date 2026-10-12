@@ -1,9 +1,7 @@
 import Foundation
 
-/// Judges tuner candidates with Kimi through the plan-covered coding API.
 public actor KimiTunerClient {
-    /// K2.7 matches K3 on this judging task at the cheapest usage rate
-    /// (validated via `PressayBench tune --with-kimi 1`).
+    /// K2.7 matches K3 here at the cheapest usage rate (`PressayBench tune --with-kimi 1`).
     public static let model = "kimi-for-coding"
     public struct Finding: Sendable {
         public let heard: String

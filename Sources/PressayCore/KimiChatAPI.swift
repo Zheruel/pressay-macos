@@ -16,8 +16,6 @@ public enum KimiReasoning: Sendable, Equatable {
     }
 }
 
-/// Shared plumbing for the Kimi coding-plan chat-completions API; the tuner
-/// and prompt-polish clients differ only in model, prompt, and output parsing.
 public enum KimiChatAPI {
     public enum APIError: LocalizedError {
         case http(Int, String)
@@ -33,7 +31,6 @@ public enum KimiChatAPI {
 
     private static let endpoint = URL(string: "https://api.kimi.com/coding/v1/chat/completions")!
 
-    /// Sends a single-user-message chat completion and returns the assistant text.
     public static func complete(
         model: String,
         prompt: String,

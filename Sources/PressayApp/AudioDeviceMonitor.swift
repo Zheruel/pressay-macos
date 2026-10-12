@@ -1,11 +1,8 @@
 import CoreAudio
 import Foundation
 
-/// Thin read-only wrapper over the CoreAudio HAL.
-///
-/// `AVAudioEngine` exposes neither the transport type of the input device nor
-/// whether anything is playing on the output, and both decide whether the mic
-/// may stay warm between dictations.
+/// Read-only CoreAudio HAL wrapper: AVAudioEngine exposes neither input transport type
+/// nor output activity, and both gate whether the mic may stay warm.
 enum AudioDeviceMonitor {
     struct Device: Identifiable, Equatable, Sendable {
         let id: AudioDeviceID
@@ -24,23 +21,16 @@ enum AudioDeviceMonitor {
         systemDevice(selector: kAudioHardwarePropertyDefaultOutputDevice)
     }
 
-    /// True when a process *other than Pressay* is playing audio.
-    ///
-    /// Deliberately not `kAudioDevicePropertyDeviceIsRunningSomewhere`: on a
-    /// Bluetooth headset, opening our own mic brings up the call profile's
-    /// output side, so that property flips true within a millisecond of the
-    /// warm mic opening. Using it as the guard made the guard close the very
-    /// stream that had just tripped it, oscillating open/closed forever.
-    /// Attributing playback by PID is immune to our own mic and earcons.
+    /// True when a process other than Pressay is playing audio. Not
+    /// `kAudioDevicePropertyDeviceIsRunningSomewhere`: on Bluetooth our own warm mic flips it
+    /// true, so the guard would close its own stream and oscillate. PID attribution avoids that.
     static var otherProcessIsPlaying: Bool {
         let ourPID = ProcessInfo.processInfo.processIdentifier
         return processObjects().contains { process in
             guard uint32Property(process, kAudioProcessPropertyIsRunningOutput) == 1 else {
                 return false
             }
-            // An unreadable PID is not evidence of somebody else playing;
-            // treating it as such would suppress warmth permanently after a
-            // single HAL hiccup.
+            // An unreadable PID isn't evidence of playback; else one HAL hiccup suppresses warmth for good.
             guard let owner = pid(of: process) else { return false }
             return owner != ourPID
         }
@@ -85,9 +75,7 @@ enum AudioDeviceMonitor {
 
     // MARK: - Enumeration
 
-    /// Every device that can capture audio, for the input picker. A device
-    /// without a UID cannot be persisted or looked up again, so it is left out
-    /// rather than offered as a choice that would silently not apply.
+    /// Devices without a UID are omitted: they can't be persisted or looked up again.
     static func inputDevices() -> [Device] {
         allDeviceIDs()
             .filter { channelCount($0, scope: kAudioObjectPropertyScopeInput) > 0 }
@@ -214,12 +202,8 @@ enum AudioDeviceMonitor {
     }
 }
 
-/// Reports when playback starts or stops on the default output device.
-///
-/// Sampling this once when a dictation ends is not enough: pausing a video,
-/// dictating, then hitting resume is a common pattern, and it lands playback
-/// squarely inside the warm window when the one-shot check already said the
-/// device was idle.
+/// Reports playback start/stop on the default output. A one-shot check at dictation end
+/// misses the common pause → dictate → resume pattern inside the warm window.
 @MainActor
 final class OutputActivityObserver {
     private let handler: (Bool) -> Void

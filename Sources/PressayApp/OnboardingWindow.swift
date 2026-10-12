@@ -46,7 +46,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-/// Modeled on Apple's own first-run windows.
 struct OnboardingView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var permissions: PermissionController

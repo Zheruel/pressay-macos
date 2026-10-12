@@ -20,6 +20,10 @@ Pressay is a native hold-to-talk dictation app for people who write to coding ag
 
 No account, no telemetry, no subscription. Audio never leaves the Mac.
 
+<p align="center">
+  <img src="docs/assets/hero.jpg" width="100%" alt="Pressay's recording pill grows out of the MacBook notch while the dictated sentence appears at the cursor">
+</p>
+
 > [!IMPORTANT]
 > Requires an Apple Silicon Mac on macOS 26 or newer. Builds are not notarized yet, so building from source is the most reliable install.
 
@@ -41,7 +45,19 @@ No account, no telemetry, no subscription. Audio never leaves the Mac.
 
 Without AI Cleanup, a deterministic on-device pipeline applies the dictionary, cleans up common speech artifacts and, for longer dictations, adds punctuation, paragraphs and bullet lists. With AI Cleanup on, the model does that job. Terminals and dictations of three words or fewer always skip the AI. On a timeout, error or usage limit, Pressay inserts the on-device result.
 
+## Transcription
+
+<p align="center">
+  <img src="docs/assets/speech-models.svg" width="100%" alt="Judged accuracy on 24 real dictations: Wispr Flow cloud 9.05, Qwen3-ASR 1.7B on-device 9.00, Voxtral Mini 8.91, Whisper V3 Turbo 8.77, Qwen3-ASR 0.6B 7.32, Fun-ASR 6.95">
+</p>
+
+The default Qwen3-ASR 1.7B matches Wispr Flow's cloud transcript within judge noise, running entirely on your Mac. Pick another model in Settings for more languages or a smaller download. Details: [`docs/benchmarks.md`](docs/benchmarks.md).
+
 ## AI Cleanup
+
+<p align="center">
+  <img src="docs/assets/ai-cleanup.jpg" width="100%" alt="What you said: um so I think we should uh move the the standup to ten and also ping dana about the pricing doc. What Pressay types: I think we should move the standup to 10 and also ping Dana about the pricing doc.">
+</p>
 
 Choose a provider under **Settings › AI Cleanup**.
 
@@ -53,11 +69,19 @@ Choose a provider under **Settings › AI Cleanup**.
 | | GPT-6 Luna | | ~2.5 s | included |
 | None | On-device rules | 7.6 | none | free |
 
+<p align="center">
+  <img src="docs/assets/ai-cleanup-benchmark.svg" width="100%" alt="Cleanup quality out of 10: Claude Sonnet 5.5 8.9, Claude Haiku 5.5 8.7, Wispr Flow 7.7, on-device rules 7.6">
+</p>
+
 Scores are 0–10 from a blind, judged replay of 102 real dictations; Wispr Flow's own cleanup scored 7.7 on the same clips. In a separate replay of the ChatGPT options, Sol scored 7.96, Sonnet 7.85, Haiku 7.67 and Luna 7.42. Method and data: [`docs/claude-cleanup/`](docs/claude-cleanup/README.md).
 
 ChatGPT sign-in runs in your browser (OAuth with PKCE). Pressay never sees your password. Your API key is stored in the macOS keychain.
 
 ## Meeting notes
+
+<p align="center">
+  <img src="docs/assets/meeting-notes.jpg" width="100%" alt="The Notes window showing a meeting note with a summary, decisions and action items with owners, and a live transcript of You and Others">
+</p>
 
 Open **Notes** from the menu bar and click **Record Meeting**.
 

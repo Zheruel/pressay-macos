@@ -70,9 +70,8 @@ final class PermissionController: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
                 refresh()
-                // Every tick hits tccd. This is now the only refresh: the
-                // key-press path no longer does one synchronously, because it
-                // runs inside the CGEventTap callback.
+                // Every tick hits tccd. This is the only refresh: the key-press path runs
+                // inside the CGEventTap callback and can't afford a synchronous one.
                 let delay: Duration = allGranted ? .seconds(10) : .milliseconds(400)
                 try? await Task.sleep(for: delay)
             }

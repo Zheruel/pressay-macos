@@ -1,27 +1,15 @@
 import Foundation
 
-/// Decides whether the microphone stream stays open between dictations.
-///
-/// Opening a cold stream costs ~110 ms on the built-in mic and 550–670 ms on a
-/// Bluetooth headset, all of it spent after the key is already down. Worse,
-/// cycling a Bluetooth input open and closed repeatedly can leave it delivering
-/// digital silence, which reads as a mysteriously bad transcript rather than an
-/// error. Holding the stream open removes both.
-///
-/// The cost is that macOS drops a Bluetooth headset into its 24 kHz mono call
-/// profile for as long as any input stream is open, so the window is skipped
-/// while the user is actually listening to something on that device.
-///
-/// Pure logic, driven by an injected clock so it can be tested without sleeping.
+/// Keeps the mic open between dictations. A cold open costs ~110 ms built-in / 550–670 ms Bluetooth
+/// after key-down, and cycling a Bluetooth input can leave it delivering digital silence.
+/// Skipped while that headset is playing audio: any open input forces its 24 kHz mono call profile.
 public enum MicWarmPolicy {
     public struct Conditions: Sendable, Equatable {
-        /// The user-facing "keep microphone ready" preference.
         public let enabled: Bool
-        /// Whether the dictation input is a Bluetooth transport.
         public let isBluetooth: Bool
         /// Whether anything is playing on the default output device.
         public let outputDeviceInUse: Bool
-        /// When the last dictation finished; nil before the first one.
+        /// Nil before the first dictation.
         public let lastDictationEnded: Date?
 
         public init(

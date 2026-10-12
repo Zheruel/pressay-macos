@@ -14,9 +14,7 @@ final class VocabularyTunerRunner: ObservableObject {
         runPass(history: history, settings: settings)
     }
 
-    /// The candidate scan tokenizes and phonetically keys every stored
-    /// transcript — far too heavy for the main actor, which is mid-insertion
-    /// UI when this fires. Only the store mutations hop back.
+    /// The scan is too heavy for the main actor; only store mutations hop back.
     private func runPass(history: HistoryStore, settings: AppSettings) {
         let texts = history.records.map(\.rawTranscript)
         guard !texts.isEmpty else { return }
@@ -32,9 +30,7 @@ final class VocabularyTunerRunner: ObservableObject {
         Task.detached(priority: .utility) { [weak self] in
             let candidates = VocabularyTuner.candidates(in: texts, minimumCount: 1, anchors: anchors)
             let suggestions = VocabularyDiscovery.suggestions(from: dictations, known: known)
-            // Which learned heard terms still occur in the window: keeps
-            // their rules alive (substring match over the raw transcripts;
-            // rawTranscript is pre-correction, so active mishearings recur).
+            // rawTranscript is pre-correction, so active mishearings still recur in it.
             let windowText = texts.joined(separator: "\n").lowercased()
             let seenHeard = heardTerms.filter { windowText.contains($0) }
             await MainActor.run { [weak self] in
@@ -47,9 +43,7 @@ final class VocabularyTunerRunner: ObservableObject {
         }
     }
 
-    /// Runs on the dictation path so a mishearing of a known term is
-    /// corrected in the very transcript that introduced it. Terms already
-    /// owned by a rule are left untouched.
+    /// Runs on the dictation path so the transcript that introduced a mishearing is already corrected.
     @discardableResult
     func learnImmediately(from transcript: String, settings: AppSettings) -> [LearnedRule] {
         let anchors = Self.anchors(settings: settings)
@@ -81,8 +75,6 @@ final class VocabularyTunerRunner: ObservableObject {
         store.lastDetRun = .now
     }
 
-    /// Anchors: curated preferred terms, the user's own entries, and
-    /// everything learned so far (learned truth compounds).
     static func anchors(settings: AppSettings) -> [String] {
         var seen = Set<String>()
         let terms = VocabularyParser.parse(settings.vocabularySource).map(\.preferred)

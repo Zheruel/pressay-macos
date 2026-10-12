@@ -45,7 +45,6 @@ public enum PhoneticKey {
             }
             index += 1
         }
-        // Collapse consecutive duplicates ("KMM" -> "KM").
         var collapsed = ""
         for character in output where collapsed.last != character {
             collapsed.append(character)

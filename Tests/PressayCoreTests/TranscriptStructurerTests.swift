@@ -58,8 +58,7 @@ final class TranscriptStructurerTests: XCTestCase {
     }
 
     func testOrdinalSubjectsKeepTheirMarkerText() {
-        // "Step one" is the grammatical subject; stripping it would leave
-        // "Should definitely be…". The item keeps its full sentence.
+        // "Step one" is the grammatical subject here, not a marker.
         let text = "Here is how I want to tackle the whole migration project. Step one should definitely be just evaluate and report. Step two should be the actual refactor once we agree."
         let structured = TranscriptStructurer.structure(text)
         XCTAssertTrue(structured.contains("- Step one should definitely be just evaluate and report."), structured)
@@ -67,8 +66,6 @@ final class TranscriptStructurerTests: XCTestCase {
     }
 
     func testCommaOrdinalMarkersStripBeforeAuxiliaries() {
-        // "One," ends in a comma, so it is discourse use and strips even when
-        // the next word is an auxiliary — same shape as "First of all, is…".
         let text = "I have two questions about the release. One, is this even supported by the runtime? Two, can we actually ship it this week?"
         let structured = TranscriptStructurer.structure(text)
         XCTAssertTrue(structured.contains("- Is this even supported by the runtime?"), structured)
@@ -76,8 +73,7 @@ final class TranscriptStructurerTests: XCTestCase {
     }
 
     func testTemporalLastAndNextAreNotListContinuers() {
-        // "Last week's…" / "Next time…" are prose, not enumeration markers;
-        // treating them as continuers dropped the word "Last"/"Next".
+        // Regression: treating these as continuers dropped "Last"/"Next".
         let last = "First, update the manifest and rerun everything. Last week's numbers were bad anyway so we should compare against the new baseline."
         let lastStructured = TranscriptStructurer.structure(last)
         XCTAssertFalse(lastStructured.contains("- Week's"), lastStructured)
@@ -114,10 +110,8 @@ final class TranscriptStructurerTests: XCTestCase {
     }
 
     func testRunOnAfterParagraphSplitIsRepairedAndIdempotent() {
-        // Corpus-found regression: a punctuated first half followed by an
-        // "Also" paragraph whose long unpunctuated tail hides an "and then".
-        // The break decision must be local to the connector, or the first
-        // pass (whole text) and second pass (split paragraph) disagree.
+        // Regression: the break decision must be local to the connector, or the
+        // whole-text pass and the split-paragraph pass disagree.
         let text = "The parser crashes when the input is empty. I think the tokenizer is at fault. Also look at the other reports and maybe the price of rebuilding the whole module from scratch given what we know and then in general write me a concise clear report about it"
         let once = TranscriptStructurer.structure(text)
         XCTAssertTrue(once.contains(". And then"), "expected a repaired break: \(once)")

@@ -65,10 +65,8 @@ final class HistoryStore: ObservableObject {
     private let retention = RetentionPolicy()
 
     init(inMemory: Bool = false) throws {
-        // An explicit store URL inside the app's own directory: the shared
-        // Application Support default.store is a namespace collision waiting
-        // to happen (and did — another app's store there made every launch
-        // fall back to in-memory history).
+        // Explicit store URL in our own directory: the shared Application Support
+        // default.store collided with another app's store, forcing in-memory history.
         let configuration: ModelConfiguration
         if inMemory {
             configuration = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -120,11 +118,8 @@ final class HistoryStore: ObservableObject {
         try refresh()
     }
 
-    /// One-time fixup after the LocalFlow→Pressay Application Support rename:
-    /// stored audio paths are absolute and point into the old directory. A
-    /// record is only rewritten when its file actually exists at the new
-    /// location, so records written by an old build into a recreated old
-    /// directory are left pointing at their real files.
+    /// One-time fixup after the LocalFlow→Pressay Application Support rename (stored audio
+    /// paths are absolute). Only rewrites records whose file exists at the new location.
     func rewriteAudioPaths(from oldComponent: String, to newComponent: String) throws {
         var changed = false
         for record in try fetchAllRecords() {

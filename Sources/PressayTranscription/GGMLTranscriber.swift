@@ -2,10 +2,6 @@ import Foundation
 import PressayCore
 import TranscribeCpp
 
-/// Dictation on the transcribe.cpp ggml/Metal engine. Loads whichever GGUF
-/// the selected `ASRModel` points at, reconciles the requested language and
-/// formatting toggles against what that artifact actually advertises, and
-/// splits audio the decoder context cannot hold in one run.
 public actor GGMLTranscriber: SpeechTranscriber {
     private let asrModel: ASRModel
     private var language: String
@@ -13,23 +9,15 @@ public actor GGMLTranscriber: SpeechTranscriber {
     private var preparation: Task<Void, Error>?
     private var statusHandler: (@Sendable (String) -> Void)?
     private var progressHandler: (@Sendable (Double?) -> Void)?
-    /// Runtime formatting toggles the loaded model actually exposes. Fun-ASR
-    /// ships punctuation and ITN off and emits verbatim lowercase otherwise.
+    /// Fun-ASR ships punctuation and ITN off and emits verbatim lowercase otherwise.
     private var supportsPnc = false
     private var supportsItn = false
-    /// Longest single run this session accepts, in seconds of audio; nil when
-    /// the family chunks internally or is otherwise unbounded (Whisper).
-    /// Stored as a duration so it stays correct whatever rate a clip arrives
-    /// at, rather than assuming the recorder's 16 kHz.
+    /// Seconds (not samples, so it holds at any clip rate); nil when unbounded (Whisper chunks internally).
     private var maxRunSeconds: TimeInterval?
 
-    /// How many times a segment may be halved. Four levels take a clip of
-    /// any plausible dictation length below the chunk threshold (16 pieces,
-    /// ~16 minutes at 60 s each), so exhausting it means something other
-    /// than length — a decode loop, not a long recording.
+    /// 16 pieces covers ~16 min at 60 s each; exhausting it signals a decode loop, not length.
     private static let maxSplitDepth = 4
-    /// Never split below this: a sub-second fragment carries no usable context
-    /// and splitting further cannot help.
+    /// Sub-second fragments carry no usable context.
     private static let minimumSplitSeconds: TimeInterval = 1.0
 
     public init(model: ASRModel, language: String = "en") {
@@ -53,8 +41,7 @@ public actor GGMLTranscriber: SpeechTranscriber {
 
     public func prepare() async throws {
         guard session == nil else { return }
-        // The actor suspends across download/load; a concurrent prepare()
-        // must join the same task instead of starting a second download.
+        // The actor suspends across download/load; concurrent prepare() calls join this task.
         if let preparation {
             return try await preparation.value
         }
@@ -88,15 +75,11 @@ public actor GGMLTranscriber: SpeechTranscriber {
             model = try Model(path: destination.path)
             fresh = try model.session()
         } catch {
-            // A cached artifact that fails to load is corrupt (truncated
-            // download, disk-full move); drop it so the next prepare()
-            // re-downloads instead of failing forever.
+            // Unloadable cache is corrupt (truncated download); drop it so the next prepare() re-downloads.
             try? FileManager.default.removeItem(at: destination)
             throw error
         }
-        // Warm the Metal pipelines with a second of silence so the first real
-        // dictation doesn't pay shader-compilation cost against its latency
-        // budget (mirrors WhisperKit's prewarm).
+        // Prewarm Metal pipelines so the first dictation doesn't pay shader compilation.
         nonisolated(unsafe) let warmupSession = fresh
         _ = try? await warmupSession.run([Float](repeating: 0, count: 16_000))
 
@@ -104,17 +87,12 @@ public actor GGMLTranscriber: SpeechTranscriber {
             supportsPnc = model.supports(.pnc)
             supportsItn = model.supports(.itn)
         }
-        // The GGUF is the authority on what it can decode. If the static table
-        // in ASRModel ever drifts from the artifact, fall back to the model's
-        // own default rather than sending a hint the engine will reject.
+        // The GGUF is authoritative; if ASRModel's table drifts, don't send a hint the engine rejects.
         let advertised = model.capabilities.languages
         if language != "auto", !advertised.isEmpty, !advertised.contains(language) {
             language = asrModel.defaultLanguage.whisperCode
         }
-        // 0 means "no practical limit" — the family chunks internally.
-        // Two independent bounds. The runtime reports what the decoder
-        // context can hold (0 = unbounded, it chunks internally); the model
-        // declares where splitting starts paying for itself. Take the lower.
+        // Lower of the decoder context limit (0 = unbounded) and the model's preferred chunk size.
         let apiLimit = fresh.limits.effectiveMaxAudioMs
         maxRunSeconds = [
             apiLimit > 0 ? Double(apiLimit) / 1000 : nil,
@@ -125,9 +103,7 @@ public actor GGMLTranscriber: SpeechTranscriber {
         removeUnusedModelArtifacts(in: directory, keeping: destination)
     }
 
-    /// Deletes GGUFs in the model directory that back no current `ASRModel` —
-    /// artifacts left behind by models retired in an update. Files backing a
-    /// model that still ships are kept, so switching back never re-downloads.
+    /// Keeps GGUFs of every shipping model so switching back never re-downloads.
     private func removeUnusedModelArtifacts(in directory: URL, keeping active: URL) {
         let known = Set(ASRModel.allCases.compactMap { $0.ggufDownload?.fileName })
         let contents = try? FileManager.default.contentsOfDirectory(
@@ -138,12 +114,9 @@ public actor GGMLTranscriber: SpeechTranscriber {
         }
     }
 
-    /// Streams the GGUF to `destination`, reporting fractional progress through
-    /// `progressHandler`. Uses a download delegate (rather than the plain
-    /// `URLSession.download`) so the large Voxtral artifact shows a live bar.
+    /// Delegate-based (not `URLSession.download`) so large artifacts show live progress.
     private func downloadModel(from url: URL, to destination: URL) async throws {
-        // `progressHandler` is @Sendable, so the delegate (which fires on the
-        // URLSession queue) can call it directly without hopping to the actor.
+        // @Sendable, so the delegate can call it from the URLSession queue without an actor hop.
         let onProgress = progressHandler
         let name = asrModel.displayName
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -172,18 +145,14 @@ public actor GGMLTranscriber: SpeechTranscriber {
         )
     }
 
-    /// Transcribes one segment, splitting it when the decoder context cannot
-    /// hold it. Returns "" for a segment that produced nothing usable, so a
-    /// hallucinated or empty chunk drops out of the join instead of poisoning
-    /// the surrounding real speech.
+    /// Returns "" for unusable segments so hallucinated chunks drop out of the join.
     private func transcribeSegment(
         _ samples: [Float],
         sampleRate: Int,
         session: Session,
         depth: Int
     ) async throws -> String {
-        // Split before spending a decode we know will be slow or overflow —
-        // reacting to the failure afterwards throws away a whole decode.
+        // Split up front; reacting to overflow afterwards wastes a whole decode.
         let seconds = sampleRate > 0 ? Double(samples.count) / Double(sampleRate) : 0
         if let limit = maxRunSeconds, seconds > limit, canSplit(samples, sampleRate, depth) {
             return try await splitAndTranscribe(
@@ -196,29 +165,21 @@ public actor GGMLTranscriber: SpeechTranscriber {
         }
         if supportsPnc { options.pnc = .on }
         if supportsItn { options.itn = .on }
-        // Safe to send across the await: the model's run lock serializes all
-        // runs, and this actor is the session's only owner (the same contract
-        // the wrapper's own async overload relies on).
+        // Safe to send: the model's run lock serializes runs and this actor is the sole owner.
         nonisolated(unsafe) let activeSession = session
         do {
-            // The async overload hops the blocking run off this actor; the
-            // model's internal run lock serializes reentrant calls, and Task
-            // cancellation (our Timeout wrapper) bridges to the native abort.
+            // Task cancellation (our Timeout wrapper) bridges to the native abort.
             let transcript = try await activeSession.run(samples, options: options)
             let text = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            // LLM-style engines answer near-silent audio with a refusal, or an
-            // invented sentence in another script. Neither was dictated.
+            // LLM-style engines answer near-silence with a refusal or invented foreign-script text.
             return asrModel.isTranscriptionRefusal(text) ? "" : text
         } catch TranscribeError.outputTruncated(_, let partial) {
-            // Truncation cannot be predicted from input length — a repetition
-            // loop can exhaust the context on a three-second clip — so this is
-            // a retry path rather than something the length check above cures.
+            // A repetition loop can exhaust context even on a 3 s clip, so length checks can't prevent this.
             if canSplit(samples, sampleRate, depth) {
                 return try await splitAndTranscribe(
                     samples, sampleRate: sampleRate, session: session, depth: depth)
             }
-            // Too short to divide further: keep whatever did decode rather
-            // than dropping the words the engine got through.
+            // Can't divide further: keep the partial decode rather than drop it.
             let salvaged = (partial?.text ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return asrModel.isTranscriptionRefusal(salvaged) ? "" : salvaged
@@ -242,15 +203,11 @@ public actor GGMLTranscriber: SpeechTranscriber {
 
     private func canSplit(_ samples: [Float], _ sampleRate: Int, _ depth: Int) -> Bool {
         guard depth < Self.maxSplitDepth, sampleRate > 0 else { return false }
-        // Both halves must still be long enough to be worth decoding.
         return Double(samples.count) / Double(sampleRate) >= Self.minimumSplitSeconds * 2
     }
 }
 
-/// Reports fractional download progress for a single model artifact and moves
-/// the finished file into place. `@unchecked Sendable`: its mutable state is
-/// only touched on the URLSession delegate queue (serial) plus a one-shot
-/// `resumed` guard.
+/// `@unchecked Sendable`: mutable state is only touched on the serial URLSession delegate queue.
 private final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let destination: URL
     private let modelName: String
@@ -305,8 +262,6 @@ private final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate,
         if let error {
             finish(.failure(error))
         } else {
-            // Success is normally settled in didFinishDownloadingTo; this is a
-            // no-op guard for the already-resumed case.
             finish(.success(()))
         }
     }

@@ -13,8 +13,7 @@ final class LearnedVocabularyStore: ObservableObject {
         let count: Int
         let source: String
         let learnedAt: Date
-        /// Optional so records persisted before the field existed decode;
-        /// they fall back to `learnedAt`.
+        /// Optional so records persisted before the field existed decode; nil falls back to `learnedAt`.
         var lastSeenAt: Date?
 
         var effectiveLastSeen: Date { lastSeenAt ?? learnedAt }
@@ -98,11 +97,8 @@ final class LearnedVocabularyStore: ObservableObject {
         persist()
     }
 
-    /// Adds one source's new rules on top of its existing ones and returns
-    /// only the rules that were genuinely new — blocklisted and already-known
-    /// heard terms don't count, so callers can't celebrate a no-op. The K3
-    /// judge only sees never-before-seen candidates, so replacement semantics
-    /// would silently wipe every rule learned in earlier K3 runs.
+    /// Returns only genuinely new rules (not blocklisted or known). Additive, not replacing:
+    /// the K3 judge only sees unseen candidates, so replacing would wipe earlier K3 rules.
     @discardableResult
     func mergeRules(_ rules: [LearnedRule], source: LearnedRule.Source) -> [LearnedRule] {
         let incoming = rules.filter { !blocklist.contains($0.heard.lowercased()) }
