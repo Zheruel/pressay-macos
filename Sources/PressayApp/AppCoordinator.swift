@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Combine
 import SwiftUI
 import Foundation
@@ -36,6 +37,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private var activeMonitor: HotkeyMonitor?
     /// Captured at key press so a mid-session model swap can't hand the clip to an unprepared engine.
     private var sessionEngine: (any SpeechTranscriber)?
+    /// Transcribes long dictations while the key is held.
+    private let dictationDetector = SpeechDetector.make()
+    private var streamer: DictationStreamer?
     /// Invalidates stale prepare completions after a model swap.
     private var prepareGeneration = 0
     private var coolDownTask: Task<Void, Never>?
@@ -140,6 +144,44 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         #endif
     }
 
+    #if DEBUG
+    private func runStreamDemo() async {
+        let environment = ProcessInfo.processInfo.environment
+        guard let dir = environment["PRESSAY_STREAM_DIR"] else { return }
+        let speed = Double(environment["PRESSAY_LIVE_SPEED"] ?? "1") ?? 1
+        let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).filter { $0.hasSuffix(".wav") }.sorted()
+        for file in files {
+            guard let audio = try? AVAudioFile(forReading: URL(fileURLWithPath: "\(dir)/\(file)")),
+                  let buffer = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: AVAudioFrameCount(audio.length)),
+                  (try? audio.read(into: buffer)) != nil, let channel = buffer.floatChannelData?[0]
+            else { continue }
+            let samples = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+            let started = Date()
+            let streamer = DictationStreamer(engine: transcriber, detector: dictationDetector) { offset in
+                let revealed = min(samples.count, Int(Date().timeIntervalSince(started) * speed * 16_000))
+                guard offset <= revealed else { return nil }
+                return AudioRecorder.LiveAudio(samples: Array(samples[offset..<revealed]), sampleRate: 16_000, earconWindow: nil)
+            }
+            await streamer.start()
+            let duration = Double(samples.count) / 16_000
+            try? await Task.sleep(for: .seconds(duration / speed))
+            let released = Date()
+            let capture = AudioRecorder.RawCapture(segments: [.init(samples: samples, sampleRate: 16_000)], earconWindow: nil)
+            let streamed = await streamer.finish(capture)
+            let wait = Date().timeIntervalSince(released)
+            let wholeStarted = Date()
+            let whole = (try? AudioTrimmer.trim(samples)).map { AudioClip(samples: $0) }
+            let wholeText = whole == nil ? "" : ((try? await transcriber.transcribe(whole!))?.text ?? "")
+            let row: [String: Any] = [
+                "id": (file as NSString).deletingPathExtension, "duration": duration, "streamed": streamed != nil,
+                "wait": streamed != nil ? wait : Date().timeIntervalSince(wholeStarted) + wait,
+                "wholeLatency": Date().timeIntervalSince(wholeStarted), "text": streamed?.text ?? wholeText, "whole": wholeText,
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: row) { print(String(decoding: data, as: UTF8.self)) }
+        }
+    }
+    #endif
+
     /// Design review hook: `open --env PRESSAY_DEMO=<mode>`.
     private var designDemoWindow: NSWindow?
 
@@ -152,6 +194,16 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 startMeeting()
                 liveSession?.onInjectedFileEnd = { self.stopRecording(automatic: true) }
             }
+        case "stream":
+            // PRESSAY_STREAM_DIR of 16 kHz WAVs, "spoken" at PRESSAY_LIVE_SPEED× through the streamer;
+            // prints one JSON line per file comparing it with whole-clip transcription, then quits.
+            #if DEBUG
+            Task { @MainActor in
+                while !self.modelReady { try? await Task.sleep(for: .milliseconds(200)) }
+                await self.runStreamDemo()
+                NSApp.terminate(nil)
+            }
+            #endif
         case "onboarding":
             showOnboarding()
         case "menu":
@@ -487,6 +539,11 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             // through it trains people to talk into a dead mic.
             overlay.showArming(style: commandMode ? .command : .dictation)
             try recorder.start()
+            let streamer = DictationStreamer(engine: transcriber, detector: dictationDetector) { [recorder] in
+                recorder.liveAudio(from: $0)
+            }
+            self.streamer = streamer
+            Task { await streamer.start() }
             target = accessibility.capture(vocabulary: settings.vocabularyTerms)
             settings.hasUsedDictation = true
             startArmingTimeout()
@@ -523,6 +580,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         guard stateMachine.stop() else { return }
         armingTimeoutTask?.cancel()
         armingTimeoutTask = nil
+        let streamer = self.streamer
+        self.streamer = nil
         do {
             let raw = try recorder.stop()
             // After stop(): coolDown() refuses to cut a live dictation.
@@ -530,6 +589,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             // Held-key duration, not clip duration: pre-roll seeds every warm capture with up to 0.5 s.
             let held = Date().timeIntervalSince(keyPressedAt)
             guard held >= DictationProcessingPolicy.minimumClipDuration else {
+                Task { await streamer?.cancel() }
                 resetAfterNonResult()
                 return
             }
@@ -550,14 +610,16 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                         selection = await accessibility.copySelection(from: target)
                     }
                     if selection?.isEmpty == true { selection = nil }
-                    await process(raw, target: target, engine: engine, command: .some(selection))
+                    await process(raw, target: target, engine: engine, streamer: streamer, command: .some(selection))
                 } else {
-                    await process(raw, target: target, engine: engine)
+                    await process(raw, target: target, engine: engine, streamer: streamer)
                 }
             }
         } catch PressayError.recordingTooShort {
+            Task { await streamer?.cancel() }
             resetAfterNonResult()
         } catch {
+            Task { await streamer?.cancel() }
             fail(error)
         }
     }
@@ -568,6 +630,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         armingTimeoutTask?.cancel()
         armingTimeoutTask = nil
         recorder.cancel()
+        let streamer = self.streamer
+        self.streamer = nil
+        Task { await streamer?.cancel() }
         processingTask?.cancel()
         stateMachine.cancel()
         target = nil
@@ -710,6 +775,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         _ raw: AudioRecorder.RawCapture,
         target: CapturedTarget,
         engine: any SpeechTranscriber,
+        streamer: DictationStreamer? = nil,
         command: String?? = nil
     ) async {
         let releasedAt = Date()
@@ -735,7 +801,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             logger.info("Transcribing \(clip.duration, privacy: .public)s clip with \(asrTimeout, privacy: .public)s budget")
             let engineName = await engine.engineName
             let transcript = try await Timeout.run(for: .seconds(asrTimeout)) {
-                try await engine.transcribe(clip)
+                // Long dictations were mostly transcribed while the key was held.
+                if let streamed = await streamer?.finish(raw) { return streamed }
+                return try await engine.transcribe(clip)
             }
             guard !Task.isCancelled else {
                 cleanUpCancelledProcessing()

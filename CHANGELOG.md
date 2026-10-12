@@ -2,6 +2,13 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.1] - 2026-10-12
+
+### Changed
+
+- Faster long dictations: Pressay transcribes while you talk. Once you've spoken for 8 seconds, the next pause hands that part to the speech model, so letting go only waits for the last few seconds. On dictations over 20 seconds the wait fell from 1.0 s to 0.4 s with the same accuracy.
+- Dictations under ten words skip AI Cleanup: in testing the AI almost never changed them, and skipping saves about a second.
+
 ## [1.9.0] - 2026-10-12
 
 ### Added

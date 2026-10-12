@@ -47,8 +47,9 @@ public enum ClaudeCleanupModel: String, CaseIterable, Identifiable, Sendable {
 }
 
 public enum ClaudeCleanupPolicy {
-    /// One to three words come out of ASR right; a round trip only adds delay.
-    public static let minimumWords = 4
+    /// Under ten words the AI returned the on-device result unchanged on 8 of 9 benchmark dictations
+    /// and was never judged better, so the ~1.2 s round trip only adds delay.
+    public static let minimumWords = 10
 
     public static func shouldClean(_ text: String, isTerminal: Bool) -> Bool {
         !isTerminal && wordCount(text) >= minimumWords

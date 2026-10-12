@@ -17,6 +17,48 @@ The sanitized aggregate data behind the charts lives in [`docs/benchmarks/result
 
 The corpus is representative of the app's intended use, but it is not a standardized public benchmark. Results should be treated as product calibration on one machine, not universal model rankings.
 
+## Dictation speed (October 2026)
+
+Measured on this Mac's last 150 dictations (Qwen3-ASR 1.7B, Haiku 5.5 cleanup): median 2.0 s from key release
+to insertion with AI Cleanup (speech-to-text 0.57 s, AI 1.24 s), 0.6 s without. The AI round trip is two thirds of it.
+
+**AI round trip.** Time to first token is ~0.72 s whatever the prompt: a bare "Say hi" with no system prompt
+starts as late as the full cached 2.1k-token cleanup prompt (0.71 s). Connect plus first byte is ~0.1 s, so the rest
+is server-side and no transport (WebSocket or otherwise), prompt trimming or caching recovers it. On the 102-clip
+corpus, sequential and interleaved:
+
+| Variant | Median | p90 | Max |
+| --- | ---: | ---: | ---: |
+| Shipped: full rewrite, adaptive thinking, effort medium | 1.10 s | 1.30 s | 4.16 s |
+| Thinking off | 1.15 s | 1.35 s | 2.27 s |
+| Reply "=" when nothing changes | 1.15 s | 1.37 s | 1.90 s |
+| Reply with edits only (`old => new`) or "=" | 1.13 s | 1.35 s | 2.08 s |
+
+Shorter reply formats saved nothing: Haiku used "=" on 16 clips and edits on 3, and output is only ~0.4 s of the
+total. Thinking ran on 3 of 102 clips and causes the rare 4 s outlier, but turning it off didn't move the median
+and raised meaning changes in the earlier cleanup benchmark (6.9% vs 4.4%), so it stays.
+
+**Skipping the AI.** Judged against the rules-only output (two blind Opus passes), the AI added nothing under
+ten words (9 clips: 8 identical outputs, mean −0.11), +0.5 at 10–12 words and +1.2 above 20. Cleanup now needs
+at least ten words (was four).
+
+**Transcribing while talking.** `PressayBench incremental` replays clips through Silero: once a piece reaches
+the minimum length, the first 0.5 s pause cuts it and it is transcribed in the background; only the tail waits for
+release. 158 single-speaker stretches from the AMI meetings (8–60 s, median 13 s), WER against the manual
+transcripts:
+
+| Minimum piece | Clips cut | WER (whole clip 28.2%) | Wait, clips ≥ 20 s (median / p90) |
+| --- | ---: | ---: | ---: |
+| whole clip | — | 28.2% | 1.00 s / 1.93 s |
+| 3 s | 79 | 28.3% | 0.31 s / 0.99 s |
+| 6 s | 71 | 28.1% | 0.37 s / 0.96 s |
+| 10 s | 50 | 28.1% | 0.40 s / 0.94 s |
+| 20 s | 13 | 28.4% | 0.75 s / 1.08 s |
+
+Accuracy is flat from 3 to 10 s pieces. Pressay ships 8 s: longer pieces keep more context per decode at almost no cost in wait.
+The app path (`PRESSAY_DEMO=stream`, real time) gave identical WER to the whole clip on the long clips checked,
+with the wait halved (e.g. 28 s clip: 0.53 s vs 1.08 s).
+
 ## Meeting transcription (October 2026)
 
 Four AMI test meetings (ES2004a, IS1009a, TS3003a, EN2002a; 91 minutes, four people each, Mix-Headset

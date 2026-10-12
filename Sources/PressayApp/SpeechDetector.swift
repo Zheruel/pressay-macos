@@ -32,6 +32,12 @@ actor SpeechDetector {
         }
     }
 
+    /// Starts a new stream for one speaker, e.g. for each dictation.
+    func reset(_ speaker: TranscriptLine.Speaker) {
+        states[speaker] = nil
+        talking[speaker] = nil
+    }
+
     /// nil when the model isn't ready, so the segmenter judges by energy.
     func isSpeech(_ samples: [Float], from speaker: TranscriptLine.Speaker) async -> Bool? {
         guard let vad else { return nil }
