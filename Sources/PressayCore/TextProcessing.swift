@@ -163,10 +163,7 @@ public enum DeterministicPromptCleaner {
         return text
     }
 
-    /// Collapses immediate word stutters ("WhisperKit WhisperKit with…") that
-    /// push-to-talk speech produces, while keeping grammatically legitimate
-    /// doubles. Corpus-validated: fixes the stutters in history, touches
-    /// nothing else.
+    /// Collapses push-to-talk stutters ("WhisperKit WhisperKit with…") but keeps legitimate doubles.
     private static func collapseStutters(in source: String) -> String {
         guard let regex = stutterRegex else { return source }
         var text = source
@@ -375,10 +372,8 @@ public struct ProtectedTokenValidator: Sendable {
 }
 
 public enum AudioTrimmer {
-    /// - Parameter earconGuard: sample range holding the start cue, which now
-    ///   plays into a live mic. Excluded from the onset search, and cut away
-    ///   entirely unless the speaker began before it — that case means the
-    ///   pre-roll caught a real word onset, which is worth more than a clean tone.
+    /// - Parameter earconGuard: sample range holding the start cue, which plays into the live mic.
+    ///   Excluded from onset search and cut unless the speaker began before it (a real pre-roll onset).
     public static func trim(
         _ samples: [Float],
         sampleRate: Int = 16_000,
@@ -417,11 +412,8 @@ public enum AudioTrimmer {
 
         guard let firstSpeech, let lastSpeech else { throw PressayError.silence }
         let padding = sampleRate * paddingMilliseconds / 1_000
-        // Deliberately not clamped past the cue. The onset search skips the
-        // guarded frames, so a speaker who talks *over* the cue is invisible
-        // there and `firstSpeech` lands after it — cutting to the guard's end
-        // would then discard the very word onset the pre-roll exists to keep.
-        // Leaving a short tone in the lead-in is the cheaper mistake.
+        // Deliberately not clamped past the cue: a speaker talking over the cue is invisible to the
+        // onset search, so cutting to the guard end would drop the onset the pre-roll exists to keep.
         var start = max(0, firstSpeech - padding)
         var end = min(samples.count, lastSpeech + padding)
         let minimumCount = sampleRate * minimumOutputMilliseconds / 1_000
@@ -440,10 +432,8 @@ public enum AudioTrimmer {
 
         var output = Array(samples[start..<end])
 
-        // Guarantee the encoder its full lead-in. Speech landing on frame 0 is
-        // what a mic that opened mid-word produces, and Whisper-family models
-        // drop or hallucinate that first token. The clip-length branch below
-        // only ever covered utterances short enough to need topping up.
+        // Guarantee the encoder its full lead-in: speech on frame 0 (mic opened mid-word) makes
+        // Whisper-family models drop or hallucinate the first token.
         let leadIn = firstSpeech - start
         if leadIn < padding {
             output = [Float](repeating: 0, count: padding - leadIn) + output

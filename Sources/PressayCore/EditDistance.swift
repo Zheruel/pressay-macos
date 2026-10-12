@@ -1,5 +1,5 @@
 public enum EditDistance {
-    /// Two-row Levenshtein distance over any equatable elements.
+    /// Levenshtein distance.
     public static func between<T: Equatable>(_ a: [T], _ b: [T]) -> Int {
         guard !a.isEmpty else { return b.count }
         guard !b.isEmpty else { return a.count }

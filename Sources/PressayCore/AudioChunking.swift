@@ -1,27 +1,13 @@
 import Foundation
 
-/// Splitting long dictations for engines whose decoder context bounds how much
-/// audio they can take in one run.
-///
-/// Whisper chunks long audio inside the runtime (`TRANSCRIBE_FEATURE_LONG_FORM`
-/// is whisper-only today); Fun-ASR and Qwen3-ASR do not, and return
-/// `outputTruncated` once a decode outgrows the context window. Falling back to
-/// Whisper for those clips would be the wrong repair — Whisper is the engine
-/// measured to collapse long dictations into an unpunctuated block, which is
-/// exactly what the other engines were chosen to avoid. So we split the audio
-/// and keep the engine the user picked.
+/// Splits long audio for Fun-ASR/Qwen3-ASR, which return `outputTruncated` past their decoder context.
+/// Falling back to Whisper would reintroduce its unpunctuated-block failure on long dictations.
 public enum AudioChunking {
-    /// Frames scanned when looking for a gap between words.
     static let frameSeconds: TimeInterval = 0.2
 
-    /// Index of the quietest frame centre within `searchSeconds` of `target`,
-    /// for use as a split point. Prefers a real pause so a split lands between
-    /// words rather than inside one.
-    ///
-    /// Returns `nil` when the search window would fall outside the buffer, or
-    /// when nothing in it is meaningfully quieter than the clip as a whole —
-    /// in which case the caller should split at `target` and accept the risk of
-    /// cutting a word, since not splitting loses the tail entirely.
+    /// Quietest frame centre near `target`, so a split lands between words. Nil when the window
+    /// leaves the buffer or nothing is clearly quieter than the clip; split at `target` anyway,
+    /// since not splitting loses the tail.
     public static func quietestSplitPoint(
         samples: [Float],
         sampleRate: Int,
@@ -38,8 +24,7 @@ public enum AudioChunking {
         var quietestStart = lower
         var quietestEnergy = Float.greatestFiniteMagnitude
         var index = lower
-        // Hop by a quarter frame: fine enough to find a short gap between
-        // words without scanning every sample of a 100-second buffer.
+        // Quarter-frame hop: finds short word gaps without scanning every sample.
         let hop = max(1, frame / 4)
         while index <= upper {
             let energy = meanSquare(samples, from: index, count: frame)
@@ -57,16 +42,13 @@ public enum AudioChunking {
         return quietestStart + frame / 2
     }
 
-    /// Split point for a buffer that must be divided in two, falling back to
-    /// the midpoint when no pause is available.
     public static func splitPoint(samples: [Float], sampleRate: Int) -> Int {
         let midpoint = samples.count / 2
         return quietestSplitPoint(samples: samples, sampleRate: sampleRate, near: midpoint)
             ?? midpoint
     }
 
-    /// Joins chunk transcripts into one dictation, dropping empties so a
-    /// silent chunk cannot introduce a double space.
+    /// Drops empties so a silent chunk cannot add a double space.
     public static func join(_ parts: [String]) -> String {
         parts
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

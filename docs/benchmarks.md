@@ -25,6 +25,10 @@ Wispr Flow, with Wispr's own cloud transcript as a reference candidate. Every en
 `PressayBench asr`; three Sonnet judges scored each transcript 0–10 blind (shuffled labels, no
 audio — truth inferred from cross-candidate agreement). 22 clips had speech; 2 were near-silent.
 
+<p align="center">
+  <img src="assets/speech-models.svg" width="100%" alt="Judged accuracy on 24 real dictations: Wispr Flow cloud 9.05, Qwen3-ASR 1.7B 9.00, Voxtral Mini 8.91, Whisper V3 Turbo 8.77, Qwen3-ASR 0.6B 7.32, Fun-ASR 6.95">
+</p>
+
 | Engine | Judged score | Near-silent clips | Median latency | Peak memory |
 | --- | ---: | --- | ---: | ---: |
 | *Wispr Flow raw (cloud reference)* | *9.05* | *empty, correct* | — | — |

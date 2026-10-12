@@ -47,7 +47,6 @@ final class VocabularyTunerTests: XCTestCase {
         XCTAssertEqual(byHeard["cloud code"], "Claude Code")
         XCTAssertEqual(byHeard["whisperflow"], "Wispr Flow")
         XCTAssertEqual(byHeard["tldr"], "TL;DR")
-        // User-confirmed: "SoonerCloud" in the corpus is SonarCloud the SaaS.
         XCTAssertEqual(byHeard["soonercloud"], "SonarCloud")
         for rejected in ["Jewish", "Bumpar", "TWC", "Kimi", "makes"] {
             XCTAssertNil(byHeard[rejected.lowercased()], "\(rejected) must not produce a rule")
@@ -73,8 +72,7 @@ final class VocabularyTunerTests: XCTestCase {
     }
 
     func testAnchorCollisionIsSkipped() {
-        // SwiftData and SwiftUI share a phonetic key; a candidate near both
-        // must not be arbitrarily assigned to either.
+        // SwiftData and SwiftUI share a phonetic key.
         let rules = VocabularyTuner.deterministicRules(
             candidates: [TunerCandidate(term: "swiftdayta", count: 3, excerpt: "x")],
             anchors: ["SwiftUI", "SwiftData"]
@@ -82,16 +80,7 @@ final class VocabularyTunerTests: XCTestCase {
         XCTAssertTrue(rules.isEmpty)
     }
 
-    func testInflectedEnglishWordsAreNotCandidates() {
-        XCTAssertFalse(VocabularyTuner.isCandidateTerm("darker"))
-        XCTAssertFalse(VocabularyTuner.isCandidateTerm("cloned"))
-        XCTAssertFalse(VocabularyTuner.isCandidateTerm("running"))
-        XCTAssertTrue(VocabularyTuner.isCandidateTerm("Whisperflow"))
-        XCTAssertTrue(VocabularyTuner.isCandidateTerm("Rumpod"))
-    }
-
     func testIncrementalRulesRequireExactPhoneticKeys() {
-        // Distance-0 mishearings still learn from a single dictation.
         let exact = VocabularyTuner.incrementalRules(
             for: "something like Whisperflow but local",
             anchors: ["Wispr Flow", "RunPod"]
@@ -99,8 +88,7 @@ final class VocabularyTunerTests: XCTestCase {
         XCTAssertEqual(exact.map(\.heard), ["Whisperflow"])
         XCTAssertEqual(exact.map(\.preferred), ["Wispr Flow"])
 
-        // Distance-1 ("Rumpod" → RunPod) is real but needs recurrence; the
-        // daily pass learns it, the single-sighting path must not.
+        // Distance-1 needs recurrence, which only the daily pass sees.
         XCTAssertTrue(VocabularyTuner.incrementalRules(
             for: "Can you check the Rumpod dashboard for me?",
             anchors: ["RunPod", "Claude Code"]
@@ -114,9 +102,8 @@ final class VocabularyTunerTests: XCTestCase {
     // MARK: - Regression: false positives learned on real machines
 
     func testOrdinaryEnglishWordsAreNeverCandidates() {
-        // Each of these was live in a user's learned rules: mix → macOS,
-        // mockups → macOS, correction → Markdown, colleagues → Codex.
-        for word in ["mix", "mockups", "mockup", "correction", "colleagues"] {
+        // Learned in the wild: mix/mockups → macOS, correction → Markdown, colleagues → Codex.
+        for word in ["mix", "mockups", "mockup", "correction", "colleagues", "darker", "cloned", "running"] {
             XCTAssertFalse(VocabularyTuner.isCandidateTerm(word), "\(word) is ordinary English")
         }
         let texts = [
@@ -129,8 +116,7 @@ final class VocabularyTunerTests: XCTestCase {
     }
 
     func testShortPhoneticKeysCannotMatchEvenAsForcedCandidates() {
-        // Defense in depth: even if the word list misses a term, a
-        // three-consonant key ("mix" → MKS ≡ macOS) must not match.
+        // Defense in depth if the word list misses a term: "mix" → MKS ≡ macOS.
         let forced = [TunerCandidate(term: "mix", count: 5, excerpt: "x")]
         XCTAssertTrue(VocabularyTuner.deterministicRules(candidates: forced, anchors: anchors).isEmpty)
         XCTAssertEqual(
@@ -149,7 +135,6 @@ final class VocabularyTunerTests: XCTestCase {
             VocabularyTuner.deterministicRules(candidates: twice, anchors: anchors).map(\.preferred),
             ["Anthropic"]
         )
-        // Distance-0 promotes from a single sighting.
         let exactOnce = [TunerCandidate(term: "Whisperflow", count: 1, excerpt: "x")]
         XCTAssertEqual(
             VocabularyTuner.deterministicRules(candidates: exactOnce, anchors: anchors).map(\.preferred),
@@ -158,8 +143,6 @@ final class VocabularyTunerTests: XCTestCase {
     }
 
     func testCloudMDMatchesClaudeMarkdownFileWhenAnchored() {
-        // "CloudMD" is a mishearing of "CLAUDE.md"; with the file in the
-        // anchors it exact-matches there instead of snapping to Claude Code.
         let rules = VocabularyTuner.deterministicRules(
             candidates: [TunerCandidate(term: "CloudMD", count: 1, excerpt: "x")],
             anchors: anchors + ["CLAUDE.md"]
@@ -168,8 +151,7 @@ final class VocabularyTunerTests: XCTestCase {
     }
 
     func testJudgeWorthyKeepsAcousticNeighborsAndDropsFarTerms() {
-        // Corpus-measured: distance cap 2 keeps 25/26 true LLM-judge finds
-        // while dropping ~60% of candidates (guaranteed rejections).
+        // Distance cap 2 kept 25/26 true judge finds and dropped ~60% of candidates.
         let candidates = [
             "CloudCode", "TLDA", "Sona Cloud", "SornCloud", "Kimmy",
             "Polymarket", "Buenos Aires", "Fjordvik",
@@ -187,8 +169,7 @@ final class VocabularyTunerTests: XCTestCase {
     }
 
     func testSpellingAgreementRejectsReplayFalsePositives() {
-        // Each was proposed by the daily pass over 4,691 real dictations with
-        // a 90-term vocabulary, before spelling agreement existed.
+        // Each was proposed by the daily pass before spelling agreement existed.
         let vocabulary = anchors + [
             "Cognito", "Pressay", "Telnyx", "Notion", "Scooper", "Retell", "Cartesia",
             "Polymarket", "CLAUDE.md", "Supabase", "CloudLore", "Tailwind", "GDPR", "LGTM",

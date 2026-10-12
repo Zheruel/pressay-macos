@@ -73,9 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) -> Bool {
         Task { @MainActor in
             let coordinator = AppCoordinator.shared
-            // Reopen must lead back to onboarding (and its model-download
-            // Retry) while setup is unfinished, or a closed window strands
-            // the user with no way to complete it.
+            // Otherwise closing onboarding strands an unfinished setup.
             if coordinator.settings.onboardingComplete {
                 coordinator.showSettings()
             } else {

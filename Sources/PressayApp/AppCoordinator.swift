@@ -13,8 +13,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     @Published private(set) var modelStatus = "Not loaded"
     @Published private(set) var modelReady = false
     @Published private(set) var modelPreparing = false
-    /// Fractional progress (0…1) while the selected model downloads, or `nil`
-    /// when idle or the size is unknown. Drives the Settings/onboarding bar.
+    /// 0…1, or `nil` when idle or the size is unknown.
     @Published private(set) var modelDownloadProgress: Double?
     @Published private(set) var lastError: String?
 
@@ -33,15 +32,12 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private var stateMachine = DictationStateMachine()
     private var target: CapturedTarget?
     private var processingTask: Task<Void, Never>?
-    /// The monitor that started the active session — only its release/cancel
-    /// may end the session.
+    /// Only this monitor's release/cancel may end the session.
     private var activeMonitor: HotkeyMonitor?
-    /// Engine captured at key press so a model swap mid-session cannot hand
-    /// the clip to a new, unprepared engine.
+    /// Captured at key press so a mid-session model swap can't hand the clip to an unprepared engine.
     private var sessionEngine: (any SpeechTranscriber)?
     /// Invalidates stale prepare completions after a model swap.
     private var prepareGeneration = 0
-    /// Closes the warm mic once the window lapses; re-armed after each dictation.
     private var coolDownTask: Task<Void, Never>?
     /// Backstop for the readiness cue when a device never reports live audio.
     private var armingTimeoutTask: Task<Void, Never>?
@@ -49,8 +45,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private var outputActivity: OutputActivityObserver?
     /// Parks warming after a failed open so a broken device can't spin.
     private var warmUpFailed = false
-    /// When the hold key went down. The pre-roll makes clip length useless as
-    /// an accidental-tap test, since every warm capture is at least 0.5 s.
     private var keyPressedAt = Date.distantPast
     private let cleaner = ClaudeCleaner()
     private let chatGPTCleaner = ChatGPTCleaner()
@@ -67,8 +61,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private lazy var notesWindow = NotesWindowController(coordinator: self)
 
     private init() {
-        // Before the history store opens: its retention pass must see the
-        // audio files at their final location.
+        // Before the history store opens: its retention pass must see audio at its final location.
         Self.migrateApplicationSupportDirectory()
         do {
             history = try HistoryStore()
@@ -88,10 +81,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             Task { @MainActor in self?.captureBecameLive() }
         }
         permissions.onStatusChange = { [weak self] in
-            // Always a fresh run-loop turn: holdKeyPressed refreshes permissions
-            // synchronously, and restarting a monitor re-entrantly from inside
-            // its own press callback resets isPressed mid-press — the release
-            // would never be delivered and the recording would never stop.
+            // Fresh run-loop turn: restarting a monitor from its own press callback resets isPressed,
+            // so the release would never arrive and recording would never stop.
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if permissions.inputMonitoringGranted {
@@ -110,12 +101,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         permissions.startMonitoring()
         settings.refreshLaunchAtLogin()
         applyTranscriptionLanguage()
-        // Applies the input-device preference. The mic stays closed until a
-        // first dictation gives us reason to keep it warm.
         applyMicWarmth()
-        // Pausing a video, dictating, then resuming is a common pattern, and it
-        // drops playback right inside the warm window. React to playback
-        // starting rather than only sampling when the dictation ended.
+        // Pause video, dictate, resume is common, so react to playback starting inside the warm window.
         let observer = OutputActivityObserver { [weak self] _ in
             self?.applyMicWarmth()
         }
@@ -123,9 +110,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         outputActivity = observer
         try? history.applyRetention()
         reloadClaudeKey()
-        // Model preparation is independent of TCC onboarding. Starting it here
-        // removes the manual Download / prepare step and makes every later launch
-        // warm as soon as possible.
+        // Independent of TCC onboarding.
         Task { await prepareModel() }
         Task { @MainActor in tunerRunner.scheduleIfNeeded(history: history, settings: settings) }
         if !settings.onboardingComplete {
@@ -167,7 +152,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         case "settings":
             showSettings()
         case let mode? where mode.hasPrefix("record-"):
-            // "record-meeting-40": records a meeting and stops after 40 s.
+            // e.g. "record-meeting-40": meeting, stops after 40 s.
             let parts = mode.split(separator: "-")
             let kind: Note.Kind = parts.count > 1 && parts[1] == "meeting" ? .meeting : .voice
             let seconds = parts.count > 2 ? Double(parts[2]) ?? 30 : 30
@@ -221,7 +206,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                     t += 0.35
                     overlay.state.levels = (0..<4).map { 0.25 + 0.35 * abs(sin(t + Float($0))) }
                     try? await Task.sleep(for: .milliseconds(100))
-                    // Success, error and toast dismiss themselves; re-show them.
                     if !overlay.state.visible { show() }
                 }
             }
@@ -291,9 +275,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    /// Moves ~/Library/Application Support/LocalFlow → Pressay once, so the
-    /// downloaded models and history audio survive the code rename. Stored
-    /// audio paths are rewritten separately in start().
+    /// Stored audio paths are rewritten separately in start().
     private static func migrateApplicationSupportDirectory() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let old = base.appending(path: "LocalFlow", directoryHint: .isDirectory)
@@ -303,15 +285,11 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         try? FileManager.default.moveItem(at: old, to: new)
     }
 
-    /// Suspends the hold-key monitor while a KeyCaptureButton is recording a
-    /// new binding; restartHotkey() resumes it.
     func suspendHotkeys() {
         hotkey.stop()
     }
 
-    /// Single wiring point for KeyCaptureButton so every capture site gets the
-    /// suspend-while-capturing behavior; forgetting it at one site would let
-    /// rebinding the current hold key start a dictation mid-capture.
+    /// Single wiring point: a capture site that skips it lets rebinding the hold key start a dictation.
     func keyCaptureActive(_ active: Bool) {
         active ? suspendHotkeys() : restartHotkey()
     }
@@ -341,21 +319,15 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         GGMLTranscriber(model: model, language: language.whisperCode)
     }
 
-    /// Swap the local speech model. A dictation already in flight keeps the
-    /// engine captured at its key press; new sessions use the new engine.
+    /// An in-flight dictation keeps the engine captured at its key press.
     func applyASRModel() {
-        // Snap the language to something this engine can actually decode
-        // before building it, so the new transcriber never starts on a hint
-        // the model will reject.
         let model = settings.asrModel
         if !model.supportedLanguages.contains(settings.language) {
             settings.language = model.defaultLanguage
         }
         transcriber = Self.makeTranscriber(for: model, language: settings.language)
         modelReady = false
-        // A prepare may still be running for the previous engine; bump the
-        // generation so its completion cannot mark the new engine ready, and
-        // force a fresh prepare for the swapped-in engine.
+        // A prepare for the old engine may still be running; its completion must not mark this one ready.
         prepareGeneration += 1
         Task { await prepareModel(force: true) }
     }
@@ -421,9 +393,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func holdKeyPressed(_ monitor: HotkeyMonitor) {
-        // No synchronous TCC refresh here: this runs inside the CGEventTap
-        // callback, and startMonitoring() already keeps these current. A revoked
-        // permission still surfaces as microphoneUnavailable from the recorder.
+        // No synchronous TCC refresh inside the CGEventTap callback; startMonitoring() keeps these current.
         guard permissions.microphoneGranted, permissions.accessibilityGranted else {
             overlay.showError("Finish setup in Pressay")
             return
@@ -447,9 +417,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         keyPressedAt = Date()
         coolDownTask?.cancel()
         do {
-            // The mic opens first and the cue waits for real audio. A cold
-            // Bluetooth link hands out digital silence for 550 ms+, and beeping
-            // through that is what trains people to talk into a dead mic.
+            // Cue waits for real audio: a cold Bluetooth link gives 550 ms+ of silence, and beeping
+            // through it trains people to talk into a dead mic.
             overlay.showArming()
             try recorder.start()
             target = accessibility.capture(vocabulary: settings.vocabularyTerms)
@@ -463,8 +432,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    /// The mic is genuinely delivering samples. Warm starts reach this within a
-    /// frame, so the burst case still feels instant.
     private func captureBecameLive() {
         guard stateMachine.phase == .arming else { return }
         armingTimeoutTask?.cancel()
@@ -475,8 +442,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         overlay.showRecording(style: .dictation)
     }
 
-    /// If a device never reports live audio, cue anyway rather than leaving the
-    /// user holding a key with no feedback.
     private func startArmingTimeout() {
         armingTimeoutTask?.cancel()
         armingTimeoutTask = Task { [weak self] in
@@ -494,12 +459,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         armingTimeoutTask = nil
         do {
             let raw = try recorder.stop()
-            // Only once the recorder is idle: coolDown() refuses to cut a live
-            // dictation, so warming decided any earlier would never take effect.
+            // After stop(): coolDown() refuses to cut a live dictation.
             scheduleMicCoolDown()
-            // Held-key duration, not clip duration: a warm capture is seeded
-            // with up to 0.5 s of pre-roll, so every stray tap would otherwise
-            // clear this bar and earn a release earcon plus a full trim pass.
+            // Held-key duration, not clip duration: pre-roll seeds every warm capture with up to 0.5 s.
             let held = Date().timeIntervalSince(keyPressedAt)
             guard held >= DictationProcessingPolicy.minimumClipDuration else {
                 resetAfterNonResult()
@@ -538,27 +500,21 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
 
     // MARK: - Warm microphone
 
-    /// Marks the end of a dictation and closes the stream once the warm window
-    /// lapses. Re-entrant: each dictation restarts the clock.
+    /// Re-entrant: each dictation restarts the clock.
     private func scheduleMicCoolDown() {
         lastDictationEnded = Date()
-        // A dictation just succeeded on this device, so an earlier warm-up
-        // failure is stale.
         warmUpFailed = false
         applyMicWarmth()
     }
 
     /// Single place that reconciles the recorder's stream with the policy.
-    /// Called after dictations, when the setting changes, and on the cool-down
-    /// deadline.
     func applyMicWarmth() {
         guard stateMachine.phase != .recording, stateMachine.phase != .arming else { return }
         guard liveSession == nil else {
             recorder.coolDown()
             return
         }
-        // A warm stream is bound to the device it opened with, so switching the
-        // picker has to close it before the choice can take effect.
+        // A warm stream is bound to its device; it must close before a new choice takes effect.
         if recorder.preferredInputUID != settings.inputDeviceUID {
             recorder.preferredInputUID = settings.inputDeviceUID
             recorder.coolDown()
@@ -586,23 +542,17 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         do {
             try recorder.warmUp()
         } catch {
-            // Not worth surfacing: the next press opens the mic normally.
             warmUpFailed = true
             coolDownTask?.cancel()
             coolDownTask = nil
             logger.info("could not keep the mic warm: \(error.localizedDescription, privacy: .public)")
             return
         }
-        // Whoever warms the stream owns closing it. Scheduling this only from
-        // the post-dictation path left every other caller — the playback
-        // observer, both Settings toggles — able to open a stream that nothing
-        // would ever close.
+        // Whoever warms the stream owns closing it.
         scheduleCoolDown(for: conditions)
     }
 
-    /// (Re)arms the deadline that closes a warm stream. Driven by the policy's
-    /// own expiry rather than a bare sleep, so a wall-clock adjustment during
-    /// the window cannot leave the mic open.
+    /// Uses the policy's expiry, not a bare sleep, so a wall-clock change can't leave the mic open.
     private func scheduleCoolDown(for conditions: MicWarmPolicy.Conditions) {
         coolDownTask?.cancel()
         guard let expiry = MicWarmPolicy.expiry(conditions, now: Date()) else {
@@ -615,8 +565,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self else { return }
-                // Re-check rather than closing blindly: a dictation may have
-                // landed while this was sleeping and pushed the deadline out.
+                // A dictation may have pushed the deadline out while sleeping.
                 if MicWarmPolicy.shouldStayWarm(self.warmConditions(at: Date()), now: Date()) {
                     self.applyMicWarmth()
                 } else {
@@ -636,16 +585,14 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         )
     }
 
-    /// Sleep and screen lock must not leave a stream open: resuming into a
-    /// half-torn-down Bluetooth link is how the input wedges into silence.
+    /// Resuming into a half-torn-down Bluetooth link wedges the input into silence.
     func releaseMicForSystemEvent() {
         coolDownTask?.cancel()
         coolDownTask = nil
         armingTimeoutTask?.cancel()
         armingTimeoutTask = nil
         lastDictationEnded = nil
-        // forceClose, not coolDown: sleeping mid-dictation is exactly when the
-        // stream must not survive, and coolDown() declines while recording.
+        // forceClose: coolDown() declines while recording.
         recorder.forceClose()
         if stateMachine.phase == .recording || stateMachine.phase == .arming {
             stateMachine.cancel()
@@ -688,13 +635,12 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         let recordID = UUID()
         var audioURL: URL?
         do {
-            // Resample and trim off the main actor (~5 ms per second of audio).
+            // ~5 ms per second of audio.
             let clip = try await Task.detached(priority: .userInitiated) {
                 let converted = try raw.segments.flatMap {
                     try AudioResampler.convert($0.samples, from: $0.sampleRate)
                 }
-                // Resampling preserves duration, so the cue's position on the
-                // capture timeline maps straight onto the 16 kHz clip.
+                // Resampling preserves duration, so the cue window maps straight onto the 16 kHz clip.
                 let earconGuard = raw.earconWindow.map {
                     Int($0.lowerBound * 16_000)..<Int($0.upperBound * 16_000)
                 }
@@ -702,8 +648,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                     samples: try AudioTrimmer.trim(converted, earconGuard: earconGuard)
                 )
             }.value
-            // Save before inference so timeouts and empty short transcripts remain
-            // available for local diagnosis. Unreferenced files expire after seven days.
+            // Save before inference so failures stay diagnosable; unreferenced files expire after 7 days.
             audioURL = try? AudioFileStore.save(clip, id: recordID)
             let asrTimeout = DictationProcessingPolicy.asrTimeout(duration: clip.duration)
             logger.info("Transcribing \(clip.duration, privacy: .public)s clip with \(asrTimeout, privacy: .public)s budget")
@@ -718,8 +663,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
 
             let learnedRules = tunerRunner.learnImmediately(from: transcript.text, settings: settings)
 
-            // Shell commands are case-sensitive; never auto-capitalize into a
-            // terminal.
+            // Shell commands are case-sensitive; never auto-capitalize into a terminal.
             let isTerminal = target.bundleID.map {
                 DeterministicPromptCleaner.terminalBundleIDs.contains($0)
             } ?? false
@@ -823,8 +767,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         overlay.hide()
     }
 
-    /// A cancelled process() must not exit with the phase stuck in
-    /// .processing and the spinner showing — nothing else ever resets those.
+    /// Nothing else resets a cancelled process() stuck in .processing.
     private func cleanUpCancelledProcessing() {
         guard stateMachine.phase == .processing else { return }
         resetAfterNonResult()
@@ -888,7 +831,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    /// Saves what was heard so far before the app quits.
     func finishRecordingForQuit() async {
         guard let session = liveSession, session.phase == .recording else { return }
         let duration = session.elapsed
@@ -930,7 +872,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         guard let note = notes.note(id) else { return }
         let text = newLines.map(\.text).joined(separator: " ")
         guard !text.isEmpty else {
-            // Nothing was heard: drop a note that only this recording created.
+            // Drop a note that only this recording created.
             if note.lines.isEmpty, note.body.isEmpty { notes.delete(id) }
             recordingError = "Nothing was heard. Check your microphone in Settings › General."
             return

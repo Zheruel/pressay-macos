@@ -144,7 +144,6 @@ public enum ClaudeCleanupPrompt {
     """
 }
 
-/// Messages API client for the cleanup call.
 public struct ClaudeCleaner: Sendable {
     public enum CleanupError: LocalizedError, Equatable {
         case http(Int, String)

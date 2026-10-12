@@ -24,7 +24,7 @@ final class AppSettings: ObservableObject {
         static let noteStyle = "noteStyle"
         static let notesUseAI = "notesUseAI"
         static let meetingSystemAudio = "meetingSystemAudio"
-        /// Vibe Mode (removed) persisted these; cleared once at init.
+        /// Legacy keys from removed Vibe Mode; cleared once at init.
         static let retired = ["polishHoldKeyCode", "polishModel"]
     }
 
@@ -62,8 +62,7 @@ final class AppSettings: ObservableObject {
     }
     @Published private(set) var launchAtLoginError: String?
 
-    /// Rules the vocabulary tuner derived from transcripts; merged into every
-    /// cleanup pass alongside the curated entries.
+    /// Tuner-derived rules, merged into every cleanup pass with the curated entries.
     let learnedVocabulary: LearnedVocabularyStore
     let vocabularySuggestions: VocabularySuggestionStore
     @Published var launchAtLogin: Bool {
@@ -135,9 +134,7 @@ final class AppSettings: ObservableObject {
         launchAtLoginError = Self.launchAtLoginMessage(for: serviceStatus)
     }
 
-    /// requiresApproval counts as on: registration succeeded and the pending
-    /// approval is explained by launchAtLoginError, so the toggle must not
-    /// bounce back to off.
+    /// requiresApproval counts as on: registration succeeded, so the toggle must not bounce back to off.
     private static func launchAtLoginIsOn(_ status: SMAppService.Status) -> Bool {
         status == .enabled || status == .requiresApproval
     }
@@ -164,17 +161,15 @@ final class AppSettings: ObservableObject {
         case .requiresApproval:
             "Approve Pressay under Login Items to finish enabling launch at login."
         case .notFound:
-            // This can be transient while LaunchServices registers a freshly
-            // replaced build. Surface a real registration error only if the
-            // user actually enables the toggle and registration throws.
+            // Can be transient while LaunchServices registers a freshly replaced build;
+            // only an explicit enable that throws surfaces an error.
             nil
         @unknown default:
             "macOS could not determine the launch-at-login status."
         }
     }
 
-    /// Self-validating parse cache: accessed several times per dictation and
-    /// per settings render, while the source changes only on user edits.
+    /// Self-validating parse cache: read several times per dictation; the source changes only on user edits.
     private var parsedVocabulary: (source: String, entries: [VocabularyParser.Entry])?
 
     var vocabularyEntries: [VocabularyParser.Entry] {

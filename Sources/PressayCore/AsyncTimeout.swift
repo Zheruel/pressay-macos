@@ -1,7 +1,6 @@
 import Foundation
 
 extension Duration {
-    /// Seconds as a TimeInterval; shared so latency math is written once.
     public var seconds: TimeInterval {
         Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
@@ -29,8 +28,7 @@ public enum Timeout {
                         try await Task.sleep(for: duration)
                         race.resolve(.failure(PressayError.timedOut))
                     } catch {
-                        // The timeout task is expected to be cancelled when the
-                        // operation wins the race.
+                        // Expected: cancelled when the operation wins the race.
                     }
                 }
                 race.install(operationTask: operationTask, timeoutTask: timeoutTask)

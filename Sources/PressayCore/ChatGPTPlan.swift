@@ -499,7 +499,7 @@ public struct ChatGPTCleaner: Sendable {
         throw CleanupError.incomplete
     }
 
-    /// Returns the full text on `response.completed`; throws on failure.
+    /// Returns the full text on `response.completed`.
     static func handle(_ event: [String: Any], into reader: inout SSEReader) throws -> String? {
         switch event["type"] as? String {
         case "response.output_text.delta":

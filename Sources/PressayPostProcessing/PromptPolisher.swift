@@ -16,14 +16,13 @@ private struct GeneratedLightEdit {
 
 /// Bench sweep hook: how the polisher frames its task.
 public enum PolisherMode: String, CaseIterable, Sendable {
-    /// Rewrite the dictation into a clear agent prompt (retired Vibe Mode framing).
+    /// Rewrites the dictation into an agent prompt.
     case shipping
-    /// Copyedit-only framing: fix errors/fillers, change nothing else.
+    /// Copyedit only: fix errors/fillers, change nothing else.
     case light
-    /// Same as `light` but with unguided text output (no Generable schema).
+    /// `light` without the Generable schema.
     case lightPlain
-    /// Formatting-only framing: punctuation, paragraphs, and lists with the
-    /// speaker's exact words — the LLM candidate in the structuring bake-off.
+    /// Formatting only (punctuation, paragraphs, lists); keeps the speaker's exact words.
     case structure
 }
 

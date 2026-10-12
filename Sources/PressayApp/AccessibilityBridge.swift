@@ -111,14 +111,11 @@ final class AccessibilityBridge {
             return .copied
         }
 
-        // Paste is the universal primary path. Web/Electron editors can claim that
-        // AXSelectedText was set while silently ignoring the visible edit. A normal
-        // Command-V travels through the active app's responder chain and updates the
-        // real editor at its current cursor in native, Chromium, and Electron apps.
+        // Paste first: Web/Electron editors can report an AXSelectedText write while ignoring it;
+        // Cmd-V reaches the real editor in native, Chromium, and Electron apps alike.
         if pastePreservingClipboard(text) { return .pasted }
 
-        // If Quartz could not create the keyboard events, retain AX replacement as
-        // a best-effort fallback for correctly implemented native text controls.
+        // AX replacement is the fallback only when Quartz can't create key events.
         if let element = target.element {
             let result = AXUIElementSetAttributeValue(
                 element,

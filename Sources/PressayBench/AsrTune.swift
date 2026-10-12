@@ -37,7 +37,7 @@ extension Bench {
         let maxClips = Int(options["max-clips"] ?? "0") ?? 0
         let ids = (options["ids"] ?? "").split(separator: ",").map(String.init)
 
-        // --- Language: default "auto" (nil = autodetect). --language en forces. ---
+        // Default "auto" (nil = autodetect); --language en forces.
         let langArg = options["language"] ?? "auto"
         let language: String? = (langArg == "auto") ? nil : langArg
 
@@ -50,7 +50,6 @@ extension Bench {
         let pnc = parsePnc(options["pnc"])
         let itn = parseItn(options["itn"])
 
-        // --- Load model, report what it actually supports. ---
         let model = try Model(path: ggufPath)
         let session = try model.session()
         let acceptsWhisper = model.accepts(.whisper(WhisperRunOptions()))
@@ -61,7 +60,7 @@ extension Bench {
               "longForm=\(model.supports(.longForm)) acceptsWhisperRunExt=\(acceptsWhisper)")
         print("  run: language=\(language ?? "auto") pnc=\(pnc) itn=\(itn)")
 
-        // --- Whisper family run-extension: only attach if this model takes it. ---
+        // Whisper-family run extension: only attach if this model takes it.
         var family: RunExtension?
         if acceptsWhisper {
             var w = WhisperRunOptions()

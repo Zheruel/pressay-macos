@@ -1,8 +1,6 @@
 import Foundation
 
-/// A single physical key used for push-to-talk. Any key can be bound:
-/// modifier keys are tracked through flagsChanged events, every other key
-/// through keyDown/keyUp.
+/// Modifiers are tracked via flagsChanged, other keys via keyDown/keyUp.
 public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     public let keyCode: Int64
 
@@ -19,13 +17,12 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     public static let escapeKeyCode: Int64 = 53
     public static let capsLockKeyCode: Int64 = 57
 
-    /// Keys that can never be a hold key: Escape cancels dictation and ends
-    /// capture, and Caps Lock toggles instead of holding.
+    /// Escape cancels dictation; Caps Lock toggles instead of holding.
     public static func isBindable(keyCode: Int64) -> Bool {
         keyCode != escapeKeyCode && keyCode != capsLockKeyCode
     }
 
-    /// Legacy persisted values from when HoldKey was a two-case enum.
+    /// Legacy persisted enum values.
     public init?(legacyRawValue: String) {
         switch legacyRawValue {
         case "Right Option": self = .rightOption
@@ -34,29 +31,21 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
         }
     }
 
-    /// CGEventFlags family bit (maskCommand, maskAlternate, …) when this is a
-    /// modifier key; nil for regular keys. Raw values keep Core free of a
-    /// CoreGraphics dependency.
+    /// CGEventFlags raw value; raw keeps Core free of a CoreGraphics dependency.
     public var modifierFlagMask: UInt64? { Self.modifierFamilies[keyCode]?.family }
 
-    /// Device-specific left/right bit (NX_DEVICE…KEYMASK) telling the two keys
-    /// of a modifier family apart in an aggregate flags word.
+    /// NX_DEVICE…KEYMASK left/right bit.
     public var deviceFlagMask: UInt64? { Self.modifierFamilies[keyCode]?.device }
 
-    /// Both device bits of this key's modifier family, used to detect whether
-    /// an event carries device-specific bits at all.
+    /// Detects whether an event carries device-specific bits at all.
     public var familyDeviceBits: UInt64? { Self.modifierFamilies[keyCode]?.familyDevices }
 
     public var isModifier: Bool { modifierFlagMask != nil }
 
     public var displayName: String { Self.keyNames[keyCode] ?? "Key \(keyCode)" }
 
-    /// Whether this modifier key is held, given an event's raw flags word.
-    /// Uses the left/right-specific flag bit when present so the paired key of
-    /// the same family cannot mask this one's release; synthetic events that
-    /// carry no device bits fall back to the aggregate family flag. Shared by
-    /// the event-tap monitor and the key-capture UI so their press semantics
-    /// cannot diverge.
+    /// Prefers the left/right device bit so the paired key can't mask a release; synthetic
+    /// events without device bits fall back to the family flag. Shared by the event tap and key-capture UI.
     public func isDownAsModifier(inFlags rawFlags: UInt64) -> Bool {
         guard let family = modifierFlagMask else { return false }
         guard rawFlags & family != 0 else { return false }
@@ -66,10 +55,7 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
         return rawFlags & device != 0
     }
 
-    /// keyCode → (aggregate family mask, device-specific bit, OR of the
-    /// family's device bits). Family masks are CGEventFlags raw values; device
-    /// bits are NX_DEVICE…KEYMASK. familyDevices is precomputed because the
-    /// lookup runs inside the CGEvent tap callback.
+    /// familyDevices is precomputed because the lookup runs inside the CGEvent tap callback.
     private static let modifierFamilies: [Int64: (family: UInt64, device: UInt64?, familyDevices: UInt64?)] = [
         55: (0x100000, 0x08, 0x18),    // Left Command
         54: (0x100000, 0x10, 0x18),    // Right Command
@@ -107,42 +93,21 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     ]
 }
 
-/// The local speech-to-text model powering dictation. Declaration order is
-/// the Settings picker order: best first, from a blind-judged replay of 24
-/// real dictations (October 2026, see docs/benchmarks.md). Earlier defaults
-/// and language coverage came from the 184-clip corpus replay.
+/// Declaration order is the Settings picker order, best first (see docs/benchmarks.md).
 public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
-    /// Qwen3-ASR 1.7B (Q6_K) — the default. Judged 9.0/10 on real
-    /// dictations, level with Wispr Flow's cloud transcript (9.05), and the
-    /// only engine besides Qwen3-ASR 0.6B that returned nothing for near-silent
-    /// clips. It auto-detects language and transcribe.cpp takes no hint for
-    /// it, so Pressay offers it as English-only to keep the non-Latin
-    /// hallucination filter armed.
+    /// Default: judged 9.0/10, level with Wispr Flow's cloud transcript.
     case qwen3ASR17 = "qwen3ASR17"
-    /// Voxtral Mini 3B (Q4_K_M) — near-best accuracy (8.9) and the strongest
-    /// punctuation, at ~2.4x Qwen's latency and ~1.7x its memory.
+    /// 8.9/10, best punctuation, at ~2.4x Qwen's latency.
     case voxtralMini = "voxtralMini"
-    /// Whisper Large V3 Turbo — the multilingual option at 100 languages, the
-    /// lightest in memory, and the only engine here that chunks long audio
-    /// inside the runtime.
     case whisperTurboGGML = "whisperTurboGGML"
-    /// Qwen3-ASR 0.6B (Q8_0) — the same family at a third of the size; fast
-    /// but clearly less accurate (7.3).
     case qwen3ASR06 = "qwen3ASR06"
-    /// Fun-ASR MLT Nano 2512 (Q6_K) — the 1.4–1.5 default. Fastest, but it
-    /// misheard ordinary words most often on real dictations (7.0). It is
-    /// English-locked with ITN on; both are load-bearing, see
-    /// `supportedLanguages` and `requestsExplicitFormatting`.
+    /// English lock and ITN are load-bearing; see `supportedLanguages`, `requestsExplicitFormatting`.
     case funASRMLTNano = "funASRMLTNano"
 
     public var id: String { rawValue }
 
-    /// The engine to use for a persisted setting written by an older build.
-    /// Retired engines map to their closest surviving replacement; anything
-    /// unrecognized (or absent) falls back to the default.
+    /// Retired or unknown raw values fall back to the default.
     public static func migrating(storedRawValue: String?) -> ASRModel {
-        // Retired raw values ("parakeetV3" from 1.3, "whisperKit" from 1.0)
-        // carry no intent worth preserving, so they land on the default.
         guard let stored = storedRawValue,
               let model = ASRModel(rawValue: stored) else { return .qwen3ASR17 }
         return model
@@ -168,7 +133,6 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// GGUF artifact for the transcribe.cpp engine.
     public var ggufDownload: (url: URL, fileName: String)? {
         switch self {
         case .funASRMLTNano:
@@ -189,27 +153,21 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// Languages offered in Settings for this engine. These describe what the
-    /// engine was measured to do safely, not everything it advertises:
-    /// Fun-ASR left on auto-detect invented whole sentences in Korean and
-    /// Spanish for near-silent clips, and only the English lock removed that.
+    /// What each engine was measured to do safely, not everything it advertises:
+    /// Fun-ASR on auto-detect invented Korean/Spanish sentences for near-silent clips.
     public var supportedLanguages: [TranscriptionLanguage] {
         switch self {
-        // Qwen auto-detects and takes no hint; listing English alone keeps
-        // the non-Latin hallucination filter armed for near-silent clips.
+        // Qwen takes no hint; English-only keeps the non-Latin hallucination filter armed.
         case .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: [.english]
         case .whisperTurboGGML: TranscriptionLanguage.allCases
-        // Voxtral advertises these eight, plus detection. Automatic is the
-        // default because forcing a language made it fabricate a sentence for
-        // near-silent audio during the 1.3 evaluation.
+        // Auto is Voxtral's default: forcing a language made it fabricate text for near-silent audio.
         case .voxtralMini:
             [.auto, .english, .french, .german, .spanish, .italian,
              .portuguese, .dutch, .hindi]
         }
     }
 
-    /// Language to fall back to when the current selection is not in
-    /// `supportedLanguages` — after a model switch, or a stale stored value.
+    /// Used when the current selection isn't in `supportedLanguages`.
     public var defaultLanguage: TranscriptionLanguage {
         switch self {
         case .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: .english
@@ -217,14 +175,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// Longest audio to hand this engine in one run, or nil to let it take
-    /// whatever it accepts. The autoregressive engines generate a transcript
-    /// token by token, so one long decode costs more than two shorter ones:
-    /// splitting at 60 s cut the worst-case wait on the corpus from 3.7 s to
-    /// 2.0 s for Fun-ASR and from 13.3 s to 7.7 s for Voxtral, with the
-    /// transcripts 99.3% identical. Below ~40 s the per-call overhead wins
-    /// again and it gets slower, so 60 s is the measured floor, not a guess.
-    /// Whisper chunks internally and needs none of this.
+    /// Measured: 60 s splits cut Voxtral worst case 13.3 s → 7.7 s; below ~40 s overhead wins. Whisper chunks internally.
     public var preferredChunkSeconds: TimeInterval? {
         switch self {
         case .funASRMLTNano, .voxtralMini, .qwen3ASR17, .qwen3ASR06: 60
@@ -232,10 +183,8 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// Whether Settings should let the user pick a language at all.
     public var offersLanguageChoice: Bool { supportedLanguages.count > 1 }
 
-    /// Explains the language picker's state for the selected engine.
     public var languageCaption: String {
         switch self {
         case .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: "English (this model takes no language hint)"
@@ -244,7 +193,6 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// Whether the engine honors a forced decoding language hint.
     public var supportsLanguageHint: Bool {
         switch self {
         case .funASRMLTNano, .whisperTurboGGML, .voxtralMini: true
@@ -252,14 +200,8 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// Whether to ask the engine for punctuation/capitalization and inverse
-    /// text normalization explicitly. Fun-ASR ships both off and emits
-    /// verbatim lowercase without them — turning ITN on is what moved it from
-    /// 8/46 collapsed long clips to 0/46. Whisper and Voxtral expose no such
-    /// runtime toggle, so they stay on the defaults their earlier calibration
-    /// was measured against. (Requesting it for them is a proven no-op — the
-    /// capability probe declines — but leaving it off keeps the invariant
-    /// that a previously calibrated engine is never silently re-tuned.)
+    /// Fun-ASR ships PnC/ITN off; ITN on cut collapsed long clips 8/46 → 0/46.
+    /// Off elsewhere so calibrated engines are never silently re-tuned.
     public var requestsExplicitFormatting: Bool {
         switch self {
         case .funASRMLTNano: true
@@ -267,16 +209,12 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// True when no language this engine can be set to uses a non-Latin
-    /// script, so foreign-script output cannot be a real transcript.
+    /// If so, foreign-script output cannot be a real transcript.
     var expectsLatinScriptOnly: Bool {
         supportedLanguages.allSatisfy(\.usesLatinScript)
     }
 
-    /// Whether this engine can answer unintelligible audio with an assistant
-    /// reply instead of a transcript. Only the LLM-decoder engines do. Whisper
-    /// is excluded deliberately: it never emits one, and applying the filter
-    /// there would drop a real dictation of "I'm sorry, I didn't understand."
+    /// Whisper excluded: it never refuses, so the filter would drop a real "I'm sorry, I didn't understand."
     var emitsAssistantRefusals: Bool {
         switch self {
         case .funASRMLTNano, .voxtralMini, .qwen3ASR17, .qwen3ASR06: true
@@ -284,12 +222,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// Whether `text` is an artifact rather than dictated words: an
-    /// instruct-tuned model's refusal on unintelligible audio, or a burst of
-    /// another script that an engine invented for near-silent audio. Only
-    /// short, self-contained output is judged, so a real dictation that merely
-    /// *starts* with an apology is left untouched — and the script check is
-    /// skipped for engines that can legitimately transcribe those scripts.
+    /// Only short output is judged, so a real dictation that merely *starts* with an apology survives.
     public func isTranscriptionRefusal(_ text: String) -> Bool {
         guard text.count <= 64 else { return false }
         if emitsAssistantRefusals {
@@ -303,9 +236,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         return expectsLatinScriptOnly && Self.isPredominantlyNonLatin(text)
     }
 
-    /// Most letters fall outside the Latin scripts — Cyrillic, Han, Kana,
-    /// Hangul, Arabic, Devanagari. Punctuation and digits are ignored so a
-    /// short clip like "아, 그거는." still reads as non-Latin.
+    /// Ignores punctuation and digits so "아, 그거는." still reads as non-Latin.
     static func isPredominantlyNonLatin(_ text: String) -> Bool {
         let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) }
         guard !letters.isEmpty else { return false }
@@ -314,9 +245,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     }
 }
 
-/// Language configuration for Whisper decoding. `auto` lets the model detect
-/// the language per audio window; the fixed cases force a language token,
-/// which skips the detection pass and cannot misfire on short clips.
+/// Fixed cases force a language token, skipping detection that can misfire on short clips.
 public enum TranscriptionLanguage: String, CaseIterable, Codable, Sendable, Identifiable {
     case auto = "Automatic"
     case english = "English"
@@ -340,7 +269,6 @@ public enum TranscriptionLanguage: String, CaseIterable, Codable, Sendable, Iden
 
     public var id: String { rawValue }
 
-    /// Value passed to WhisperTranscriber ("auto" enables detection).
     public var whisperCode: String {
         switch self {
         case .auto: "auto"
@@ -365,9 +293,7 @@ public enum TranscriptionLanguage: String, CaseIterable, Codable, Sendable, Iden
         }
     }
 
-    /// Whether transcripts in this language are written in a Latin script.
-    /// `auto` is not: an auto-detecting engine may legitimately return any
-    /// script, so foreign-script output cannot be treated as a hallucination.
+    /// `auto` is false: an auto-detecting engine may legitimately return any script.
     public var usesLatinScript: Bool {
         switch self {
         case .auto, .ukrainian, .russian, .arabic, .hindi,
@@ -382,8 +308,7 @@ public enum TranscriptionLanguage: String, CaseIterable, Codable, Sendable, Iden
 
 public enum DictationPhase: Equatable, Sendable {
     case idle
-    /// Key is down and the mic is opening, but no audio is flowing yet. A cold
-    /// Bluetooth headset spends 500 ms+ here; a warm one skips through it.
+    /// Mic opening, no audio yet; a cold Bluetooth headset spends 500 ms+ here.
     case arming
     case recording
     case processing
@@ -396,7 +321,6 @@ public struct DictationStateMachine: Sendable {
 
     public init() {}
 
-    /// Key went down. Capture is requested but not yet confirmed live.
     @discardableResult
     public mutating func arm() -> Bool {
         guard phase == .idle else { return false }
@@ -404,8 +328,7 @@ public struct DictationStateMachine: Sendable {
         return true
     }
 
-    /// The mic delivered its first real audio. Also accepted straight from
-    /// `.idle` so callers that never arm keep working.
+    /// Also accepted from `.idle` so callers that never arm keep working.
     @discardableResult
     public mutating func begin() -> Bool {
         guard phase == .idle || phase == .arming else { return false }
@@ -413,8 +336,7 @@ public struct DictationStateMachine: Sendable {
         return true
     }
 
-    /// Accepts `.arming` too: releasing the key before the mic opens must still
-    /// hand off to processing rather than stranding the session.
+    /// Accepts `.arming`: releasing before the mic opens must not strand the session.
     @discardableResult
     public mutating func stop() -> Bool {
         guard phase == .recording || phase == .arming else { return false }
@@ -447,19 +369,12 @@ public struct AudioClip: Sendable {
 
 public enum DictationProcessingPolicy {
 
-    /// Shortest capture worth transcribing; the coordinator's cheap pre-check
-    /// and AudioTrimmer's guard must agree on this.
+    /// The coordinator's pre-check and AudioTrimmer's guard must agree on this.
     public static let minimumClipDuration: TimeInterval = 0.25
 
-    /// How long the mic stays open after a dictation.
-    ///
-    /// Tuned against 548 real gaps: the median is 35 s, and coverage runs
-    /// 40% at 30 s → 49.5% at 45 s → 53.5% at 60 s. 45 s clears the median and
-    /// sits on the knee — past it each extra second buys much less.
+    /// 45 s clears the 35 s median of 548 real inter-dictation gaps and sits on the coverage knee.
     public static let micWarmWindow: TimeInterval = 45
 
-    /// Audio retained ahead of the key press while the mic is already warm, so
-    /// speaking and pressing in the same motion keeps its word onset.
     public static let preRollDuration: TimeInterval = 0.5
 
     /// A hang guard, not a latency target: 10x+ the worst Qwen3-ASR time seen (2.5 s over 111 dictations).

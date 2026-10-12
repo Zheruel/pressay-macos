@@ -34,14 +34,12 @@ final class MicWarmPolicyTests: XCTestCase {
         )
     }
 
-    /// Guards the tuning itself: the window has to clear the observed 35 s
-    /// median gap or it misses the most common back-to-back dictation.
+    /// 35 s is the observed median gap between back-to-back dictations.
     func testWindowClearsTheObservedMedianGap() {
         XCTAssertGreaterThan(window, 35)
     }
 
-    /// Opening the mic unprompted would light the recording indicator for a
-    /// user who never dictated.
+    /// Opening the mic unprompted would light the recording indicator.
     func testNeverWarmsBeforeTheFirstDictation() {
         XCTAssertFalse(MicWarmPolicy.shouldStayWarm(conditions(endedSecondsAgo: nil), now: epoch))
     }
@@ -52,8 +50,7 @@ final class MicWarmPolicyTests: XCTestCase {
         )
     }
 
-    /// Holding a headset in its call profile while the user is listening to
-    /// something costs more than the cold start it saves.
+    /// Holding a headset in its call profile degrades playback.
     func testBluetoothYieldsToPlayback() {
         XCTAssertFalse(
             MicWarmPolicy.shouldStayWarm(
@@ -67,7 +64,6 @@ final class MicWarmPolicyTests: XCTestCase {
         )
     }
 
-    /// A wired input has no call profile to protect, so playback is irrelevant.
     func testWiredInputIgnoresPlayback() {
         XCTAssertTrue(
             MicWarmPolicy.shouldStayWarm(

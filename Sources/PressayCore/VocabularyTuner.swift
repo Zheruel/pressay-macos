@@ -198,8 +198,7 @@ public enum VocabularyTuner {
             let heard = finding.heard.trimmingCharacters(in: .whitespacesAndNewlines)
             let meant = finding.meant.trimmingCharacters(in: .whitespacesAndNewlines)
             // A heard term that is itself an anchor must never become a rule:
-            // it would rewrite the user's own vocabulary (same guard as the
-            // deterministic path).
+            // it would rewrite the user's own vocabulary.
             guard !heard.isEmpty,
                   !hasFunctionWordEdge(heard),
                   anchorFolds.contains(meant.lowercased()),
@@ -239,12 +238,8 @@ public enum VocabularyTuner {
 
     // MARK: - Spelling agreement
 
-    /// Phonetic keys drop vowels and keep raw first letters, so on their own
-    /// they equate "backend" with Cognito, "Porsche" with Pressay and "the
-    /// links" with Telnyx — all proposed when the daily pass was replayed over
-    /// 4,691 real dictations with a 90-term vocabulary. Real mishearings also
-    /// start the same way, have about the same length, and split where the
-    /// term does.
+    /// Phonetic keys alone equate "backend" with Cognito and "Porsche" with Pressay (seen replaying
+    /// 4,691 dictations). Real mishearings also share the term's start, length, and word splits.
     public static func spellingAgrees(heard: String, anchor: String) -> Bool {
         let heardLetters = heard.lowercased().filter(\.isLetter)
         let anchorLetters = anchor.lowercased().filter(\.isLetter)
@@ -307,9 +302,7 @@ public enum VocabularyTuner {
         "this", "to", "we", "with", "you", "your",
     ]
 
-    /// "Whisperflow I" was accepted by the LLM judge and then swallowed the
-    /// pronoun from every "Whisperflow I think…". A mishearing never needs a
-    /// function word on its edge.
+    /// A mishearing never needs a function word on its edge ("Whisperflow I" swallowed the "I" of "I think…").
     public static func hasFunctionWordEdge(_ term: String) -> Bool {
         let words = term.lowercased().split(whereSeparator: { !$0.isLetter && $0 != "'" })
         guard words.count > 1, let first = words.first, let last = words.last else { return false }

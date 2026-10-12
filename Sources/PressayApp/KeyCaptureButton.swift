@@ -2,9 +2,7 @@ import AppKit
 import PressayCore
 import SwiftUI
 
-/// Wispr-Flow-style hotkey recorder: click, then press any key to bind it.
-/// Modifier keys are captured on press (flagsChanged); Escape cancels capture
-/// and can never be bound.
+/// Modifier keys bind on press (flagsChanged); Escape cancels capture and can never be bound.
 struct KeyCaptureButton: View {
     @Binding var key: HoldKey
     var onChange: () -> Void

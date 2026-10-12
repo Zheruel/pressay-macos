@@ -7,22 +7,6 @@ final class AudioResamplerTests: XCTestCase {
         return (0..<count).map { Float(sin(2 * .pi * frequency * Double($0) / rate)) }
     }
 
-    func testConvertsFortyEightKilohertzSegment() throws {
-        let converted = try AudioResampler.convert(
-            sine(frequency: 440, rate: 48_000, duration: 1),
-            from: 48_000
-        )
-        XCTAssertLessThanOrEqual(abs(converted.count - 16_000), 32)
-    }
-
-    func testConvertsTwentyFourKilohertzSegment() throws {
-        let converted = try AudioResampler.convert(
-            sine(frequency: 440, rate: 24_000, duration: 1),
-            from: 24_000
-        )
-        XCTAssertLessThanOrEqual(abs(converted.count - 16_000), 32)
-    }
-
     func testMixedRateSegmentsConcatenateToExpectedLength() throws {
         let segments: [(samples: [Float], rate: Double)] = [
             (sine(frequency: 440, rate: 48_000, duration: 0.5), 48_000),

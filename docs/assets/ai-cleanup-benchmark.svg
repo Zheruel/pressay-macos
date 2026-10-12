@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="478" viewBox="0 0 1200 478" role="img" aria-labelledby="title desc">
+<title id="title">AI Cleanup beats rules and Wispr Flow</title><desc id="desc">Claude Sonnet 5.5 scores 8.9, Claude Haiku 5.5 8.7, Wispr Flow 7.7 and on-device rules 7.6 out of 10.</desc>
+<defs><style>
+.bg{fill:#f5f5f7} .card{fill:#ffffff;stroke:#e3e3e8;stroke-width:1} .t1{fill:#1d1d1f} .t2{fill:#6e6e73} .t3{fill:#8e8e93}
+.track{fill:#ececf0} .sep{stroke:#e5e5ea;stroke-width:1} .side{fill:#f2f2f5} .sel{fill:#dcdce2} .chip{fill:#ececf0}
+.blue{fill:#0a84ff} .gray{fill:#aeaeb2} .green{fill:#30c75a} .orange{fill:#ff9f0a} .purple{fill:#8e5cf7} .red{fill:#ff453a}
+.bluet{fill:#0a70e0} .greent{fill:#1f9d45} .purplet{fill:#7a45e6}
+text{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Helvetica,Arial,sans-serif}
+.h1{font-size:30px;font-weight:700} .h2{font-size:17px;font-weight:600} .b{font-size:15px;font-weight:500} .s{font-size:13px;font-weight:500} .xs{font-size:11.5px;font-weight:600;letter-spacing:.6px}
+.num{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+@media (prefers-color-scheme: dark){
+.bg{fill:#161618} .card{fill:#232326;stroke:#38383c} .t1{fill:#f5f5f7} .t2{fill:#a1a1a6} .t3{fill:#8e8e93}
+.track{fill:#2f2f33} .sep{stroke:#38383c} .side{fill:#1c1c1f} .sel{fill:#3a3a3e} .chip{fill:#323236}
+.bluet{fill:#4da3ff} .greent{fill:#4cd572} .purplet{fill:#ad8bff}
+}
+</style>
+<filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#000" flood-opacity=".14"/></filter>
+<filter id="soft" x="-10%" y="-10%" width="120%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity=".08"/></filter>
+</defs>
+<rect class="bg" width="1200" height="478" rx="24"/>
+<text x="56" y="76" class="t1 h1">AI Cleanup beats rules and Wispr Flow</text>
+<text x="56" y="106" class="t2 b">Blind-judged replay of 102 real dictations · score out of 10 · added latency on the right</text>
+<rect class="card" x="40" y="126" width="1120" height="276" rx="18" filter="url(#soft)"/>
+<text x="72" y="174" class="t1 h2">Claude Sonnet 5.5</text>
+<text x="72" y="194" class="t2 s">Best quality</text>
+<rect class="track" x="360" y="158" width="680" height="20" rx="10"/>
+<rect class="blue" x="360" y="158" width="530" height="20" rx="10"/>
+<text x="1062" y="174" class="t1 num">8.9</text>
+<text x="1110" y="174" class="t2 s">~1.3 s</text>
+<line class="sep" x1="72" x2="1128" y1="207.0" y2="207.0"/>
+<text x="72" y="236" class="t1 h2">Claude Haiku 5.5</text>
+<text x="72" y="256" class="t2 s">Recommended · under $1/month</text>
+<rect class="track" x="360" y="220" width="680" height="20" rx="10"/>
+<rect class="blue" x="360" y="220" width="503" height="20" rx="10"/>
+<text x="1062" y="236" class="t1 num">8.7</text>
+<text x="1110" y="236" class="t2 s">~1.0 s</text>
+<line class="sep" x1="72" x2="1128" y1="269.0" y2="269.0"/>
+<text x="72" y="298" class="t1 h2">Wispr Flow</text>
+<text x="72" y="318" class="t2 s">Its own cloud cleanup</text>
+<rect class="track" x="360" y="282" width="680" height="20" rx="10"/>
+<rect class="gray" x="360" y="282" width="367" height="20" rx="10"/>
+<text x="1062" y="298" class="t1 num">7.7</text>
+<text x="1110" y="298" class="t2 s">—</text>
+<line class="sep" x1="72" x2="1128" y1="331.0" y2="331.0"/>
+<text x="72" y="360" class="t1 h2">On-device rules</text>
+<text x="72" y="380" class="t2 s">No AI, no network</text>
+<rect class="track" x="360" y="344" width="680" height="20" rx="10"/>
+<rect class="gray" x="360" y="344" width="354" height="20" rx="10"/>
+<text x="1062" y="360" class="t1 num">7.6</text>
+<text x="1110" y="360" class="t2 s">0 s</text>
+<text x="56" y="442" class="t3 s">Judge: Claude Opus 5.5, shuffled labels, two passes. Wispr Flow scored on the 22 clips recorded in it. Bars start at 5.</text>
+</svg>

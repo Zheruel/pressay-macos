@@ -2,8 +2,7 @@
 import Foundation
 import os
 
-/// Converts microphone audio to Whisper's 16 kHz input with a proper
-/// anti-aliasing filter. Package visibility keeps this out of the public API.
+/// Resamples to 16 kHz with an anti-aliasing filter.
 package enum AudioResampler {
     package static func convert(
         _ samples: [Float],

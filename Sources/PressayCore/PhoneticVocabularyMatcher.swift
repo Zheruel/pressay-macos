@@ -1,13 +1,8 @@
 import Foundation
 
-/// Runtime fallback for vocabulary words the ASR misspelled in a way no alias
-/// lists ("Superbase" → Supabase, "Grockpot" → Grokbot). One sighting is all
-/// the evidence a dictation has, so every gate errs toward leaving text alone:
-/// only single non-English words qualify, the spelling must agree
-/// (`VocabularyTuner.spellingAgrees`), the key must be long enough to be distinctive,
-/// and the nearest term must be unique and at most one phonetic edit away.
-/// Replayed over 4,700 real dictations, looser gates rewrote "codebase" to
-/// Codex and "Singapore" to Scooper; these ones did not.
+/// Runtime fallback for vocabulary words misspelled in a way no alias lists ("Superbase" → Supabase).
+/// One sighting is all the evidence, so every gate errs toward leaving text alone. Replayed over 4,700
+/// dictations, looser gates rewrote "codebase" → Codex and "Singapore" → Scooper.
 public enum PhoneticVocabularyMatcher {
     /// Letters only, never part of an email, path, domain, hyphenated compound
     /// or identifier with digits; those are deliberate spellings.
