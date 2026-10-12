@@ -20,9 +20,9 @@ final class PermissionController: ObservableObject {
         }
         var detail: String {
             switch self {
-            case .microphone: "Records while you hold the dictation key, plus a half-second before it."
-            case .accessibility: "Inserts the finished prompt at your cursor."
-            case .inputMonitoring: "Detects your hold-to-talk key in any application."
+            case .microphone: "Listens only while you hold your talk key."
+            case .accessibility: "Types the finished text at your cursor."
+            case .inputMonitoring: "Notices your talk key in any app."
             }
         }
         var systemImage: String {
@@ -93,6 +93,8 @@ final class PermissionController: ObservableObject {
     func requestMicrophone() async {
         microphoneGranted = await AVCaptureDevice.requestAccess(for: .audio)
         refresh()
+        // A previously denied record returns false without a prompt.
+        if !microphoneGranted { openPrivacySettings(for: .microphone) }
     }
 
     func requestAccessibility() {

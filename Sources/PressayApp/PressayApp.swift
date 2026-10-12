@@ -43,6 +43,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    nonisolated func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            guard AppCoordinator.shared.liveSession != nil else { return .terminateNow }
+            Task { @MainActor in
+                await AppCoordinator.shared.finishRecordingForQuit()
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
+        }
+    }
+
     // ggml's Metal device teardown aborts in a C++ static destructor during
     // normal exit(); skipping atexit handlers avoids a crash report per quit.
     nonisolated func applicationWillTerminate(_ notification: Notification) {

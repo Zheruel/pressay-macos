@@ -9,13 +9,24 @@ final class DictationSoundPlayer {
         case cancel
         case error
 
+        /// Must match scripts/generate-earcons.py; begin also sizes the earcon trim window.
         var duration: TimeInterval {
             switch self {
-            case .begin: 0.135
-            case .release: 0.135
-            case .learned: 0.28
-            case .cancel: 0.065
-            case .error: 0.115
+            case .begin: 0.17
+            case .release: 0.16
+            case .learned: 0.3
+            case .cancel: 0.09
+            case .error: 0.2
+            }
+        }
+
+        var assetName: String {
+            switch self {
+            case .begin: "dictation-begin"
+            case .release: "dictation-release"
+            case .learned: "dictation-learned"
+            case .cancel: "dictation-cancel"
+            case .error: "dictation-error"
             }
         }
     }
@@ -36,8 +47,9 @@ final class DictationSoundPlayer {
 
     init() {
         engine.attach(player)
-        assetBuffers[.begin] = loadBuffer(named: "dictation-begin")
-        assetBuffers[.release] = loadBuffer(named: "dictation-release")
+        for cue in [Cue.begin, .release, .learned, .cancel, .error] {
+            assetBuffers[cue] = loadBuffer(named: cue.assetName)
+        }
         connectPlayer()
         try? catchingObjCException { try engine.start() }
         configurationObserver = NotificationCenter.default.addObserver(

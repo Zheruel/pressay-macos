@@ -160,11 +160,11 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
 
     public var caption: String {
         switch self {
-        case .qwen3ASR17: "#1 · Best accuracy · English · recommended · ~1.7 GB download · ~3 GB memory"
-        case .voxtralMini: "#2 · Near-best accuracy · 8 languages · slower · ~3 GB download · ~5 GB memory"
-        case .whisperTurboGGML: "#3 · Good accuracy · 100 languages · lightest · ~0.9 GB download"
-        case .qwen3ASR06: "#4 · Fast · English · less accurate · ~0.9 GB download"
-        case .funASRMLTNano: "#5 · Fastest · English · least accurate · ~0.7 GB download"
+        case .qwen3ASR17: "Most accurate. English only. Uses 3 GB of memory."
+        case .voxtralMini: "Nearly as accurate, but slower. 8 languages. Uses 5 GB of memory."
+        case .whisperTurboGGML: "Good accuracy. 100 languages. Uses 1 GB of memory."
+        case .qwen3ASR06: "Faster, but less accurate. English only."
+        case .funASRMLTNano: "Fastest and least accurate. English only."
         }
     }
 
@@ -446,7 +446,6 @@ public struct AudioClip: Sendable {
 }
 
 public enum DictationProcessingPolicy {
-    public static let normalPipelineLimit: TimeInterval = 1.85
 
     /// Shortest capture worth transcribing; the coordinator's cheap pre-check
     /// and AudioTrimmer's guard must agree on this.
@@ -463,9 +462,9 @@ public enum DictationProcessingPolicy {
     /// speaking and pressing in the same motion keeps its word onset.
     public static let preRollDuration: TimeInterval = 0.5
 
+    /// A hang guard, not a latency target: 10x+ the worst Qwen3-ASR time seen (2.5 s over 111 dictations).
     public static func asrTimeout(duration: TimeInterval) -> TimeInterval {
-        guard duration >= 30 else { return normalPipelineLimit }
-        return min(30, max(6, 2 + duration * 0.12))
+        min(180, max(20, 10 + duration * 0.5))
     }
 }
 
@@ -518,7 +517,7 @@ public enum PressayError: LocalizedError, Sendable {
         case .silence: "No speech was detected."
         case .modelUnavailable(let detail): "The local model is unavailable: \(detail)"
         case .emptyTranscript: "The model returned an empty transcript."
-        case .timedOut: "Local processing exceeded the latency budget."
+        case .timedOut: "Local transcription stalled. Try again."
         }
     }
 }

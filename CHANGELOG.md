@@ -2,6 +2,33 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-10-12
+
+### Added
+
+- Optional Claude cleanup. Add an Anthropic API key in Settings and Claude Haiku 5.5 fixes misheard words and typos, removes fillers and false starts, and formats each dictation into clean text, without changing what was said. Only transcript text is sent; audio never leaves the Mac. In a blind-judged replay of 102 real dictations it scored 8.7/10, against 7.6 for on-device rules and 7.7 for Wispr Flow's own cleanup, adding ~1 s for under $1 a month. Claude Sonnet 5.5 (8.9/10, ~1.3 s) is offered for the best quality. Terminals and dictations of three words or fewer skip it, and on a timeout or error the on-device result is inserted. See `docs/claude-cleanup/`.
+- Cleanup can run on your ChatGPT Plus or Pro plan instead of an API key. Choose ChatGPT under Settings › AI Cleanup and click Continue with ChatGPT; sign-in happens in your browser (OAuth with PKCE, no password or key ever reaches Pressay) and tokens are kept in a private file in Application Support. GPT-6.1 Sol is the default: in the same replay it scored 7.96/10, the best of everything tested (Sonnet 5.5 7.85, Haiku 5.5 7.67, GPT-6 Luna 7.17), adding about 3.3 s. GPT-6 Luna runs at medium reasoning effort, which scored 7.42 against 7.15 at low with no added latency. Requests count toward your plan's shared usage limits; when you hit one, Pressay inserts the on-device result and links to Manage usage.
+- Meeting notes. Click Record Meeting in the menu bar or the new Notes window and Pressay transcribes the call live, on this Mac: your microphone as "You" and everything the Mac plays as "Others", through a Core Audio process tap, so no bot joins the call and it works with Zoom, Meet, Teams, Slack or anything else. The transcript grows after each pause; type your own notes underneath and they are worked into the write-up. On Stop, your AI Cleanup provider writes a titled note: a short summary, decisions, action items with owners, discussion by topic and open questions. Switch between Note and Transcript, resume a meeting later, edit, share or copy. Audio is never saved. The prompt was tuned over five blind-judged rounds on 12 meetings; see `docs/notes/meetings/`. The first meeting asks for System Audio Recording permission.
+- Voice notes: record yourself in the Notes window and get a titled, organized note with a to-do list (Organized, Clean or Summary style).
+- The dictionary learns from your corrections. When you retype a word Pressay just inserted, close matches are learned at once and looser ones wait under Dictionary › Suggestions, along with names that keep recurring in your dictations and fixes AI Cleanup keeps making.
+
+### Changed
+
+- New synthesized earcons: soft mallet-on-glass notes that rise on start and fall on release, plus matching cancel, error and learned cues.
+- The recording overlay is now a Dynamic Island–style shape that grows out of the notch (or the top edge on screens without one), so it never covers the text you're writing. It shows an orange mic with a voice-reactive pulse, a running timer and live voice bars while recording; "Transcribing", then "Polishing" while Claude cleans up; and a green check with "Inserted" before folding back into the notch. Errors and learned-word toasts expand it downward. Reduce Motion tones all of it down.
+- Settings redesigned to match macOS 26 System Settings: a floating glass sidebar with colored icon tiles, a hero header on each pane, and native grouped forms. Claude Cleanup asks for the key first when none is set, validates it on Return, and shows only its last four characters once saved. Dictionary is searchable, groups learned spellings under the word they map to, and has hover and right-click remove. History is grouped by day, with Copy, Paste Again and Delete in the context menu. The menu bar menu shows the status, your talk key and the last three dictations.
+- Onboarding is a single native welcome window: three feature rows, permission rows with Allow buttons, and one Start Dictating button.
+- "Claude Cleanup" is now "AI Cleanup", with a Claude / ChatGPT provider choice.
+- The dictionary is now a plain word list that Claude Cleanup also reads. In a 102-dictation replay, giving Claude the dictionary raised scores from 7.61 to 7.96; "sounds like" aliases added nothing measurable (7.94 without them), so they are optional.
+
+### Fixed
+
+- Dictations of 10 to 30 seconds could fail with "Local processing exceeded the latency budget": clips under 30 s had a flat 1.85 s transcription budget, and real ones take up to ~1.7 s, so any brief slowdown dropped the transcript. The limit is now only a hang guard (20 s minimum, growing with length).
+
+### Removed
+
+- The Kimi review stage of the vocabulary tuner and its first-run explainer. The tuner now learns only on-device, from close matches to your dictionary words.
+
 ## [1.6.0] - 2026-10-07
 
 ### Changed
@@ -139,6 +166,7 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 - Replaced the previous WhisperKit transcription path with the faster GGUF runtime.
 - Removed automatic on-device LLM rewriting from standard dictation after protected-token testing found meaning-changing edits.
 
+[1.7.0]: https://github.com/Zheruel/pressay-macos/releases/tag/v1.7.0
 [1.3.0]: https://github.com/Zheruel/pressay-macos/releases/tag/v1.3.0
 [1.2.0]: https://github.com/Zheruel/pressay-macos/releases/tag/v1.2.0
 [1.0.0]: https://github.com/Zheruel/pressay-macos/releases/tag/v1.0.0

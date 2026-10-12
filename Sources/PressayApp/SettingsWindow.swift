@@ -14,7 +14,7 @@ enum ForegroundWindowPresenter {
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     init(coordinator: AppCoordinator) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 860, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -22,16 +22,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
 
         window.title = "Pressay Settings"
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
+        // Keeps the titlebar height steady when a pane adds toolbar items.
+        window.toolbar = NSToolbar(identifier: "PressaySettings")
         window.toolbarStyle = .unified
-        window.minSize = NSSize(width: 760, height: 540)
-        // The content column is capped at ~760 pt; letting the window stretch
-        // arbitrarily wide just strands it in empty space.
-        window.maxSize = NSSize(width: 1080, height: CGFloat.greatestFiniteMagnitude)
+        window.minSize = NSSize(width: 740, height: 520)
+        // Wider strands grouped-form rows in empty space.
+        window.maxSize = NSSize(width: 920, height: CGFloat.greatestFiniteMagnitude)
         window.isReleasedWhenClosed = false
         window.center()
-        window.setFrameAutosaveName("PressaySettingsWindow")
+        window.setFrameAutosaveName("PressaySettingsWindow26")
         // A frame autosaved before the width cap existed can exceed maxSize;
         // restore only clamps future resizes, so clamp the restored frame too.
         if window.frame.width > window.maxSize.width {
@@ -39,7 +38,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             frame.size.width = window.maxSize.width
             window.setFrame(frame, display: false)
         }
-        window.contentView = NSHostingView(rootView: SettingsRootView(coordinator: coordinator))
+        let hosting = NSHostingController(rootView: SettingsRootView(coordinator: coordinator))
+        // Lets the split view own the toolbar and floating sidebar.
+        hosting.sceneBridgingOptions = [.toolbars, .title]
+        hosting.sizingOptions = []
+        window.contentViewController = hosting
+        window.setContentSize(NSSize(width: 780, height: 640))
         window.delegate = self
     }
 

@@ -22,5 +22,10 @@ fi
 
 rm -rf "$DEST"
 ditto "$APP" "$DEST"
-open "$DEST"
+if [[ "${PRESSAY_NO_KEYCHAIN:-}" == 1 ]]; then
+    # Iteration launches: no keychain read, so no password prompt per rebuild.
+    open --env PRESSAY_NO_KEYCHAIN=1 "$DEST"
+else
+    open "$DEST"
+fi
 echo "Installed and relaunched $DEST"

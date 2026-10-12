@@ -21,7 +21,8 @@ struct KeyCaptureButton: View {
             capturing ? stopCapture() : startCapture()
         } label: {
             Text(capturing ? "Press a key…" : key.displayName)
-                .frame(width: 135)
+                .frame(minWidth: 90)
+                .monospacedDigit()
                 .contentTransition(.opacity)
         }
         .onDisappear { stopCapture() }

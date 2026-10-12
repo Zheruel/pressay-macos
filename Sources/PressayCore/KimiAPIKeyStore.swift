@@ -1,12 +1,16 @@
 import Foundation
 import Security
 
-/// The user's Kimi API key in the login keychain (never plain preferences).
-public enum KimiAPIKeyStore {
-    private static let service = "dev.localflow.app"
-    private static let account = "kimi-api-key"
+/// One API key in the login keychain (never plain preferences).
+public struct KeychainSecret: Sendable {
+    private let service = "dev.localflow.app"
+    private let account: String
 
-    private static var baseQuery: [String: Any] {
+    public init(account: String) {
+        self.account = account
+    }
+
+    private var baseQuery: [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -14,7 +18,7 @@ public enum KimiAPIKeyStore {
         ]
     }
 
-    public static func read() -> String? {
+    public func read() -> String? {
         var query = baseQuery
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -25,14 +29,29 @@ public enum KimiAPIKeyStore {
     }
 
     @discardableResult
-    public static func save(_ key: String) -> Bool {
+    public func save(_ key: String) -> Bool {
         SecItemDelete(baseQuery as CFDictionary)
         var attributes = baseQuery
         attributes[kSecValueData as String] = Data(key.utf8)
         return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
     }
 
-    public static func clear() {
+    public func clear() {
         SecItemDelete(baseQuery as CFDictionary)
     }
+}
+
+public enum KimiAPIKeyStore {
+    private static let secret = KeychainSecret(account: "kimi-api-key")
+    public static func read() -> String? { secret.read() }
+    @discardableResult public static func save(_ key: String) -> Bool { secret.save(key) }
+    public static func clear() { secret.clear() }
+}
+
+/// The user's Anthropic API key; its presence turns on Claude cleanup.
+public enum ClaudeAPIKeyStore {
+    private static let secret = KeychainSecret(account: "claude-api-key")
+    public static func read() -> String? { secret.read() }
+    @discardableResult public static func save(_ key: String) -> Bool { secret.save(key) }
+    public static func clear() { secret.clear() }
 }
