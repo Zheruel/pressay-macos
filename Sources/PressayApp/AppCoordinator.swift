@@ -128,7 +128,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         reloadClaudeKey()
         callDetector.onEvent = { [weak self] in self?.handleCall($0) }
         callSettingsWatch = settings.$detectCalls.sink { [weak self] in self?.applyCallDetection($0) }
-        for note in notes.notes where note.needsWriteUp { writeUpNote(note.id, nameSpeakers: true) }
+        for note in notes.notes where note.needsWriteUp { writeUpNote(note.id, review: true) }
         // Independent of TCC onboarding.
         Task { await prepareModel() }
         Task { @MainActor in tunerRunner.scheduleIfNeeded(history: history, settings: settings) }
@@ -1081,12 +1081,12 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             note.lines.sort { $0.start < $1.start }
             note.title = Self.placeholderTitle(note)
         }
-        writeUpNote(id, nameSpeakers: true)
+        writeUpNote(id, review: true)
     }
 
     /// Hand-edited notes are rewritten only when `replacingEdits`, after the user confirms.
-    /// `nameSpeakers` first asks the AI to name told-apart voices, right after a recording.
-    func writeUpNote(_ id: UUID, replacingEdits: Bool = false, nameSpeakers: Bool = false) {
+    /// `review` first names speakers and fixes misheard terms, once, right after a recording.
+    func writeUpNote(_ id: UUID, replacingEdits: Bool = false, review: Bool = false) {
         guard settings.notesUseAI, notesModel != nil, let note = notes.note(id), !note.formatting,
               !note.edited || replacingEdits, note.kind == .meeting, !note.lines.isEmpty else { return }
         let hasNotes = !note.myNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1100,7 +1100,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         Task { [weak self] in
             guard let self else { return }
             defer { notes.modify(id, persist: false) { $0.formatting = false } }
-            if nameSpeakers { await self.nameSpeakers(id) }
+            if review { await reviewTranscript(id) }
             guard let note = notes.note(id) else { return }
             let user = MeetingPrompt.user(
                 lines: note.lines, userNotes: note.myNotes, participants: note.participants, speakerNames: note.speakerNames
@@ -1126,27 +1126,27 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    /// Fills in names for unnamed voices that introduced themselves or were addressed by name. Never overwrites the user's names.
-    private func nameSpeakers(_ id: UUID) async {
-        guard let note = notes.note(id), note.voices.contains(where: { note.speakerNames.count < $0 || note.speakerNames[$0 - 1].isEmpty })
-        else { return }
-        let names: [Int: String]
+    /// Names told-apart voices (never overwriting the user's names) and fixes misheard names and terms.
+    private func reviewTranscript(_ id: UUID) async {
+        guard let note = notes.note(id), !note.lines.isEmpty else { return }
+        let review: TranscriptReview.Result
         do {
             let reply = try await completeNote(
-                system: SpeakerNamingPrompt.system,
-                user: SpeakerNamingPrompt.user(lines: note.lines, participants: note.participants),
+                system: TranscriptReview.system(vocabulary: settings.vocabularyEntries),
+                user: TranscriptReview.user(lines: note.lines, participants: note.participants),
                 timeout: 60 + note.duration / 120
             )
-            names = SpeakerNamingPrompt.parse(reply, lines: note.lines, participants: note.participants)
+            review = TranscriptReview.parse(reply, lines: note.lines, participants: note.participants)
         } catch {
-            logger.notice("Speaker naming skipped: \(error.localizedDescription, privacy: .public)")
+            logger.notice("Transcript review skipped: \(error.localizedDescription, privacy: .public)")
             return
         }
-        logger.info("Named \(names.count, privacy: .public) of \(note.voices.count, privacy: .public) voices")
-        guard !names.isEmpty else { return }
+        logger.info("Review named \(review.names.count, privacy: .public) of \(note.voices.count, privacy: .public) voices, \(review.fixes.count, privacy: .public) fixes")
+        guard !review.names.isEmpty || !review.fixes.isEmpty else { return }
         notes.modify(id, keepOrder: true) { note in
-            note.speakerNames = Note.merging(names, into: note.speakerNames)
-            for name in names.values.sorted() where !note.participants.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+            note.lines = TranscriptReview.apply(review.fixes, to: note.lines)
+            note.speakerNames = Note.merging(review.names, into: note.speakerNames)
+            for name in review.names.values.sorted() where !note.participants.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
                 note.participants.append(name)
             }
         }

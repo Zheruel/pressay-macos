@@ -56,6 +56,7 @@ let package = Package(
                 "PressayCore",
                 "PressayTranscription",
                 "PressayPostProcessing",
+                .product(name: "FluidAudio", package: "FluidAudio"),
             ]
         ),
         .executableTarget(

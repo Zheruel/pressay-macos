@@ -55,7 +55,7 @@ final class LiveSession: ObservableObject {
         voices = system != nil && separateVoices ? VoiceSeparator() : nil
 
         let (stream, continuation) = AsyncStream<SegmentPipeline.Item>.makeStream()
-        pipeline = SegmentPipeline(continuation: continuation)
+        pipeline = SegmentPipeline(continuation: continuation, detector: kind == .meeting ? SpeechDetector.make() : nil)
         if let voices {
             pipeline.othersTap = { voices.append($0) }
         }
@@ -173,7 +173,7 @@ final class LiveSession: ObservableObject {
         phase = .finishing
         mic.stop()
         system?.stop()
-        pipeline.finish()
+        await pipeline.finish()
         await workerTask?.value
         if let voices {
             let turns = await voices.finish().map { VoiceTurn(start: offset + $0.start, end: offset + $0.end, speaker: $0.speaker) }
@@ -189,7 +189,7 @@ final class LiveSession: ObservableObject {
         onLine = nil
         mic.stop()
         system?.stop()
-        pipeline.finish()
+        pipeline.cancel()
         workerTask?.cancel()
         voices?.cancel()
     }
@@ -203,7 +203,6 @@ final class SegmentPipeline: @unchecked Sendable {
     }
 
     private let queue = DispatchQueue(label: "dev.localflow.app.segmenter", qos: .userInitiated)
-    private var segmenters: [TranscriptLine.Speaker: SpeechSegmenter] = [:]
     private var levelSamples: [TranscriptLine.Speaker: (sum: Float, count: Int)] = [:]
     private let continuation: AsyncStream<Item>.Continuation
     private var finished = false
@@ -215,8 +214,38 @@ final class SegmentPipeline: @unchecked Sendable {
     var othersTap: (@Sendable ([Float]) -> Void)?
     var onLevel: (@Sendable (TranscriptLine.Speaker, Float) -> Void)?
 
-    init(continuation: AsyncStream<Item>.Continuation) {
+    /// Audio waiting for the voice activity model, in arrival order.
+    private let audio: AsyncStream<(TranscriptLine.Speaker, [Float])>.Continuation
+    private var segmenting: Task<Void, Never>?
+
+    init(continuation: AsyncStream<Item>.Continuation, detector: SpeechDetector? = nil) {
         self.continuation = continuation
+        let (stream, audio) = AsyncStream<(TranscriptLine.Speaker, [Float])>.makeStream()
+        self.audio = audio
+        segmenting = Task.detached(priority: .userInitiated) { [self] in
+            var segmenters: [TranscriptLine.Speaker: SpeechSegmenter] = [:]
+            var buffers: [TranscriptLine.Speaker: [Float]] = [:]
+            func feed(_ chunk: [Float], _ speaker: TranscriptLine.Speaker, speech: Bool?) {
+                var segmenter = segmenters[speaker] ?? Self.makeSegmenter()
+                for segment in segmenter.append(chunk, speech: speech) { emit(segment, speaker) }
+                segmenters[speaker] = segmenter
+            }
+            for await (speaker, samples) in stream {
+                var buffer = buffers[speaker, default: []] + samples
+                while buffer.count >= SpeechDetector.chunk {
+                    let chunk = Array(buffer.prefix(SpeechDetector.chunk))
+                    buffer.removeFirst(SpeechDetector.chunk)
+                    feed(chunk, speaker, speech: await detector?.isSpeech(chunk, from: speaker))
+                }
+                buffers[speaker] = buffer
+            }
+            guard !Task.isCancelled else { return }
+            for (speaker, rest) in buffers where !rest.isEmpty { feed(rest, speaker, speech: nil) }
+            for (speaker, var segmenter) in segmenters {
+                if let last = segmenter.finish() { emit(last, speaker) }
+            }
+            continuation.finish()
+        }
     }
 
     func append(_ samples: [Float], from speaker: TranscriptLine.Speaker) {
@@ -228,10 +257,7 @@ final class SegmentPipeline: @unchecked Sendable {
             stat.peak = max(stat.peak, samples.reduce(0) { max($0, abs($1)) })
             stats[speaker] = stat
             if speaker == .others { othersTap?(samples) }
-            var segmenter = segmenters[speaker] ?? Self.makeSegmenter()
-            let done = segmenter.append(samples)
-            segmenters[speaker] = segmenter
-            for segment in done { emit(segment, speaker) }
+            audio.yield((speaker, samples))
 
             var level = levelSamples[speaker] ?? (0, 0)
             level.sum += samples.reduce(0) { $0 + $1 * $1 }
@@ -253,22 +279,32 @@ final class SegmentPipeline: @unchecked Sendable {
         queue.sync { stats[speaker]?.peak ?? 0 }
     }
 
-    func finish() {
+    /// Flushes what's still being segmented, then ends the stream of segments.
+    func finish() async {
+        let first = queue.sync {
+            defer { finished = true }
+            return !finished
+        }
+        guard first else { return }
+        audio.finish()
+        await segmenting?.value
         queue.sync {
-            guard !finished else { return }
-            finished = true
             for (speaker, stat) in stats {
                 logger.info("\(speaker.rawValue, privacy: .public): \(Double(stat.samples) / 16_000, privacy: .public)s peak \(stat.peak, privacy: .public) segments \(stat.segments, privacy: .public)")
             }
-            for (speaker, var segmenter) in segmenters {
-                if let last = segmenter.finish() { emit(last, speaker) }
-            }
-            continuation.finish()
         }
     }
 
+    /// Stops at once, dropping audio not yet segmented.
+    func cancel() {
+        queue.sync { finished = true }
+        segmenting?.cancel()
+        audio.finish()
+        continuation.finish()
+    }
+
     private func emit(_ segment: SpeechSegmenter.Segment, _ speaker: TranscriptLine.Speaker) {
-        stats[speaker, default: (0, 0, 0)].segments += 1
+        queue.async { [self] in stats[speaker, default: (0, 0, 0)].segments += 1 }
         onQueued?()
         continuation.yield(Item(speaker: speaker, segment: segment))
     }

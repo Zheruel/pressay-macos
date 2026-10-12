@@ -98,6 +98,8 @@ struct Bench {
             try await runPost(options: options)
         case "discover":
             try runDiscover(options: options)
+        case "meeting":
+            try await runMeeting(options: options)
         default:
             throw BenchError.usage("unknown subcommand \(command)")
         }

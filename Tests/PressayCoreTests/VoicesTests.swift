@@ -61,7 +61,7 @@ struct VoicesTests {
         #expect(!MeetingPrompt.user(lines: [TranscriptLine(speaker: .others, start: 0, text: "Hi")]).contains("told apart"))
     }
 
-    @Test func namingKeepsOnlyNamesTheTranscriptSupports() {
+    @Test func reviewKeepsOnlyNamesTheTranscriptSupports() {
         let lines = [
             TranscriptLine(speaker: .me, start: 0, text: "Tomasz, you want to go first?"),
             TranscriptLine(speaker: .others, start: 2, text: "Sure, so this week I", voice: 1),
@@ -69,13 +69,27 @@ struct VoicesTests {
             TranscriptLine(speaker: .others, start: 12, text: "Thanks", voice: 3),
         ]
         let reply = """
-        Here you go: {"1": "Tomasz", "2": "Priya", "3": "Gregory", "4": "Ana", "x": "Bo"}
+        Here you go: {"speakers": {"1": "Tomasz", "2": "Priya", "3": "Gregory", "4": "Ana", "x": "Bo"}, "fixes": []}
         """
-        #expect(SpeakerNamingPrompt.parse(reply, lines: lines, participants: []) == [1: "Tomasz", 2: "Priya"])
+        let parse = { TranscriptReview.parse($0, lines: lines, participants: $1).names }
+        #expect(parse(reply, []) == [1: "Tomasz", 2: "Priya"])
         // A participant the user typed counts even when unheard.
-        #expect(SpeakerNamingPrompt.parse(#"{"3": "gregory"}"#, lines: lines, participants: ["Gregory"]) == [3: "gregory"])
+        #expect(parse(#"{"speakers": {"3": "gregory"}}"#, ["Gregory"]) == [3: "gregory"])
         // Two voices with one name: name neither.
-        #expect(SpeakerNamingPrompt.parse(#"{"1": "Priya", "2": "Priya"}"#, lines: lines, participants: []).isEmpty)
-        #expect(SpeakerNamingPrompt.parse("I can't tell.", lines: lines, participants: []).isEmpty)
+        #expect(parse(#"{"speakers": {"1": "Priya", "2": "Priya"}}"#, []).isEmpty)
+        #expect(parse("I can't tell.", []).isEmpty)
+    }
+
+    @Test func fixesApplyToWholeWordsOnlyAndMustOccur() {
+        let lines = [
+            TranscriptLine(speaker: .others, start: 0, text: "Kubernetis is down, also the remold.", voice: 1),
+            TranscriptLine(speaker: .me, start: 4, text: "Restart Kubernetis then."),
+        ]
+        let reply = #"{"fixes": [{"from": "Kubernetis", "to": "Kubernetes"}, {"from": "the remold", "to": "the remote"}, {"from": "al", "to": "Al"}, {"from": "never said", "to": "x"}, {"from": "down", "to": "down"}]}"#
+        let fixes = TranscriptReview.parse(reply, lines: lines, participants: []).fixes
+        #expect(fixes == [.init(from: "Kubernetis", to: "Kubernetes"), .init(from: "the remold", to: "the remote")])
+        let fixed = TranscriptReview.apply(fixes + [.init(from: "al", to: "Al")], to: lines)
+        #expect(fixed.map(\.text) == ["Kubernetes is down, also the remote.", "Restart Kubernetes then."])
+        #expect(fixed[0].voice == 1)
     }
 }
