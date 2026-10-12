@@ -41,13 +41,6 @@ public struct KeychainSecret: Sendable {
     }
 }
 
-public enum KimiAPIKeyStore {
-    private static let secret = KeychainSecret(account: "kimi-api-key")
-    public static func read() -> String? { secret.read() }
-    @discardableResult public static func save(_ key: String) -> Bool { secret.save(key) }
-    public static func clear() { secret.clear() }
-}
-
 /// The user's Anthropic API key; its presence turns on Claude cleanup.
 public enum ClaudeAPIKeyStore {
     private static let secret = KeychainSecret(account: "claude-api-key")
