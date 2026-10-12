@@ -100,6 +100,12 @@ struct ActionItemTests {
         #expect(ActionItem.toggling(items[0], in: "Intro\n" + body) == "Intro\n- [x] Ship it\n- [x] Fix [ ] markup")
     }
 
+    @Test func rewordedItemsCountAsSent() {
+        let sent = ["Send deck to Dana", "Draft 1.8 release notes"]
+        let items = ActionItem.parse("- [ ] Send the deck to Dana (me)\n- [ ] Draft the release notes for 1.8\n- [ ] Send the invoice to Dana")
+        #expect(items.map { $0.wasSent(sent) } == [true, true, false])
+    }
+
     @Test func writeUpKeepsTicks() {
         let old = "- [x] Send the deck (me)\n- [ ] Call Dana"
         let new = "## Action items\n- [ ] Send the deck (me)\n- [ ] Call Dana (Leo)"

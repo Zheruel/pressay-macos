@@ -1215,7 +1215,7 @@ struct RemindersButton: View {
 
     var body: some View {
         let open = ActionItem.parse(note.body).filter { !$0.done && ($0.isMine || (includeUnowned && $0.owner == nil)) }
-        let unsent = open.filter { !note.sentToReminders.contains($0.text) }
+        let unsent = open.filter { !$0.wasSent(note.sentToReminders) }
         if !open.isEmpty {
             if unsent.isEmpty {
                 Label("In Reminders", systemImage: "checkmark")

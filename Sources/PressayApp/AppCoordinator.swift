@@ -1170,7 +1170,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     @discardableResult
     func addToReminders(_ items: [ActionItem], noteID: UUID) async -> Bool {
         guard let note = notes.note(noteID), !sendingToReminders.contains(noteID) else { return false }
-        let fresh = items.filter { !$0.done && !note.sentToReminders.contains($0.text) }
+        let fresh = items.filter { !$0.done && !$0.wasSent(note.sentToReminders) }
         guard !fresh.isEmpty else { return true }
         sendingToReminders.insert(noteID)
         defer { sendingToReminders.remove(noteID) }
