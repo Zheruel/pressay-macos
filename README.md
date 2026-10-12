@@ -34,7 +34,7 @@ No account, no telemetry, no subscription. Audio never leaves the Mac.
 - **AI Cleanup (optional).** Fixes misheard words, removes fillers and false starts, and formats lists and paragraphs, without changing what you said. Runs on your Anthropic API key or your ChatGPT Plus/Pro plan. Only text is sent. It matches the app: casual in Slack, full sentences in Mail, tidy paragraphs in Notes.
 - **Command Mode.** Hold Shift with your talk key and say what to do. Select text and say "make this shorter" or "translate to German", or say "write a reply saying I'm running late" with nothing selected.
 - **Snippets.** Say "my calendar link" and Pressay types the URL. Works inside any dictation.
-- **Notetaker.** Offers to take notes when a call starts. Records your mic as "You" and everything the Mac plays as "Others", so it works with Zoom, Meet, Teams or Slack and no bot joins the call. When the call ends you get a titled note with a summary, decisions, action items with owners, and open questions. Ask anything about one meeting or all of them, and keep your action items in one list or send them to Reminders.
+- **Notetaker.** Offers to take notes when a call starts. Records your mic as "You" and tells the other people on the call apart on-device (Speaker 1, Speaker 2, or their names), so it works with Zoom, Meet, Teams or Slack and no bot joins the call. When the call ends you get a titled note with a summary, decisions, action items with owners, and open questions. Ask anything about one meeting or all of them, and keep your action items in one list or send them to Reminders.
 - **A dictionary that learns.** Retype a word Pressay got wrong and it learns the spelling. Names that keep recurring are suggested. Both the on-device rules and AI Cleanup use the dictionary.
 - **Fast start.** The mic stays warm for 45 s after a dictation, with a 0.5 s pre-roll, so your first word is never clipped. The start sound plays only once real audio arrives.
 
@@ -88,9 +88,9 @@ When Zoom, Teams, Meet, FaceTime, Slack or another call app starts using the mic
 
 - A small notepad floats above your apps with the timer, the live transcript and your own notes.
 - Your mic is recorded with echo cancellation. Call audio comes from a Core Audio process tap; the first meeting asks for **System Audio Recording** permission.
-- Each utterance is transcribed on the Mac as soon as the speaker pauses.
+- An on-device voice activity model finds speech, even from quiet participants, and each utterance is transcribed on the Mac as soon as the speaker pauses.
+- Up to four other voices are told apart on the Mac. After the call, the AI names a speaker only when they introduced themselves or were addressed by name, and fixes misheard names and terms using your Dictionary. Rename speakers from the meeting header.
 - When the call ends (or you click **Stop**), the AI writes the note. Each meeting has **Summary**, **Transcript** and **My Notes** tabs, and an **Ask anything** box. Past meetings are grouped by day and searchable, and you can ask questions across all of them.
-- Add the names of the people on the call so the notes say who said what and spell them right.
 - **Action items** collects what you (or everyone) agreed to do across meetings. Tick them off, or add them to Reminders.
 - Pick the model under the gear on the Notetaker page: Claude Haiku 5.5 (recommended) or Sonnet 5.5 with an API key, GPT-6.1 Sol (recommended) or GPT-6 Luna with a ChatGPT plan. Only providers you have set up are listed.
 - Audio is never saved. Only the transcript and your notes go to the AI provider, to write the note or answer a question.
@@ -178,7 +178,7 @@ Benchmarks: [ASR](docs/benchmarks.md), [AI Cleanup](docs/claude-cleanup/README.m
 ## Known limitations
 
 - macOS 26+ and Apple Silicon only.
-- Meeting transcripts label speakers only as You and Others; there is no diarization.
+- Speaker separation tells apart up to four other voices and works best on meetings under an hour; a line is occasionally given to the wrong person.
 - Insertion relies on Accessibility; some custom editors behave differently.
 - Accuracy varies with microphone, accent and noise. Review text before running destructive agent commands.
 - No notarized binaries yet.
