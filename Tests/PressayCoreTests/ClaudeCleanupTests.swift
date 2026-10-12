@@ -59,8 +59,10 @@ final class ClaudeCleanupTests: XCTestCase {
 
     func testPolicySkipsShortTextAndTerminals() {
         XCTAssertFalse(ClaudeCleanupPolicy.shouldClean("Does this work?", isTerminal: false))
-        XCTAssertTrue(ClaudeCleanupPolicy.shouldClean("Please run all the tests", isTerminal: false))
-        XCTAssertFalse(ClaudeCleanupPolicy.shouldClean("Please run all the tests", isTerminal: true))
+        XCTAssertFalse(ClaudeCleanupPolicy.shouldClean("Please run all the tests", isTerminal: false))
+        let longer = "Please run all the tests and then tell me which ones failed"
+        XCTAssertTrue(ClaudeCleanupPolicy.shouldClean(longer, isTerminal: false))
+        XCTAssertFalse(ClaudeCleanupPolicy.shouldClean(longer, isTerminal: true))
     }
 
     func testPlausibilityRejectsAnswersAndTruncations() {

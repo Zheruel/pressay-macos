@@ -109,8 +109,8 @@ final class AudioRecorder: @unchecked Sendable {
         // A warm mic keeps its converged noise floor; openEngine() resets a fresh one.
         lastLevelUpdate = Date()
         announcedFirstAudio = false
-        earconWindow = nil
         lock.withLock {
+            earconWindow = nil
             finishedSegments.removeAll()
             samples = drainPreRollLocked()
             isRecording = true
@@ -151,11 +151,26 @@ final class AudioRecorder: @unchecked Sendable {
     func markEarcon(duration: TimeInterval) {
         guard isRecording else { return }
         // Whole-capture time, not per segment: an HFP flip seals segment 0 and would reset this to 0.
-        let elapsed = lock.withLock {
-            finishedSegments.reduce(0.0) { $0 + Double($1.samples.count) / max($1.sampleRate, 1) }
+        lock.withLock {
+            let elapsed = finishedSegments.reduce(0.0) { $0 + Double($1.samples.count) / max($1.sampleRate, 1) }
                 + Double(samples.count) / max(sampleRate, 1)
+            earconWindow = elapsed..<(elapsed + duration)
         }
-        earconWindow = elapsed..<(elapsed + duration)
+    }
+
+    struct LiveAudio: Sendable {
+        let samples: [Float]
+        let sampleRate: Double
+        let earconWindow: Range<TimeInterval>?
+    }
+
+    /// What the dictation has captured from `offset` on, for transcribing while the key is held.
+    /// Nil when not recording or once the hardware format changed (the whole clip is transcribed then).
+    func liveAudio(from offset: Int) -> LiveAudio? {
+        lock.withLock {
+            guard isRecording, finishedSegments.isEmpty, offset <= samples.count else { return nil }
+            return LiveAudio(samples: Array(samples[offset...]), sampleRate: sampleRate, earconWindow: earconWindow)
+        }
     }
 
     /// Release/cancel cues play into the warm stream and would otherwise lead the *next* dictation.

@@ -100,6 +100,8 @@ struct Bench {
             try runDiscover(options: options)
         case "meeting":
             try await runMeeting(options: options)
+        case "incremental":
+            try await runIncremental(options: options)
         default:
             throw BenchError.usage("unknown subcommand \(command)")
         }

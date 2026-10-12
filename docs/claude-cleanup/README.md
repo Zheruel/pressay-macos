@@ -111,7 +111,7 @@ Average request is ~2.2k input tokens (2.1k of it is the cacheable instruction b
 ## Implementation notes
 
 - Send the system prompt (with vocabulary) with `cache_control`, and keep it byte-stable so it caches. Put app and transcript in the user turn.
-- Skip the API for very short text (≤3 words) and in terminals, or keep the terminal rule in the prompt.
+- Skip the API for short text (under 10 words; see `docs/benchmarks.md`, "Dictation speed") and in terminals.
 - On timeout or error (e.g. a ~3 s budget), fall back to rules-only output.
 - Opt-in: enabled only when a Claude API key is in the keychain or a ChatGPT plan is signed in.
 
