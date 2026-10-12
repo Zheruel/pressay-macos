@@ -23,10 +23,8 @@ public enum ChatGPTCleanupModel {
     /// Best score in the 102-dictation replay (7.96 vs Sonnet 7.85, Haiku 7.67) at ~3.3 s.
     public static let defaultSlug = "gpt-6.1-sol"
 
-    /// "low" is the floor every model accepts (Sol rejects "none"); Luna's medium beats low at equal latency.
-    public static func effort(for slug: String) -> String? {
-        slug.contains("luna") ? "medium" : "low"
-    }
+    /// Medium beat low on Luna and matched it on Sol, at equal latency on both.
+    public static let effort = "medium"
 
     /// "gpt-6-luna" → "GPT-6 Luna", for slugs the catalog hasn't named yet.
     public static func displayName(for slug: String) -> String {

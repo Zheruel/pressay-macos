@@ -6,9 +6,9 @@ Can a Claude model replace the rules-only cleanup step (DeterministicPromptClean
 
 Yes. Pressay ships **Haiku 5.5, effort `medium`, with `prompt.txt`** as the default: +1.2 points over the rules-only output on a 0–10 judged scale, ~1.0 s median added latency, under $1/month at 100 dictations/day with prompt caching.
 
-**Sonnet 5.5, effort `low`, thinking off** is offered for the best quality: +0.2 over Haiku (+0.39 on held-out clips), ~0.3 s slower, ~$5/month.
+**Sonnet 5.5, effort `medium`** is offered for the best quality: +0.2 over Haiku (+0.39 on held-out clips), ~0.3 s slower, ~$5/month.
 
-On a ChatGPT plan, **GPT-6.1 Sol at effort `low`** is the default (see below).
+On a ChatGPT plan, **GPT-6.1 Sol at effort `medium`** is the default (see below). All models run at `medium` since October 2026 (see "Effort recheck").
 
 Keep **Qwen3-ASR 1.7B** as the speech model. Claude cannot recover words the ASR got wrong, so smaller ASR models lose quality even after cleanup.
 
@@ -98,6 +98,26 @@ Same 102 clips and prompt, judged blind by Haiku 5.5 over 2 passes. Scores are o
 | GPT-6 Luna, effort high | 7.37 | p90 6.6 s |
 
 Luna at medium beats low by +0.27 (95% CI +0.05 to +0.50) at no extra latency, so Pressay runs Luna at medium. High bought nothing.
+
+## Effort recheck: medium everywhere
+
+64 recent dictations into Claude and Codex, judged blind by Opus 5.5 over 2 passes:
+
+| Setup | vs Sonnet low | Meaning changed | Median latency |
+|---|---:|---:|---:|
+| GPT-6.1 Sol medium | +0.37 | 3% | 5.4 s |
+| GPT-6.1 Sol low | +0.32 | 6% | 5.3 s |
+| Sonnet 5.5 medium | +0.05 (n.s.) | 3% | 1.6 s |
+| Sonnet 5.5 low | — | 9% | 1.6 s |
+| Haiku 5.5 medium | −0.46 | 16% | 1.3 s |
+
+Medium costs no latency on Sonnet or Sol and changed meaning less often, so every model now runs at `medium`. Lower effort buys no speed either: Haiku with thinking off, low and medium all took 1.2–1.3 s with the same output length, and a minimal system prompt was no faster than the full one (it is cached). On a fresh 40-clip set judged blind by Opus subagents, Sol high beat Sol low by +0.12 (5 wins, 0 losses) but took roughly twice as long, so Sol stays at medium (tied with low). Low vs medium differences are within noise; on the longest clips the outputs differ only in wording.
+
+Two further prompt variants (targeted fixes for restarts and trailing fragments; an XML-sectioned rewrite) looked better on a 40-clip dev set but not on 40 fresh clips (Haiku −0.10/+0.03, Sonnet −0.07/−0.15), so they did not ship.
+
+The judge's notes on the remaining errors pointed at one prompt-fixable pattern: plainly misheard everyday words left in place (poll for PR, tiles for files, thundercloud for SonarCloud). A rule with generic examples ("rebase the brunch" -> branch) fixed 2 of 14 such dictations on Sonnet and 4 on Haiku, with no false corrections on 10 clean controls, so it ships in `prompt.txt`.
+
+An "AI prompt mode" (rewriting dictation into an optimized agent prompt) was also tested and dropped: on Sonnet the output was ~94% identical to normal cleanup, and on Haiku it lost hedges and rewrote requests.
 
 ## Latency and cost
 

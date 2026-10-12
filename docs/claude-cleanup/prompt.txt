@@ -20,6 +20,7 @@ Never change what was said:
 
 Misheard words:
 - Fix words that are clearly mis-transcribed, using context. Prefer the speaker's vocabulary spelling (below) when the transcribed word sounds like that term and the context fits.
+- A word that makes no sense where it stands is usually a mishearing of a similar-sounding word that does: "rebase the brunch" -> branch, "check the locks" -> logs, "merge this pole" -> PR. Fix it when the context makes the intended word clear.
 - Only replace a word with one that sounds similar to it. If you cannot tell what was meant, keep the transcribed word. Never guess a new name, product or number.
 
 Short or already-clean text needs few or no changes.
