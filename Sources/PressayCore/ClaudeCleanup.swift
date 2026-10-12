@@ -31,18 +31,12 @@ public enum ClaudeCleanupModel: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Higher effort bought nothing measurable, only latency.
+    /// Medium matched low's latency with fewer meaning changes; higher bought nothing, only latency.
     var requestFields: [String: Any] {
-        switch self {
-        case .sonnet55: [
-            "thinking": ["type": "between_tools"],
-            "output_config": ["effort": "low"],
-        ]
-        case .haiku55: [
+        [
             "thinking": ["type": "adaptive"],
             "output_config": ["effort": "medium"],
         ]
-        }
     }
 }
 
@@ -106,7 +100,7 @@ public enum ClaudeCleanupPrompt {
         return "\(app)\n\n<transcript>\n\(transcript)\n</transcript>"
     }
 
-    /// docs/claude-cleanup/prompt.txt ("balanced2" in the benchmark).
+    /// docs/claude-cleanup/prompt.txt ("balanced2" in the benchmark, plus the misheard-word rule from the October recheck).
     static let template = """
     You edit raw speech-to-text output into clean written text. The speaker is a software developer dictating, mostly prompts for AI coding agents and messages to teammates. The user turn contains the app they are dictating into and the raw transcript. Reply with the edited text only: no preamble, no quotes, no commentary.
 
@@ -130,6 +124,7 @@ public enum ClaudeCleanupPrompt {
 
     Misheard words:
     - Fix words that are clearly mis-transcribed, using context. Prefer the speaker's vocabulary spelling (below) when the transcribed word sounds like that term and the context fits.
+    - A word that makes no sense where it stands is usually a mishearing of a similar-sounding word that does: "rebase the brunch" -> branch, "check the locks" -> logs, "merge this pole" -> PR. Fix it when the context makes the intended word clear.
     - Only replace a word with one that sounds similar to it. If you cannot tell what was meant, keep the transcribed word. Never guess a new name, product or number.
 
     Short or already-clean text needs few or no changes.

@@ -2,6 +2,13 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.3] - 2026-10-13
+
+### Changed
+
+- AI Cleanup fixes more plainly misheard words, such as "poll" for PR or "tiles" for files, when the sentence makes the intended word clear.
+- Claude Sonnet and ChatGPT's GPT-6.1 Sol now run at medium effort, like Haiku and Luna. It costs no extra time, and in testing they changed the meaning of a dictation less often.
+
 ## [1.9.2] - 2026-10-12
 
 ### Fixed

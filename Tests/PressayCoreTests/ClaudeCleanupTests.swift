@@ -29,8 +29,8 @@ final class ClaudeCleanupTests: XCTestCase {
         let message = try XCTUnwrap((body["messages"] as? [[String: Any]])?.first)
         XCTAssertEqual(message["content"] as? String,
                        "App: com.openai.codex\n\n<transcript>\nuse telnex\n</transcript>")
-        XCTAssertEqual(body["thinking"] as? [String: String], ["type": "between_tools"])
-        XCTAssertEqual(body["output_config"] as? [String: String], ["effort": "low"])
+        XCTAssertEqual(body["thinking"] as? [String: String], ["type": "adaptive"])
+        XCTAssertEqual(body["output_config"] as? [String: String], ["effort": "medium"])
 
         let haiku = ClaudeCleaner.requestBody(
             transcript: "x", targetBundleID: nil, vocabulary: vocabulary, model: .haiku55)

@@ -332,7 +332,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 style: style,
                 vocabulary: vocabulary,
                 model: settings.chatGPTModel,
-                effort: ChatGPTCleanupModel.effort(for: settings.chatGPTModel),
+                effort: ChatGPTCleanupModel.effort,
                 accessToken: token,
                 timeout: timeout
             )
@@ -360,7 +360,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             let token = try await chatGPT.accessToken()
             return try await chatGPTCleaner.complete(
                 instructions: CommandPrompt.system, user: user, model: settings.chatGPTModel,
-                effort: ChatGPTCleanupModel.effort(for: settings.chatGPTModel), accessToken: token, timeout: timeout
+                effort: ChatGPTCleanupModel.effort, accessToken: token, timeout: timeout
             )
         }
     }
@@ -1243,7 +1243,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             let token = try await chatGPT.accessToken()
             return try await chatGPTCleaner.complete(
                 instructions: system, user: user, model: slug,
-                effort: ChatGPTCleanupModel.effort(for: slug), accessToken: token, timeout: timeout
+                effort: ChatGPTCleanupModel.effort, accessToken: token, timeout: timeout
             )
         case nil:
             throw NotesAIError.notConfigured
