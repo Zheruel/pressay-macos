@@ -100,8 +100,9 @@ public enum ClaudeCleanupPrompt {
         template.replacingOccurrences(of: "{vocab}", with: vocabularyBlock(vocabulary))
     }
 
-    public static func user(transcript: String, targetBundleID: String?) -> String {
-        "App: \(targetBundleID ?? "unknown")\n\n<transcript>\n\(transcript)\n</transcript>"
+    public static func user(transcript: String, targetBundleID: String?, style: AppStyle? = nil) -> String {
+        let app = "App: \(targetBundleID ?? "unknown")" + (style.map { "\n\($0.guidance)" } ?? "")
+        return "\(app)\n\n<transcript>\n\(transcript)\n</transcript>"
     }
 
     /// docs/claude-cleanup/prompt.txt ("balanced2" in the benchmark).
@@ -174,6 +175,7 @@ public struct ClaudeCleaner: Sendable {
     public static func requestBody(
         transcript: String,
         targetBundleID: String?,
+        style: AppStyle? = nil,
         vocabulary: [VocabularyParser.Entry],
         model: ClaudeCleanupModel
     ) -> [String: Any] {
@@ -188,7 +190,7 @@ public struct ClaudeCleaner: Sendable {
             ]],
             "messages": [[
                 "role": "user",
-                "content": ClaudeCleanupPrompt.user(transcript: transcript, targetBundleID: targetBundleID),
+                "content": ClaudeCleanupPrompt.user(transcript: transcript, targetBundleID: targetBundleID, style: style),
             ]],
         ]
         body.merge(model.requestFields) { _, new in new }
@@ -223,6 +225,7 @@ public struct ClaudeCleaner: Sendable {
     public func clean(
         _ transcript: String,
         targetBundleID: String?,
+        style: AppStyle? = nil,
         vocabulary: [VocabularyParser.Entry],
         model: ClaudeCleanupModel,
         apiKey: String,
@@ -233,6 +236,7 @@ public struct ClaudeCleaner: Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: Self.requestBody(
             transcript: transcript,
             targetBundleID: targetBundleID,
+            style: style,
             vocabulary: vocabulary,
             model: model
         ))

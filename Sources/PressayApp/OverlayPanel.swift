@@ -4,9 +4,14 @@ import SwiftUI
 
 enum OverlayStyle {
     case dictation
+    /// Command Mode: the speech is an instruction, not text to insert.
+    case command
 
     var colors: [Color] {
-        [Color(red: 0.63, green: 0.42, blue: 1), Color(red: 0.48, green: 0.82, blue: 1)]
+        switch self {
+        case .dictation: [Color(red: 0.63, green: 0.42, blue: 1), Color(red: 0.48, green: 0.82, blue: 1)]
+        case .command: [Color(red: 1, green: 0.45, blue: 0.3), Color(red: 1, green: 0.78, blue: 0.3)]
+        }
     }
 
     var gradient: LinearGradient {
@@ -331,6 +336,11 @@ private struct IslandView: View {
         }
     }
 
+    private var processingLabel: String {
+        if state.polishing { return state.style == .command ? "Writing" : "Polishing" }
+        return "Transcribing"
+    }
+
     private var earTransition: AnyTransition {
         reduceMotion ? .opacity : AnyTransition(.blurReplace).combined(with: .scale(scale: 0.7))
     }
@@ -368,7 +378,7 @@ private struct IslandView: View {
                 case .recording:
                     LiveBars(levels: state.levels, style: state.style, dimmed: false)
                 case .processing:
-                    ShimmerText(text: state.polishing ? "Polishing" : "Transcribing", animated: !reduceMotion)
+                    ShimmerText(text: processingLabel, animated: !reduceMotion)
                 case .succeeded:
                     Text("Inserted")
                         .font(.system(size: 12.5, weight: .semibold))

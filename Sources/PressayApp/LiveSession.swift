@@ -25,6 +25,8 @@ final class LiveSession: ObservableObject {
     @Published private(set) var pending = 0
     @Published var notice: String?
     var createdNote = false
+    /// Started from a detected call, so the call ending may stop it.
+    var fromCall = false
 
     var onLine: ((TranscriptLine) -> Void)?
 

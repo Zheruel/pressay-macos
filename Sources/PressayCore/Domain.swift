@@ -41,6 +41,8 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     public var familyDeviceBits: UInt64? { Self.modifierFamilies[keyCode]?.familyDevices }
 
     public var isModifier: Bool { modifierFlagMask != nil }
+    /// Shift is Command Mode's modifier, so a Shift hold key has no Command Mode.
+    public var isShift: Bool { modifierFlagMask == 0x20000 }
 
     public var displayName: String { Self.keyNames[keyCode] ?? "Key \(keyCode)" }
 

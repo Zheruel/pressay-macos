@@ -45,7 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     nonisolated func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MainActor.assumeIsolated {
-            guard AppCoordinator.shared.liveSession != nil else { return .terminateNow }
+            guard AppCoordinator.shared.liveSession != nil else {
+                AppCoordinator.shared.notes.flush()
+                return .terminateNow
+            }
             Task { @MainActor in
                 await AppCoordinator.shared.finishRecordingForQuit()
                 NSApp.reply(toApplicationShouldTerminate: true)

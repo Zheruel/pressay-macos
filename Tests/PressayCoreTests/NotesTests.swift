@@ -2,15 +2,6 @@ import XCTest
 @testable import PressayCore
 
 final class NotePromptTests: XCTestCase {
-    func testOrganizedPromptMatchesBenchmarkedText() throws {
-        let path = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "docs/notes/prompt-v4.txt").path
-        let prompt = NotePrompt.system(style: .organized, vocabulary: [.init(preferred: "Telnyx")])
-        let benchmarked = try String(contentsOfFile: path, encoding: .utf8)
-        XCTAssertEqual(prompt, benchmarked.trimmingCharacters(in: .newlines).replacingOccurrences(of: "{vocab}", with: "Telnyx"))
-    }
-
     func testParseSplitsTitleAndBody() throws {
         let note = try XCTUnwrap(NotePrompt.parse("# Dutch dialect detection.\n\nWe need a model.\n\n## To do\n- [ ] Pick one"))
         XCTAssertEqual(note.title, "Dutch dialect detection")

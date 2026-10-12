@@ -21,11 +21,18 @@ final class AppSettings: ObservableObject {
         static let chatGPTModel = "chatGPTModel"
         static let chatGPTWelcomeShown = "chatGPTWelcomeShown"
         static let learnFromEdits = "learnFromEdits"
-        static let noteStyle = "noteStyle"
+        static let notesModel = "notesModel"
+        static let snippets = "snippets"
+        static let matchAppStyle = "matchAppStyle"
+        static let detectCalls = "detectCalls"
+        static let stopWhenCallEnds = "stopWhenCallEnds"
+        static let openNotepad = "openNotepad"
+        static let showLiveTranscript = "showLiveTranscript"
+        static let maxMeetingHours = "maxMeetingHours"
         static let notesUseAI = "notesUseAI"
         static let meetingSystemAudio = "meetingSystemAudio"
         /// Legacy keys from removed Vibe Mode; cleared once at init.
-        static let retired = ["polishHoldKeyCode", "polishModel"]
+        static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle"]
     }
 
     private let defaults: UserDefaults
@@ -54,7 +61,17 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(chatGPTWelcomeShown, forKey: Key.chatGPTWelcomeShown) }
     }
     @Published var learnFromEdits: Bool { didSet { defaults.set(learnFromEdits, forKey: Key.learnFromEdits) } }
-    @Published var noteStyle: NoteStyle { didSet { defaults.set(noteStyle.rawValue, forKey: Key.noteStyle) } }
+    @Published var snippets: [Snippet] {
+        didSet { defaults.set(try? JSONEncoder().encode(snippets), forKey: Key.snippets) }
+    }
+    @Published var matchAppStyle: Bool { didSet { defaults.set(matchAppStyle, forKey: Key.matchAppStyle) } }
+    /// A `NotesModel.id`; empty follows the AI Cleanup provider.
+    @Published var notesModel: String { didSet { defaults.set(notesModel, forKey: Key.notesModel) } }
+    @Published var detectCalls: Bool { didSet { defaults.set(detectCalls, forKey: Key.detectCalls) } }
+    @Published var stopWhenCallEnds: Bool { didSet { defaults.set(stopWhenCallEnds, forKey: Key.stopWhenCallEnds) } }
+    @Published var openNotepad: Bool { didSet { defaults.set(openNotepad, forKey: Key.openNotepad) } }
+    @Published var showLiveTranscript: Bool { didSet { defaults.set(showLiveTranscript, forKey: Key.showLiveTranscript) } }
+    @Published var maxMeetingHours: Int { didSet { defaults.set(maxMeetingHours, forKey: Key.maxMeetingHours) } }
     /// Off keeps notes on-device.
     @Published var notesUseAI: Bool { didSet { defaults.set(notesUseAI, forKey: Key.notesUseAI) } }
     @Published var meetingSystemAudio: Bool {
@@ -90,7 +107,14 @@ final class AppSettings: ObservableObject {
         learnedVocabulary = LearnedVocabularyStore(defaults: defaults)
         vocabularySuggestions = VocabularySuggestionStore(defaults: defaults)
         learnFromEdits = defaults.object(forKey: Key.learnFromEdits) as? Bool ?? true
-        noteStyle = NoteStyle(rawValue: defaults.string(forKey: Key.noteStyle) ?? "") ?? .default
+        notesModel = defaults.string(forKey: Key.notesModel) ?? ""
+        snippets = defaults.data(forKey: Key.snippets).flatMap { try? JSONDecoder().decode([Snippet].self, from: $0) } ?? []
+        matchAppStyle = defaults.object(forKey: Key.matchAppStyle) as? Bool ?? true
+        detectCalls = defaults.object(forKey: Key.detectCalls) as? Bool ?? true
+        stopWhenCallEnds = defaults.object(forKey: Key.stopWhenCallEnds) as? Bool ?? true
+        openNotepad = defaults.object(forKey: Key.openNotepad) as? Bool ?? true
+        showLiveTranscript = defaults.object(forKey: Key.showLiveTranscript) as? Bool ?? true
+        maxMeetingHours = defaults.object(forKey: Key.maxMeetingHours) as? Int ?? 3
         notesUseAI = defaults.object(forKey: Key.notesUseAI) as? Bool ?? true
         meetingSystemAudio = defaults.object(forKey: Key.meetingSystemAudio) as? Bool ?? true
         holdKey = Self.readHoldKey(

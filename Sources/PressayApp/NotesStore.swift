@@ -24,9 +24,17 @@ struct Note: Codable, Identifiable, Equatable {
     var myNotes = ""
     /// AI write-up in flight (not persisted).
     var formatting = false
+    /// Why the last write-up failed (not persisted).
+    var writeUpError: String?
+    /// Recorded but not written up yet, e.g. the app quit mid-meeting.
+    var needsWriteUp = false
+    /// Who else was on the call, as the user typed them.
+    var participants: [String] = []
+    /// Action item lines already sent to Reminders, so they aren't added twice.
+    var sentToReminders: [String] = []
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, createdAt, updatedAt, title, body, transcripts, edited, lines, duration, myNotes
+        case id, kind, createdAt, updatedAt, title, body, transcripts, edited, lines, duration, myNotes, needsWriteUp, participants, sentToReminders
     }
 
     init(id: UUID = UUID(), kind: Kind, title: String, body: String, transcripts: [String], lines: [TranscriptLine] = [], duration: TimeInterval) {
@@ -55,6 +63,9 @@ struct Note: Codable, Identifiable, Equatable {
         lines = try c.decodeIfPresent([TranscriptLine].self, forKey: .lines) ?? []
         duration = try c.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
         myNotes = try c.decodeIfPresent(String.self, forKey: .myNotes) ?? ""
+        needsWriteUp = try c.decodeIfPresent(Bool.self, forKey: .needsWriteUp) ?? false
+        participants = try c.decodeIfPresent([String].self, forKey: .participants) ?? []
+        sentToReminders = try c.decodeIfPresent([String].self, forKey: .sentToReminders) ?? []
     }
 
     var transcriptText: String {
@@ -62,6 +73,9 @@ struct Note: Codable, Identifiable, Equatable {
         return lines.map { "[\(TranscriptLine.timestamp($0.start))] \($0.speaker == .me ? "Me" : "Others"): \($0.text)" }
             .joined(separator: "\n")
     }
+
+    /// The transcript's label for the other side: a name when there was only one other person.
+    var othersLabel: String { participants.count == 1 ? participants[0] : "Others" }
 
     var exportText: String { body.isEmpty ? title : "\(title)\n\n\(body)" }
 }
@@ -90,23 +104,41 @@ final class NotesStore: ObservableObject {
 
     func add(_ note: Note) {
         notes.insert(note, at: 0)
-        save()
+        flush()
     }
 
-    func modify(_ id: UUID, persist: Bool = true, _ change: (inout Note) -> Void) {
+    func modify(_ id: UUID, persist: Bool = true, keepOrder: Bool = false, _ change: (inout Note) -> Void) {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
         change(&notes[index])
-        if persist {
+        guard persist else { return }
+        if !keepOrder {
             notes[index].updatedAt = .now
             let note = notes.remove(at: index)
             notes.insert(note, at: 0)
-            save()
         }
+        scheduleSave()
+    }
+
+    private var pendingSave: Task<Void, Never>?
+
+    /// Typing and live transcripts change notes constantly; coalesce the rewrites of Notes.json.
+    private func scheduleSave() {
+        guard pendingSave == nil else { return }
+        pendingSave = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            self?.flush()
+        }
+    }
+
+    func flush() {
+        pendingSave?.cancel()
+        pendingSave = nil
+        save()
     }
 
     func delete(_ id: UUID) {
         notes.removeAll { $0.id == id }
-        save()
+        flush()
     }
 
     private func save() {

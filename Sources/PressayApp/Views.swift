@@ -37,17 +37,12 @@ struct MenuContentView: View {
                 recent
                 MenuSeparator()
                 if coordinator.liveSession != nil {
-                    MenuRow(title: "Stop Recording") {
-                        coordinator.stopRecording()
-                        coordinator.showNotes()
-                    }
+                    MenuRow(title: "Stop Notetaker") { coordinator.stopRecording() }
+                    MenuRow(title: "Show Notepad") { coordinator.showNotepadIfRecording() }
                 } else {
-                    MenuRow(title: "Record Meeting") {
-                        coordinator.showNotes()
-                        coordinator.startRecording(.meeting)
-                    }
+                    MenuRow(title: "Start Notetaker") { coordinator.startMeeting() }
                 }
-                MenuRow(title: "Notes") { coordinator.showNotes() }
+                MenuRow(title: "Notetaker") { coordinator.showNotes() }
                 MenuRow(title: "Settings…", shortcut: "⌘,") { coordinator.showSettings() }
                     .keyboardShortcut(",", modifiers: .command)
                 MenuSeparator()
@@ -284,7 +279,13 @@ struct SettingsRootView: View {
         NavigationSplitView {
             List(SettingsSection.allCases, selection: $selection) { section in
                 Label {
-                    Text(section.title)
+                    HStack {
+                        Text(section.title)
+                        if section == .notes, coordinator.liveSession != nil {
+                            Spacer()
+                            Circle().fill(.red).frame(width: 7, height: 7).accessibilityLabel("Recording")
+                        }
+                    }
                 } icon: {
                     SettingsIconTile(systemImage: section.systemImage, color: section.tint)
                 }
@@ -294,30 +295,43 @@ struct SettingsRootView: View {
             .navigationSplitViewColumnWidth(215)
             .toolbar(removing: .sidebarToggle)
         } detail: {
-            Group {
-                switch selection ?? .general {
-                case .general: GeneralSettingsView(coordinator: coordinator)
-                case .claude: ClaudeCleanupSettingsView(coordinator: coordinator)
-                case .dictionary: DictionarySettingsView(coordinator: coordinator)
-                case .notes: NotesSettingsView(coordinator: coordinator)
-                case .history: HistoryView(coordinator: coordinator)
+            switch selection ?? .general {
+            case .notes:
+                NotetakerPage(coordinator: coordinator)
+            case let section:
+                Group {
+                    switch section {
+                    case .general: GeneralSettingsView(coordinator: coordinator)
+                    case .claude: ClaudeCleanupSettingsView(coordinator: coordinator)
+                    case .dictionary: DictionarySettingsView(coordinator: coordinator)
+                    case .snippets: SnippetsSettingsView(coordinator: coordinator)
+                    default: HistoryView(coordinator: coordinator)
+                    }
                 }
+                // Grouped forms read badly when stretched across a wide window.
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity)
+                .navigationTitle(section.title)
             }
-            .navigationTitle((selection ?? .general).title)
         }
-        .frame(minWidth: 740, minHeight: 520)
+        .onReceive(coordinator.$settingsPaneRequest.compactMap { $0 }) { pane in
+            selection = SettingsSection(rawValue: pane) ?? selection
+            coordinator.settingsPaneRequest = nil
+        }
+        .frame(minWidth: 760, minHeight: 520)
     }
 }
 
 private struct PaneHero: View {
     let section: SettingsSection
+    var title: String?
     let blurb: String
 
     var body: some View {
         Section {
             VStack(spacing: 0) {
                 SettingsIconTile(systemImage: section.systemImage, color: section.tint, size: 56)
-                Text(section.title)
+                Text(title ?? section.title)
                     .font(.title2.weight(.bold))
                     .padding(.top, 8)
                 Text(blurb)
@@ -359,6 +373,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     case general
     case claude
     case dictionary
+    case snippets
     case notes
     case history
 
@@ -368,7 +383,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "General"
         case .claude: "AI Cleanup"
         case .dictionary: "Dictionary"
-        case .notes: "Notes"
+        case .snippets: "Snippets"
+        case .notes: "Notetaker"
         case .history: "History"
         }
     }
@@ -377,7 +393,8 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "gearshape.fill"
         case .claude: "sparkles"
         case .dictionary: "character.book.closed.fill"
-        case .notes: "note.text"
+        case .snippets: "text.quote"
+        case .notes: "person.2.wave.2.fill"
         case .history: "clock.fill"
         }
     }
@@ -386,6 +403,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: Color(nsColor: .systemGray)
         case .claude: Color(red: 0.91, green: 0.47, blue: 0.31)
         case .dictionary: .blue
+        case .snippets: .teal
         case .notes: .orange
         case .history: .purple
         }
@@ -434,7 +452,9 @@ private struct GeneralSettingsView: View {
                     )
                 } label: {
                     Text("Hold to talk")
-                    Text("Hold to dictate. Press Esc to cancel.")
+                    Text(coordinator.commandModeAvailable
+                         ? "Hold to dictate. Add Shift for Command Mode. Press Esc to cancel."
+                         : "Hold to dictate. Press Esc to cancel.")
                 }
             }
 
@@ -630,6 +650,23 @@ private struct ClaudeCleanupSettingsView: View {
             case .claude: keySection
             case .chatgpt: chatGPTAccountSection
             }
+
+            Section {
+                Toggle(isOn: $settings.matchAppStyle) {
+                    Text("Match each app’s style")
+                    Text("Casual in chats, complete sentences in email, tidy paragraphs in documents.")
+                }
+                LabeledContent {
+                    Text(coordinator.commandModeAvailable ? "Shift + \(settings.holdKey.displayName)" : "Needs a talk key other than Shift")
+                        .foregroundStyle(.secondary)
+                } label: {
+                    Text("Command Mode")
+                    Text("Hold Shift with your talk key and say what to do: “make this shorter”, “translate to German”, or “write a reply saying I’m running late”. Select text first to change it.")
+                }
+            } header: {
+                Text("Writing")
+            }
+            .disabled(!coordinator.cleanupConfigured)
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
@@ -867,95 +904,135 @@ private struct ChatGPTModelOption {
     }
 }
 
-// MARK: - Notes
+// MARK: - Notetaker
+
+struct NotetakerSettingsSheet: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NotesSettingsView(coordinator: coordinator)
+            .frame(minWidth: 540, idealWidth: 560, minHeight: 420, idealHeight: 640)
+            .presentationSizing(.form)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+    }
+}
 
 private struct NotesSettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings
+    @ObservedObject private var chatGPT: ChatGPTAccount
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         settings = coordinator.settings
+        chatGPT = coordinator.chatGPT
     }
 
     var body: some View {
         Form {
-            PaneHero(section: .notes, blurb: "Record voice notes and meetings in the Notes window. Pressay transcribes as people talk, on this Mac, then writes up the note.")
+            PaneHero(section: .notes, title: "Notetaker Settings", blurb: "Takes notes in your meetings. Pressay transcribes on this Mac as people talk, then writes up clear notes when the call ends.")
 
             Section {
-                Picker("Style", selection: $settings.noteStyle) {
-                    ForEach(NoteStyle.allCases) { style in
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(style.optionTitle)
-                            Text(style.optionSubtitle).font(.caption).foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 2)
-                        .tag(style)
-                    }
+                Toggle(isOn: Binding(get: { settings.notesUseAI && !options.isEmpty }, set: { settings.notesUseAI = $0 })) {
+                    Text("Write up notes with AI")
+                    Text("A title, summary, decisions and action items, built from the transcript and your own notes.")
                 }
-                .pickerStyle(.radioGroup)
-                .labelsHidden()
+                .disabled(options.isEmpty)
+                if !options.isEmpty {
+                    Picker("Model", selection: modelBinding) {
+                        ForEach(options) { model in
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(model.isRecommended ? "\(model.title) (Recommended)" : model.title)
+                                Text(model.subtitle).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                            .tag(model.id)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .disabled(!settings.notesUseAI)
+                }
             } header: {
-                Text("Voice notes")
+                Text("AI notes")
+            } footer: {
+                if options.isEmpty {
+                    HStack {
+                        Text("Add a Claude API key or sign in with ChatGPT to have notes written up. Until then you keep the full transcript.")
+                        Spacer()
+                        Button("Set Up…") {
+                            coordinator.notetakerSettingsShown = false
+                            coordinator.settingsPaneRequest = "claude"
+                        }
+                    }
+                } else {
+                    Text(providerCaption + " Models appear here for the providers you’ve set up in AI Cleanup.")
+                }
             }
 
             Section {
+                Toggle(isOn: $settings.detectCalls) {
+                    Text("Offer to take notes when a call starts")
+                    Text("Zoom, Teams, Meet, FaceTime, Slack and more. Pressay checks which apps use the microphone, never what they hear.")
+                }
+                Toggle(isOn: $settings.stopWhenCallEnds) {
+                    Text("Stop when the call ends")
+                    Text("When the call app stops using the microphone.")
+                }
+                .disabled(!settings.detectCalls)
                 Toggle(isOn: $settings.meetingSystemAudio) {
                     Text("Transcribe the other people")
                     Text("Records your Mac’s sound alongside your microphone, so everyone on the call is in the transcript.")
                 }
             } header: {
-                Text("Meetings")
+                Text("Calls")
             } footer: {
                 Text("The first meeting asks for permission to record system audio. Audio is never saved; only the transcript is.")
             }
 
-            Section {
-                Toggle(isOn: $settings.notesUseAI) {
-                    Text("Write up with AI")
-                    Text(aiCaption)
+            Section("While recording") {
+                Picker("Stop after", selection: $settings.maxMeetingHours) {
+                    ForEach([1, 2, 3, 4, 6, 8], id: \.self) { hours in
+                        Text(hours == 1 ? "1 hour" : "\(hours) hours").tag(hours)
+                    }
                 }
-                .disabled(!coordinator.cleanupConfigured)
-            } footer: {
-                if !coordinator.cleanupConfigured {
-                    Text("Set up AI Cleanup to have notes titled and organized. Until then, notes are tidied on this Mac.")
+                Toggle(isOn: $settings.openNotepad) {
+                    Text("Show the notepad")
+                    Text("A small floating window with the timer and your notes, above other apps while you’re in the call.")
                 }
+                Toggle("Show the live transcript", isOn: $settings.showLiveTranscript)
+                    .disabled(!settings.openNotepad)
             }
 
-            Section {
-                LabeledContent("\(coordinator.notes.notes.count) Notes") {
-                    Button("Open Notes") { coordinator.showNotes() }
-                }
-            }
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
     }
 
-    private var aiCaption: String {
-        switch settings.cleanupProvider {
-        case .claude: "Uses Claude with your API key, as AI Cleanup does."
-        case .chatgpt: "Uses your ChatGPT plan, as AI Cleanup does."
-        }
-    }
-}
-
-private extension NoteStyle {
-    var optionTitle: String {
-        switch self {
-        case .organized: "Organized (Recommended)"
-        case .clean: "Clean"
-        case .summary: "Summary"
-        }
+    private var options: [NotesModel] {
+        _ = chatGPT.isSignedIn
+        return coordinator.notesModelOptions
     }
 
-    var optionSubtitle: String {
-        switch self {
-        case .organized: "Short paragraphs and lists, plus a to-do list for anything you need to do."
-        case .clean: "Your words as tidy prose. No lists or to-dos added."
-        case .summary: "A tight bulleted summary of every point, plus to-dos."
+    private var modelBinding: Binding<String> {
+        Binding(
+            get: { coordinator.notesModel?.id ?? "" },
+            set: { settings.notesModel = $0 }
+        )
+    }
+
+    private var providerCaption: String {
+        switch coordinator.notesModel {
+        case .claude?: "Uses your Claude API key. Transcripts are sent to Anthropic only to write the notes."
+        case .chatgpt?: "Uses your ChatGPT plan at no extra cost. Transcripts are sent to OpenAI only to write the notes."
+        case nil: ""
         }
     }
+
 }
 
 // MARK: - Dictionary
@@ -1267,6 +1344,158 @@ private struct AddDictionaryEntrySheet: View {
             .padding([.horizontal, .bottom], 20)
         }
         .frame(width: 420)
+    }
+}
+
+// MARK: - Snippets
+
+private struct SnippetsSettingsView: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject private var settings: AppSettings
+    @State private var editing: Snippet?
+    @State private var adding = false
+
+    init(coordinator: AppCoordinator) {
+        self.coordinator = coordinator
+        settings = coordinator.settings
+    }
+
+    private func triggers(except id: UUID?) -> Set<String> {
+        Set(settings.snippets.filter { $0.id != id }.map { SnippetExpander.normalized($0.trigger) })
+    }
+
+    var body: some View {
+        Form {
+            PaneHero(section: .snippets, blurb: "Say a short phrase and Pressay types the full text: a link, an address, a sign-off.")
+
+            if settings.snippets.isEmpty {
+                Section {
+                    ContentUnavailableView {
+                        Label("No Snippets", systemImage: "text.quote")
+                    } description: {
+                        Text("Try “my calendar link” for your booking URL, or “my address” for your shipping address.")
+                    } actions: {
+                        Button("Add Snippet") { adding = true }
+                    }
+                }
+            } else {
+                Section {
+                    ForEach(settings.snippets) { snippet in
+                        SnippetRow(snippet: snippet) { editing = snippet } onDelete: {
+                            settings.snippets.removeAll { $0.id == snippet.id }
+                        }
+                    }
+                } footer: {
+                    Text("Works anywhere in a dictation, in any app. Snippet text is inserted exactly as written.")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { adding = true } label: { Label("Add Snippet", systemImage: "plus") }
+                    .help("Add a snippet")
+            }
+        }
+        .sheet(isPresented: $adding) {
+            SnippetSheet(snippet: nil, taken: triggers(except: nil)) { settings.snippets.append($0) }
+        }
+        .sheet(item: $editing) { snippet in
+            SnippetSheet(snippet: snippet, taken: triggers(except: snippet.id)) { updated in
+                if let index = settings.snippets.firstIndex(where: { $0.id == updated.id }) {
+                    settings.snippets[index] = updated
+                }
+            }
+        }
+    }
+}
+
+private struct SnippetRow: View {
+    let snippet: Snippet
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("“\(snippet.trigger)”")
+                Text(snippet.text).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer()
+            HStack(spacing: 6) {
+                Button(action: onEdit) { Image(systemName: "pencil.circle.fill") }
+                    .help("Edit")
+                Button(action: onDelete) {
+                    Image(systemName: "minus.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.white, .red)
+                }
+                .help("Remove")
+            }
+            .buttonStyle(.plain)
+            .opacity(hovering ? 1 : 0)
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(count: 2, perform: onEdit)
+        .contextMenu {
+            Button("Edit…", action: onEdit)
+            Button("Remove", role: .destructive, action: onDelete)
+        }
+    }
+}
+
+private struct SnippetSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let snippet: Snippet?
+    let taken: Set<String>
+    let onSave: (Snippet) -> Void
+    @State private var trigger = ""
+    @State private var text = ""
+
+    private var duplicate: Bool { taken.contains(SnippetExpander.normalized(trigger)) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Form {
+                Section {
+                    TextField("When you say", text: $trigger, prompt: Text("my calendar link"))
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Pressay types")
+                        TextEditor(text: $text)
+                            .font(.body)
+                            .frame(height: 110)
+                            .scrollContentBackground(.hidden)
+                            .padding(4)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(.background))
+                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+                    }
+                } header: {
+                    Text(snippet == nil ? "Add Snippet" : "Edit Snippet")
+                } footer: {
+                    Text(duplicate ? "You already have a snippet for this phrase." : "Use a phrase you wouldn’t say otherwise, like “my calendar link” rather than “calendar”.")
+                        .foregroundStyle(duplicate ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                }
+            }
+            .formStyle(.grouped)
+            .scrollDisabled(true)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(snippet == nil ? "Add" : "Save") {
+                    onSave(Snippet(id: snippet?.id ?? UUID(), trigger: trigger.trimmingCharacters(in: .whitespacesAndNewlines), text: text))
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(SnippetExpander.normalized(trigger).isEmpty || text.isEmpty || duplicate)
+            }
+            .padding([.horizontal, .bottom], 20)
+        }
+        .frame(width: 460)
+        .onAppear {
+            trigger = snippet?.trigger ?? ""
+            text = snippet?.text ?? ""
+        }
     }
 }
 

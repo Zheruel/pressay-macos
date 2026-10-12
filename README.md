@@ -31,9 +31,10 @@ No account, no telemetry, no subscription. Audio never leaves the Mac.
 
 - **Dictation anywhere.** Hold Right Option (configurable), speak, release. The text lands in the field that was focused when you started, in native, web and Electron apps. The clipboard is preserved.
 - **Accurate local speech recognition.** Qwen3-ASR 1.7B runs on Metal through `transcribe.cpp`. Voxtral Mini 3B, Whisper Large V3 Turbo (100 languages), Qwen3-ASR 0.6B and Fun-ASR MLT Nano are also available.
-- **AI Cleanup (optional).** Fixes misheard words, removes fillers and false starts, and formats lists and paragraphs, without changing what you said. Runs on your Anthropic API key or your ChatGPT Plus/Pro plan. Only text is sent.
-- **Meeting notes.** Records your mic as "You" and everything the Mac plays as "Others", so it works with Zoom, Meet, Teams or Slack and no bot joins the call. The transcript appears live. On Stop you get a titled note with a summary, decisions, action items with owners, and open questions. Your own typed notes are worked in.
-- **Voice notes.** Talk to yourself; get an organized note with a to-do list.
+- **AI Cleanup (optional).** Fixes misheard words, removes fillers and false starts, and formats lists and paragraphs, without changing what you said. Runs on your Anthropic API key or your ChatGPT Plus/Pro plan. Only text is sent. It matches the app: casual in Slack, full sentences in Mail, tidy paragraphs in Notes.
+- **Command Mode.** Hold Shift with your talk key and say what to do. Select text and say "make this shorter" or "translate to German", or say "write a reply saying I'm running late" with nothing selected.
+- **Snippets.** Say "my calendar link" and Pressay types the URL. Works inside any dictation.
+- **Notetaker.** Offers to take notes when a call starts. Records your mic as "You" and everything the Mac plays as "Others", so it works with Zoom, Meet, Teams or Slack and no bot joins the call. When the call ends you get a titled note with a summary, decisions, action items with owners, and open questions. Ask anything about one meeting or all of them, and keep your action items in one list or send them to Reminders.
 - **A dictionary that learns.** Retype a word Pressay got wrong and it learns the spelling. Names that keep recurring are suggested. Both the on-device rules and AI Cleanup use the dictionary.
 - **Fast start.** The mic stays warm for 45 s after a dictation, with a 0.5 s pre-roll, so your first word is never clipped. The start sound plays only once real audio arrives.
 
@@ -80,17 +81,21 @@ ChatGPT sign-in runs in your browser (OAuth with PKCE). Pressay never sees your 
 ## Meeting notes
 
 <p align="center">
-  <img src="docs/assets/meeting-notes.jpg" width="100%" alt="The Notes window showing a meeting note with a summary, decisions and action items with owners, and a live transcript of You and Others">
+  <img src="docs/assets/meeting-notes.jpg" width="100%" alt="The Notetaker showing a meeting note with a summary, decisions and action items with owners, and a live transcript of You and Others">
 </p>
 
-Open **Notes** from the menu bar and click **Record Meeting**.
+When Zoom, Teams, Meet, FaceTime, Slack or another call app starts using the microphone, Pressay offers to take notes. You can also click **Start Notetaker** in the menu bar or on the Notetaker page of the Pressay window.
 
+- A small notepad floats above your apps with the timer, the live transcript and your own notes.
 - Your mic is recorded with echo cancellation. Call audio comes from a Core Audio process tap; the first meeting asks for **System Audio Recording** permission.
 - Each utterance is transcribed on the Mac as soon as the speaker pauses.
-- On **Stop**, your AI Cleanup provider writes the note. Switch between Note and Transcript, resume the meeting later, edit, copy or share.
-- Audio is never saved. Only the transcript and your notes go to the AI provider, and only when you stop.
+- When the call ends (or you click **Stop**), the AI writes the note. Each meeting has **Summary**, **Transcript** and **My Notes** tabs, and an **Ask anything** box. Past meetings are grouped by day and searchable, and you can ask questions across all of them.
+- Add the names of the people on the call so the notes say who said what and spell them right.
+- **Action items** collects what you (or everyone) agreed to do across meetings. Tick them off, or add them to Reminders.
+- Pick the model under the gear on the Notetaker page: Claude Haiku 5.5 (recommended) or Sonnet 5.5 with an API key, GPT-6.1 Sol (recommended) or GPT-6 Luna with a ChatGPT plan. Only providers you have set up are listed.
+- Audio is never saved. Only the transcript and your notes go to the AI provider, to write the note or answer a question.
 
-The meeting prompt was tuned over five blind-judged rounds on 12 meetings: [`docs/notes/meetings/`](docs/notes/meetings/README.md).
+The meeting prompt was tuned over six blind-judged rounds on 12 meetings: [`docs/notes/meetings/`](docs/notes/meetings/README.md).
 
 ## Pressay vs. Wispr Flow
 

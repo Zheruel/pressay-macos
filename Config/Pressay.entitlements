@@ -4,6 +4,9 @@
 <dict>
     <key>com.apple.security.device.audio-input</key>
     <true/>
+    <!-- EventKit under the hardened runtime; covers Reminders. -->
+    <key>com.apple.security.personal-information.calendars</key>
+    <true/>
     <!-- The embedded CTranscribe.framework (transcribe.cpp) is signed by the
          same local identity, which carries no Team ID; hardened-runtime
          library validation treats that as a team mismatch. -->
