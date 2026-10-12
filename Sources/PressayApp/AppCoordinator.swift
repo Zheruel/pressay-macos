@@ -128,7 +128,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         reloadClaudeKey()
         callDetector.onEvent = { [weak self] in self?.handleCall($0) }
         callSettingsWatch = settings.$detectCalls.sink { [weak self] in self?.applyCallDetection($0) }
-        for note in notes.notes where note.needsWriteUp { writeUpNote(note.id) }
+        for note in notes.notes where note.needsWriteUp { writeUpNote(note.id, review: true) }
         // Independent of TCC onboarding.
         Task { await prepareModel() }
         Task { @MainActor in tunerRunner.scheduleIfNeeded(history: history, settings: settings) }
@@ -145,6 +145,13 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
 
     private func runDesignDemo() {
         switch ProcessInfo.processInfo.environment["PRESSAY_DEMO"] {
+        case "meeting":
+            // With PRESSAY_LIVE_FILE: records the file as a meeting, then stops.
+            Task {
+                while !modelReady { try? await Task.sleep(for: .milliseconds(250)) }
+                startMeeting()
+                liveSession?.onInjectedFileEnd = { self.stopRecording(automatic: true) }
+            }
         case "onboarding":
             showOnboarding()
         case "menu":
@@ -949,7 +956,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 transcriber: transcriber,
                 vocabulary: settings.vocabularyEntries,
                 inputUID: settings.inputDeviceUID,
-                captureSystemAudio: settings.meetingSystemAudio
+                captureSystemAudio: settings.meetingSystemAudio,
+                separateVoices: settings.separateVoices
             )
             session.onLine = { [weak self] line in
                 self?.notes.modify(noteID) { $0.lines.append(line) }
@@ -1001,6 +1009,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             if lines.contains(where: { !$0.text.isEmpty }) {
                 notes.modify(session.noteID) { note in
                     note.duration += duration
+                    note.lines = note.lines.filter { $0.start < session.offset } + lines
                     note.lines.sort { $0.start < $1.start }
                     note.title = Self.placeholderTitle(note)
                     note.needsWriteUp = settings.notesUseAI
@@ -1024,7 +1033,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             liveSession = nil
             finishTask = nil
             applyMicWarmth()
-            finishNote(session.noteID, newLines: lines, duration: duration, automatic: automatic)
+            finishNote(session.noteID, newLines: lines, from: session.offset, duration: duration, automatic: automatic)
         }
     }
 
@@ -1051,7 +1060,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         applyMicWarmth()
     }
 
-    private func finishNote(_ id: UUID, newLines: [TranscriptLine], duration: TimeInterval, automatic: Bool) {
+    /// `newLines` replace the ones streamed in live from `offset` on: they now say which voice spoke.
+    private func finishNote(_ id: UUID, newLines: [TranscriptLine], from offset: TimeInterval, duration: TimeInterval, automatic: Bool) {
         guard let note = notes.note(id) else { return }
         guard newLines.contains(where: { !$0.text.isEmpty }) else {
             if note.myNotes.isEmpty {
@@ -1067,19 +1077,20 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
         notes.modify(id) { note in
             note.duration += duration
+            note.lines = note.lines.filter { $0.start < offset } + newLines
             note.lines.sort { $0.start < $1.start }
             note.title = Self.placeholderTitle(note)
         }
-        writeUpNote(id)
+        writeUpNote(id, review: true)
     }
 
     /// Hand-edited notes are rewritten only when `replacingEdits`, after the user confirms.
-    func writeUpNote(_ id: UUID, replacingEdits: Bool = false) {
+    /// `review` first names speakers and fixes misheard terms, once, right after a recording.
+    func writeUpNote(_ id: UUID, replacingEdits: Bool = false, review: Bool = false) {
         guard settings.notesUseAI, notesModel != nil, let note = notes.note(id), !note.formatting,
               !note.edited || replacingEdits, note.kind == .meeting, !note.lines.isEmpty else { return }
         let hasNotes = !note.myNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let system = MeetingPrompt.system(vocabulary: settings.vocabularyEntries, hasUserNotes: hasNotes)
-        let user = MeetingPrompt.user(lines: note.lines, userNotes: note.myNotes, participants: note.participants)
         // About a minute per hour of meeting on top of the base budget.
         let timeout = 90 + note.duration / 60
         notes.modify(id, persist: false) {
@@ -1089,6 +1100,11 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         Task { [weak self] in
             guard let self else { return }
             defer { notes.modify(id, persist: false) { $0.formatting = false } }
+            if review { await reviewTranscript(id) }
+            guard let note = notes.note(id) else { return }
+            let user = MeetingPrompt.user(
+                lines: note.lines, userNotes: note.myNotes, participants: note.participants, speakerNames: note.speakerNames
+            )
             do {
                 let reply = try await completeNote(system: system, user: user, timeout: timeout)
                 guard let parsed = NotePrompt.parse(reply) else {
@@ -1106,6 +1122,32 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             } catch {
                 logger.error("Note write-up failed: \(error.localizedDescription, privacy: .public)")
                 notes.modify(id, persist: false) { $0.writeUpError = Self.describe(error) }
+            }
+        }
+    }
+
+    /// Names told-apart voices (never overwriting the user's names) and fixes misheard names and terms.
+    private func reviewTranscript(_ id: UUID) async {
+        guard let note = notes.note(id), !note.lines.isEmpty else { return }
+        let review: TranscriptReview.Result
+        do {
+            let reply = try await completeNote(
+                system: TranscriptReview.system(vocabulary: settings.vocabularyEntries),
+                user: TranscriptReview.user(lines: note.lines, participants: note.participants),
+                timeout: 60 + note.duration / 120
+            )
+            review = TranscriptReview.parse(reply, lines: note.lines, participants: note.participants)
+        } catch {
+            logger.notice("Transcript review skipped: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        logger.info("Review named \(review.names.count, privacy: .public) of \(note.voices.count, privacy: .public) voices, \(review.fixes.count, privacy: .public) fixes")
+        guard !review.names.isEmpty || !review.fixes.isEmpty else { return }
+        notes.modify(id, keepOrder: true) { note in
+            note.lines = TranscriptReview.apply(review.fixes, to: note.lines)
+            note.speakerNames = Note.merging(review.names, into: note.speakerNames)
+            for name in review.names.values.sorted() where !note.participants.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
+                note.participants.append(name)
             }
         }
     }

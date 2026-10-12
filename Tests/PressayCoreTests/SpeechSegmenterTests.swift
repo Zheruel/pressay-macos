@@ -33,4 +33,14 @@ final class SpeechSegmenterTests: XCTestCase {
         if let last = segmenter.finish() { segments.append(last) }
         XCTAssertTrue(segments.isEmpty)
     }
+
+    func testModelDecisionsOverrideEnergy() {
+        var segmenter = SpeechSegmenter()
+        // Too quiet for the energy check, but a voice activity model heard speech.
+        var segments = segmenter.append(tone(2, amplitude: 0.003), speech: true)
+        segments += segmenter.append(tone(1), speech: false)
+        if let last = segmenter.finish() { segments.append(last) }
+        XCTAssertEqual(segments.count, 1)
+        XCTAssertEqual(segments[0].duration, 2.15, accuracy: 0.05, "speech plus 150 ms of the pause")
+    }
 }

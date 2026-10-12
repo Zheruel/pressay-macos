@@ -17,6 +17,45 @@ The sanitized aggregate data behind the charts lives in [`docs/benchmarks/result
 
 The corpus is representative of the app's intended use, but it is not a standardized public benchmark. Results should be treated as product calibration on one machine, not universal model rankings.
 
+## Meeting transcription (October 2026)
+
+Four AMI test meetings (ES2004a, IS1009a, TS3003a, EN2002a; 91 minutes, four people each, Mix-Headset
+audio) replayed through `PressayBench meeting`, which splits audio the way a live meeting does and
+transcribes each piece. Word error rate against the AMI manual transcripts, after lowercasing and
+dropping punctuation and fillers (um, uh, hmm). AMI is hard: crosstalk, laughter, non-native speakers.
+
+**Splitting audio mattered more than the model.** The energy splitter Pressay shipped kept only
+26% of TS3003a (a quiet recording) and 59% of ES2004a. Silero voice activity keeps level-independent:
+
+| Splitter (Qwen3-ASR 1.7B) | TS3003a | ES2004a |
+| --- | ---: | ---: |
+| Energy, fixed floor (1.8.0) | 58.4% | 34.7% |
+| Energy, lower floor | 20.4% | 18.2% |
+| Silero, whole file | **17.4%** | **18.0%** |
+| Silero, streamed in 256 ms chunks (shipped) | 18.3% | 18.3% |
+
+**Engines**, all on Silero splitting, pieces of at most 12 s (live) or 30 s:
+
+| Engine | 12 s | 30 s | Speed | Peak memory |
+| --- | ---: | ---: | ---: | ---: |
+| **Qwen3-ASR 1.7B** *(default)* | **24.4%** | **23.8%** | 23x | 3.3 GB |
+| Parakeet TDT v3 (FluidAudio) | 28.5% | 25.3% | 127x | 0.6 GB |
+| Parakeet TDT v2 (FluidAudio) | 27.5% | 25.6% | 155x | 0.6 GB |
+| Qwen3-ASR 0.6B | 25.7% | 25.9% | 33x | 1.3 GB |
+| Voxtral Mini 3B | 28.6% | 27.6% | 6x | 4.4 GB |
+| Fun-ASR MLT Nano | 29.4% | 30.0% | 38x | 1.5 GB |
+| Whisper V3 Turbo | 30.4% | 30.1% | 13x | 1.4 GB |
+| Cohere Transcribe (FluidAudio) | 30.5% | 33.1% | 7x | 8.7 GB |
+
+Qwen3-ASR 1.7B is best for meetings too and keeps up live with room to spare. Transcribing after
+the meeting in 30 s pieces would gain 0.6 points, not worth keeping call audio on disk.
+
+**AI correction.** Claude Haiku 5.5 rewriting the transcript line by line (three prompt versions) left
+word errors unchanged (18.0 → 18.1%, 17.4 → 17.4%): most remaining errors are dropped words
+("yeah", "okay" under crosstalk) that no rewrite can recover, and it fixed about as many words as it
+broke. Pressay instead asks once for targeted fixes of misheard names and terms, applied everywhere
+they occur; on AMI (no jargon) Haiku proposed none to two per meeting, all correct, in about 5 s.
+
 ## Real-dictation judged replay (October 2026)
 
 The 184-clip corpus measures eight technical terms. This pass measured whole-transcript accuracy

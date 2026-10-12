@@ -516,7 +516,7 @@ private struct NoteDetailView: View {
                 }
                 if note.kind == .meeting {
                     Text("·")
-                    ForEach(["You"] + note.participants, id: \.self) { name in
+                    ForEach(["You"] + note.speakerLabels, id: \.self) { name in
                         Text(name)
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.primary)
@@ -524,11 +524,15 @@ private struct NoteDetailView: View {
                             .padding(.vertical, 2)
                             .background(Capsule().fill(.quaternary))
                     }
-                    Button(note.participants.isEmpty ? "Add names" : "Edit names") { editingNames = true }
+                    Button(note.hasNames ? "Edit names" : "Add names") { editingNames = true }
                         .buttonStyle(.link)
                         .help("Who else was on the call")
                         .popover(isPresented: $editingNames, arrowEdge: .bottom) {
-                            SpeakersEditor(coordinator: coordinator, note: note)
+                            if note.voices.isEmpty {
+                                SpeakersEditor(coordinator: coordinator, note: note)
+                            } else {
+                                VoiceNamesEditor(coordinator: coordinator, note: note)
+                            }
                         }
                 }
             }
@@ -688,7 +692,10 @@ private struct TranscriptTab: View {
             .padding(.vertical, 10)
             Divider()
             ScrollView {
-                TranscriptLinesView(lines: note.lines, isMeeting: note.kind == .meeting, othersLabel: note.othersLabel, highlight: query)
+                TranscriptLinesView(
+                    lines: note.lines, isMeeting: note.kind == .meeting,
+                    othersLabel: note.othersLabel, speakerNames: note.speakerNames, highlight: query
+                )
                     .frame(maxWidth: 760)
                     .padding(.horizontal, 32)
                     .padding(.vertical, 20)
@@ -698,16 +705,17 @@ private struct TranscriptTab: View {
     }
 
     private var summaryLine: String {
-        let speakers = Set(note.lines.map(\.speaker)).count
+        let mine = note.lines.contains { $0.speaker == .me }
+        let speakers = note.voices.isEmpty ? Set(note.lines.map(\.speaker)).count : note.voices.count + (mine ? 1 : 0)
         let length = TranscriptLine.timestamp(max(note.duration, note.lines.last?.start ?? 0))
         guard note.kind == .meeting else { return length }
         let who: String
         if speakers == 1 {
             who = "1 speaker"
-        } else if note.participants.isEmpty {
+        } else if note.speakerLabels.isEmpty {
             who = "You and others"
         } else {
-            who = (["You"] + note.participants).formatted(.list(type: .and))
+            who = ((mine ? ["You"] : []) + note.speakerLabels).formatted(.list(type: .and))
         }
         return "\(who) · \(length)"
     }
@@ -718,11 +726,13 @@ struct TranscriptLinesView: View {
     let lines: [TranscriptLine]
     let isMeeting: Bool
     var othersLabel = "Others"
+    var speakerNames: [String] = []
     var highlight = ""
 
     struct Turn: Identifiable {
         let id: Int
         let speaker: TranscriptLine.Speaker
+        let voice: Int?
         let start: TimeInterval
         var text: String
     }
@@ -750,7 +760,7 @@ struct TranscriptLinesView: View {
         let mine = turn.speaker == .me
         return VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Text(mine ? "You" : othersLabel).fontWeight(.semibold)
+                Text(label(turn)).fontWeight(.semibold)
                 Text(TranscriptLine.timestamp(turn.start)).monospacedDigit().foregroundStyle(.tertiary)
             }
             .font(.caption)
@@ -769,6 +779,11 @@ struct TranscriptLinesView: View {
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .padding(mine ? .leading : .trailing, 60)
         .id(turn.id)
+    }
+
+    private func label(_ turn: Turn) -> String {
+        if turn.speaker == .me { return "You" }
+        return TranscriptLine(speaker: .others, start: 0, text: "", voice: turn.voice).voiceLabel(names: speakerNames) ?? othersLabel
     }
 
     private func marked(_ text: String) -> AttributedString {
@@ -790,11 +805,11 @@ struct TranscriptLinesView: View {
     var turns: [Turn] {
         var result: [Turn] = []
         for (index, line) in lines.enumerated() {
-            if var last = result.last, last.speaker == line.speaker, line.start - last.start < 45 {
+            if var last = result.last, last.speaker == line.speaker, last.voice == line.voice, line.start - last.start < 45 {
                 last.text += " " + line.text
                 result[result.count - 1] = last
             } else {
-                result.append(Turn(id: index, speaker: line.speaker, start: line.start, text: line.text))
+                result.append(Turn(id: index, speaker: line.speaker, voice: line.voice, start: line.start, text: line.text))
             }
         }
         return result
@@ -1347,6 +1362,91 @@ private struct SpeakersEditor: View {
     private func save() {
         let list = parsed
         coordinator.notes.modify(note.id, keepOrder: true) { $0.participants = list }
+        original = names
+        dismiss()
+    }
+}
+
+/// Names each told-apart voice; the transcript and the write-up use the names.
+private struct VoiceNamesEditor: View {
+    @ObservedObject var coordinator: AppCoordinator
+    let note: Note
+    @Environment(\.dismiss) private var dismiss
+    @State private var names: [String] = []
+    @State private var original: [String] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Who was speaking?").font(.headline)
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
+                ForEach(Array(names.indices), id: \.self) { index in
+                    GridRow {
+                        Text("Speaker \(index + 1)").foregroundStyle(.secondary)
+                        TextField("Name", text: $names[index])
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 200)
+                            .onSubmit(save)
+                    }
+                }
+            }
+            if !suggestions.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(suggestions, id: \.self) { name in
+                        Button("+ \(name)") { fill(name) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(!names.contains(where: { trimmed($0).isEmpty }))
+                    }
+                }
+            }
+            Text("Pressay tells voices apart by how they sound, so now and then a line goes to the wrong person. Check the Transcript tab to see who each speaker is.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 290, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                if coordinator.canWriteUp(note), !note.edited, names.map(trimmed) != original.map(trimmed) {
+                    Button("Save and Update Summary") {
+                        save()
+                        coordinator.writeUpNote(note.id)
+                    }
+                }
+                Button("Save", action: save)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .onAppear {
+            let count = note.voices.max() ?? 0
+            names = (0..<count).map { note.speakerNames.indices.contains($0) ? note.speakerNames[$0] : "" }
+            original = names
+        }
+    }
+
+    private func trimmed(_ name: String) -> String { name.trimmingCharacters(in: .whitespaces) }
+
+    /// Names the user typed before, and owners of action items, not yet used.
+    private var suggestions: [String] {
+        let used = Set(names.map { trimmed($0).lowercased() })
+        var seen = Set<String>()
+        return (note.participants + ActionItem.otherOwners(in: note.body))
+            .filter { !used.contains($0.lowercased()) && seen.insert($0.lowercased()).inserted }
+            .prefix(4).map { $0 }
+    }
+
+    private func fill(_ name: String) {
+        guard let index = names.firstIndex(where: { trimmed($0).isEmpty }) else { return }
+        names[index] = name
+    }
+
+    private func save() {
+        let list = names.map(trimmed)
+        coordinator.notes.modify(note.id, keepOrder: true) { note in
+            note.speakerNames = list
+            var seen = Set<String>()
+            note.participants = list.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+        }
         original = names
         dismiss()
     }

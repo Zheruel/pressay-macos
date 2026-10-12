@@ -1,17 +1,25 @@
 import Foundation
 
-/// Energy-based utterance splitter with an adaptive noise floor, so steady hum never counts as speech.
+/// Utterance splitter. Speech is either judged by energy against an adaptive noise floor, so steady hum
+/// never counts, or decided by the caller (a voice-activity model) per batch of samples.
 public struct SpeechSegmenter: Sendable {
     public struct Segment: Equatable, Sendable {
         /// Seconds from the start of the stream.
         public let start: TimeInterval
         public let samples: [Float]
         public var duration: TimeInterval { Double(samples.count) / 16_000 }
+
+        public init(start: TimeInterval, samples: [Float]) {
+            self.start = start
+            self.samples = samples
+        }
     }
 
     public var pauseLength: TimeInterval = 0.7
     public var maximumLength: TimeInterval = 20
     public var minimumSpeech: TimeInterval = 0.4
+    /// Frames quieter than this never count as speech, whatever the noise floor.
+    public var speechFloor: Float = 0.006
 
     private static let frame = 480 // 30 ms
     private var pending: [Float] = []
@@ -24,13 +32,14 @@ public struct SpeechSegmenter: Sendable {
 
     public init() {}
 
-    public mutating func append(_ samples: [Float]) -> [Segment] {
+    /// `speech` overrides the energy check for these samples when a model has judged them.
+    public mutating func append(_ samples: [Float], speech: Bool? = nil) -> [Segment] {
         pending += samples
         var finished: [Segment] = []
         while pending.count >= Self.frame {
             let frame = Array(pending.prefix(Self.frame))
             pending.removeFirst(Self.frame)
-            if let segment = process(frame) { finished.append(segment) }
+            if let segment = process(frame, speech: speech) { finished.append(segment) }
         }
         return finished
     }
@@ -43,9 +52,9 @@ public struct SpeechSegmenter: Sendable {
         return cut()
     }
 
-    private mutating func process(_ frame: [Float]) -> Segment? {
+    private mutating func process(_ frame: [Float], speech: Bool?) -> Segment? {
         let rms = (frame.reduce(0) { $0 + $1 * $1 } / Float(frame.count)).squareRoot()
-        let isSpeech = rms > max(noiseFloor * 3, 0.006)
+        let isSpeech = speech ?? (rms > max(noiseFloor * 3, speechFloor))
         if !isSpeech {
             // Track the floor only on quiet frames; slow rise, fast fall.
             noiseFloor = rms < noiseFloor ? rms * 0.5 + noiseFloor * 0.5 : noiseFloor * 0.995 + rms * 0.005

@@ -995,6 +995,11 @@ private struct NotesSettingsView: View {
                     Text("Transcribe the other people")
                     Text("Records your Mac’s sound alongside your microphone, so everyone on the call is in the transcript.")
                 }
+                Toggle(isOn: $settings.separateVoices) {
+                    Text("Tell speakers apart")
+                    Text("Labels each voice on the call, on this Mac. The AI adds names when people introduce themselves or are addressed by name.")
+                }
+                .disabled(!settings.meetingSystemAudio)
             } header: {
                 Text("Calls")
             } footer: {
