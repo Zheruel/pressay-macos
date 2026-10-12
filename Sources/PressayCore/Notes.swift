@@ -59,9 +59,16 @@ public enum MeetingPrompt {
             .replacingOccurrences(of: "{vocab}", with: ClaudeCleanupPrompt.vocabularyBlock(vocabulary))
     }
 
-    public static func user(lines: [TranscriptLine], userNotes: String = "") -> String {
+    public static func user(lines: [TranscriptLine], userNotes: String = "", participants: [String] = []) -> String {
         let body = lines.map { "[\(TranscriptLine.timestamp($0.start))] \($0.speaker == .me ? "Me" : "Others"): \($0.text)" }
-        var message = "<transcript>\n\(body.joined(separator: "\n"))\n</transcript>"
+        var message = ""
+        if !participants.isEmpty {
+            let who = participants.joined(separator: ", ")
+            message += participants.count == 1
+                ? "The only other person on the call was \(who): every \"Others\" line is them.\n\n"
+                : "Others on the call (the user's spelling): \(who). Name one only when the transcript shows it was them.\n\n"
+        }
+        message += "<transcript>\n\(body.joined(separator: "\n"))\n</transcript>"
         let notes = userNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         if !notes.isEmpty { message += "\n\n<my_notes>\n\(notes)\n</my_notes>" }
         return message

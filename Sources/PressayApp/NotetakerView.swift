@@ -14,12 +14,17 @@ enum NoteTab: String, CaseIterable {
     }
 }
 
+enum NotetakerRoute: Hashable {
+    case note(UUID)
+    case actionItems
+}
+
 /// The Notetaker page of the main window: past meetings, then a note page pushed on top.
 struct NotetakerPage: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var store: NotesStore
     @ObservedObject private var settings: AppSettings
-    @State private var path: [UUID] = []
+    @State private var path: [NotetakerRoute] = []
     @State private var search = ""
     @State private var deleting: UUID?
 
@@ -32,8 +37,11 @@ struct NotetakerPage: View {
     var body: some View {
         NavigationStack(path: $path) {
             home
-                .navigationDestination(for: UUID.self) { id in
-                    NotePage(coordinator: coordinator, id: id, onDelete: { deleting = id })
+                .navigationDestination(for: NotetakerRoute.self) { route in
+                    switch route {
+                    case .note(let id): NotePage(coordinator: coordinator, id: id, onDelete: { deleting = id })
+                    case .actionItems: ActionItemsPage(coordinator: coordinator)
+                    }
                 }
         }
         .sheet(isPresented: $coordinator.notetakerSettingsShown) {
@@ -42,7 +50,7 @@ struct NotetakerPage: View {
         .confirmationDialog("Delete this meeting?", isPresented: deletingShown) {
             Button("Delete", role: .destructive) {
                 if let id = deleting {
-                    path.removeAll { $0 == id }
+                    path.removeAll { $0 == .note(id) }
                     store.delete(id)
                 }
             }
@@ -62,12 +70,14 @@ struct NotetakerPage: View {
             Text(coordinator.recordingError ?? "")
         }
         .onChange(of: coordinator.liveSession?.noteID, initial: true) { _, id in
-            if let id, path.last != id { path = [id] }
+            if let id, path.last != .note(id) { path = [.note(id)] }
         }
         #if DEBUG
         .onAppear {
             if ProcessInfo.processInfo.environment["PRESSAY_OPEN_NOTE"] != nil,
-               let first = store.notes.max(by: { $0.createdAt < $1.createdAt }) { path = [first.id] }
+               let first = store.notes.max(by: { $0.createdAt < $1.createdAt }) {
+                path = ProcessInfo.processInfo.environment["PRESSAY_OPEN_NOTE"] == "actions" ? [.actionItems] : [.note(first.id)]
+            }
         }
         #endif
     }
@@ -96,12 +106,24 @@ struct NotetakerPage: View {
                     Section {
                         StartCard(coordinator: coordinator)
                             .listRowSeparator(.hidden)
+                        if search.isEmpty, openItemCount > 0 {
+                            NavigationLink(value: NotetakerRoute.actionItems) {
+                                Label {
+                                    Text(openItemCount == 1 ? "1 open action item for you" : "\(openItemCount) open action items for you")
+                                } icon: {
+                                    Image(systemName: "checklist").foregroundStyle(.orange)
+                                }
+                                .font(.headline)
+                                .padding(.vertical, 6)
+                            }
+                            .listRowSeparator(.hidden)
+                        }
                     }
                     let groups = groups
                     ForEach(groups, id: \.title) { group in
                         Section(group.title) {
                             ForEach(group.notes) { note in
-                                NavigationLink(value: note.id) {
+                                NavigationLink(value: NotetakerRoute.note(note.id)) {
                                     NoteListRow(note: note, recording: coordinator.liveSession?.noteID == note.id)
                                 }
                                 .contextMenu { NoteMenuItems(coordinator: coordinator, note: note, onDelete: { deleting = note.id }) }
@@ -126,6 +148,12 @@ struct NotetakerPage: View {
             ToolbarItem(placement: .primaryAction) {
                 NotetakerSettingsButton(coordinator: coordinator)
             }
+        }
+    }
+
+    private var openItemCount: Int {
+        store.notes.reduce(0) { count, note in
+            count + ActionItem.parse(note.body).filter { $0.isMine && !$0.done }.count
         }
     }
 
@@ -208,24 +236,26 @@ private struct StartCard: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            NotetakerIcon(size: 44)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(coordinator.liveSession == nil ? "Take notes for a meeting" : "Taking notes now")
-                    .font(.headline)
-                CallDetectionStatus(coordinator: coordinator)
-            }
-            Spacer()
+        HStack(spacing: 16) {
             if coordinator.liveSession == nil {
                 Button { coordinator.startMeeting() } label: {
-                    Label("Start Notetaker", systemImage: "record.circle")
+                    Label("Start Notetaker", systemImage: "mic.fill")
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 6)
                 }
                 .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
                 .controlSize(.large)
+            } else {
+                Label("Taking notes now", systemImage: "record.circle")
+                    .font(.headline)
+                    .foregroundStyle(.red)
             }
+            CallDetectionStatus(coordinator: coordinator)
+            Spacer(minLength: 0)
         }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.quaternary.opacity(0.6)))
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.quaternary.opacity(0.6)))
         .padding(.vertical, 6)
     }
 }
@@ -234,17 +264,23 @@ private struct CallDetectionStatus: View {
     @ObservedObject var coordinator: AppCoordinator
 
     var body: some View {
-        if coordinator.settings.detectCalls {
-            Label("Pressay offers to take notes when a call starts.", systemImage: "phone.badge.waveform")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-        } else {
-            Button("Offer to take notes when a call starts") {
-                coordinator.settings.detectCalls = true
+        VStack(alignment: .leading, spacing: 2) {
+            if coordinator.settings.detectCalls {
+                HStack(spacing: 6) {
+                    Circle().fill(.green).frame(width: 7, height: 7)
+                    Text("Listening for calls").font(.callout.weight(.medium))
+                }
+                Text("When Zoom, Meet, Teams or Slack uses your mic, Pressay offers to take notes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Call detection is off").font(.callout.weight(.medium))
+                Button("Offer to take notes when a call starts") { coordinator.settings.detectCalls = true }
+                    .buttonStyle(.link)
+                    .font(.caption)
             }
-            .buttonStyle(.link)
-            .font(.callout)
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -383,7 +419,7 @@ private struct NotePage: View {
                             $0.edited = true
                         }
                     },
-                    onToggleTask: { line in toggleTask(line, in: note) }
+                    onToggleTask: { item in coordinator.toggleActionItem(note.id, item: item) }
                 )
                 .navigationTitle(note.createdAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
                 .toolbar { toolbar(for: note) }
@@ -425,19 +461,6 @@ private struct NotePage: View {
             .help("More")
         }
     }
-
-    /// Not an edit, so a later write-up can still replace the notes.
-    private func toggleTask(_ lineIndex: Int, in note: Note) {
-        var lines = note.body.components(separatedBy: "\n")
-        guard lines.indices.contains(lineIndex) else { return }
-        let line = lines[lineIndex]
-        if let range = line.range(of: "- [ ] ") {
-            lines[lineIndex] = line.replacingCharacters(in: range, with: "- [x] ")
-        } else if let range = line.range(of: "- [x] ", options: .caseInsensitive) {
-            lines[lineIndex] = line.replacingCharacters(in: range, with: "- [ ] ")
-        }
-        store.modify(note.id) { $0.body = lines.joined(separator: "\n") }
-    }
 }
 
 private struct NoteDetailView: View {
@@ -448,18 +471,19 @@ private struct NoteDetailView: View {
     @Binding var myNotes: String
     let canWriteUp: Bool
     let onChange: (String, String) -> Void
-    let onToggleTask: (Int) -> Void
+    let onToggleTask: (ActionItem) -> Void
 
     @State private var title = ""
     @State private var text = ""
     @State private var notesAtOpen = ""
+    @State private var editingNames = false
 
     var body: some View {
         VStack(spacing: 0) {
             switch tab {
             case .summary where editing: editor
             case .summary: summary
-            case .transcript: TranscriptTab(note: note)
+            case .transcript: TranscriptTab(coordinator: coordinator, note: note)
             case .myNotes: myNotesTab
             }
             if !editing, note.kind == .meeting, note.hasTranscript {
@@ -484,15 +508,32 @@ private struct NoteDetailView: View {
             Text(note.title)
                 .font(.system(size: 28, weight: .bold, design: .serif))
                 .textSelection(.enabled)
-            HStack(spacing: 8) {
-                Label(note.createdAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()), systemImage: "calendar")
-                if note.duration >= 1 {
-                    Label(note.durationText, systemImage: "clock")
+            HStack(spacing: 6) {
+                Text(note.createdAt.formatted(.dateTime.hour().minute()))
+                if note.duration >= 60 {
+                    Text("·")
+                    Text(note.durationText)
+                }
+                if note.kind == .meeting {
+                    Text("·")
+                    ForEach(["You"] + note.participants, id: \.self) { name in
+                        Text(name)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(.quaternary))
+                    }
+                    Button(note.participants.isEmpty ? "Add names" : "Edit names") { editingNames = true }
+                        .buttonStyle(.link)
+                        .help("Who else was on the call")
+                        .popover(isPresented: $editingNames, arrowEdge: .bottom) {
+                            SpeakersEditor(coordinator: coordinator, note: note)
+                        }
                 }
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
-            .labelStyle(.titleAndIcon)
         }
         .padding(.bottom, 20)
     }
@@ -536,7 +577,7 @@ private struct NoteDetailView: View {
                             .foregroundStyle(.secondary)
                             .padding(.bottom, 12)
                     }
-                    MarkdownNoteBody(markdown: note.body, onToggleTask: onToggleTask)
+                    MarkdownNoteBody(markdown: note.body, onToggleTask: onToggleTask, tasksAccessory: AnyView(RemindersButton(coordinator: coordinator, note: note)))
                 }
             }
             .frame(maxWidth: 700, alignment: .leading)
@@ -611,6 +652,7 @@ private struct NoteDetailView: View {
 // MARK: - Transcript
 
 private struct TranscriptTab: View {
+    @ObservedObject var coordinator: AppCoordinator
     let note: Note
     @State private var query = ""
     @State private var copied = false
@@ -646,7 +688,7 @@ private struct TranscriptTab: View {
             .padding(.vertical, 10)
             Divider()
             ScrollView {
-                TranscriptLinesView(lines: note.lines, isMeeting: note.kind == .meeting, highlight: query)
+                TranscriptLinesView(lines: note.lines, isMeeting: note.kind == .meeting, othersLabel: note.othersLabel, highlight: query)
                     .frame(maxWidth: 760)
                     .padding(.horizontal, 32)
                     .padding(.vertical, 20)
@@ -659,7 +701,15 @@ private struct TranscriptTab: View {
         let speakers = Set(note.lines.map(\.speaker)).count
         let length = TranscriptLine.timestamp(max(note.duration, note.lines.last?.start ?? 0))
         guard note.kind == .meeting else { return length }
-        return "\(speakers == 1 ? "1 speaker" : "You and others") · \(length)"
+        let who: String
+        if speakers == 1 {
+            who = "1 speaker"
+        } else if note.participants.isEmpty {
+            who = "You and others"
+        } else {
+            who = (["You"] + note.participants).formatted(.list(type: .and))
+        }
+        return "\(who) · \(length)"
     }
 }
 
@@ -667,6 +717,7 @@ private struct TranscriptTab: View {
 struct TranscriptLinesView: View {
     let lines: [TranscriptLine]
     let isMeeting: Bool
+    var othersLabel = "Others"
     var highlight = ""
 
     struct Turn: Identifiable {
@@ -699,7 +750,7 @@ struct TranscriptLinesView: View {
         let mine = turn.speaker == .me
         return VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Text(mine ? "You" : "Others").fontWeight(.semibold)
+                Text(mine ? "You" : othersLabel).fontWeight(.semibold)
                 Text(TranscriptLine.timestamp(turn.start)).monospacedDigit().foregroundStyle(.tertiary)
             }
             .font(.caption)
@@ -827,7 +878,7 @@ private struct AskBar: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(exchange.question).font(.callout.weight(.semibold))
                             if let answer = exchange.answer {
-                                MarkdownNoteBody(markdown: answer, onToggleTask: { _ in })
+                                MarkdownNoteBody(markdown: answer)
                                     .font(.system(size: 14))
                                     .foregroundStyle(exchange.failed ? .secondary : .primary)
                             } else {
@@ -898,8 +949,8 @@ private struct LiveRecordingView: View {
                 transcript.frame(minWidth: 300)
                 myNotesEditor.frame(minWidth: 240, idealWidth: 300)
             }
-            controls
         }
+        .toolbar { controls }
         .confirmationDialog("Discard this recording?", isPresented: $confirmingDiscard) {
             Button("Discard", role: .destructive, action: onDiscard)
         } message: {
@@ -951,7 +1002,7 @@ private struct LiveRecordingView: View {
     private var myNotesEditor: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("My Notes").font(.headline)
-            Text("Private. Pressay works them into the summary.")
+            Text("Jot anything. Pressay folds your notes into the summary when you stop.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             MyNotesEditor(text: $myNotes)
@@ -959,49 +1010,43 @@ private struct LiveRecordingView: View {
         .padding(16)
     }
 
-    private var controls: some View {
-        HStack(spacing: 12) {
+    @ToolbarContentBuilder
+    private var controls: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
             if session.phase == .finishing {
-                ProgressView().controlSize(.small)
-                Text("Finishing the transcript…").foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Finishing…").foregroundStyle(.secondary)
+                }
             } else {
-                Button("Discard…", role: .destructive) { confirmingDiscard = true }
-                    .controlSize(.large)
+                Button("Discard…") { confirmingDiscard = true }
+                    .help("Delete this recording")
                 Button(action: onStop) {
-                    Label("Stop", systemImage: "stop.fill")
-                        .padding(.horizontal, 10)
+                    Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
-                .controlSize(.large)
                 .keyboardShortcut(.return, modifiers: .command)
                 .help("Stop and write up the notes (⌘↩)")
             }
         }
-        .font(.callout)
-        .frame(maxWidth: .infinity)
-        .frame(height: 56)
-        .background(.bar)
     }
 }
 
-struct LiveHeader: View {
+private struct LiveHeader: View {
     @ObservedObject var session: LiveSession
-    var compact = false
 
     var body: some View {
-        HStack(spacing: compact ? 8 : 12) {
+        HStack(spacing: 12) {
             RecordingDot(active: session.phase == .recording)
             VStack(alignment: .leading, spacing: 1) {
-                if !compact {
-                    Text("Taking notes").font(.headline)
-                }
+                Text("Taking notes").font(.headline)
                 TimelineView(.periodic(from: session.startedAt, by: 1)) { context in
                     Text(TranscriptLine.timestamp(session.offset + context.date.timeIntervalSince(session.startedAt)))
                         .monospacedDigit()
-                        .foregroundStyle(compact ? .primary : .secondary)
+                        .foregroundStyle(.secondary)
                 }
-                .font(compact ? .headline : .subheadline)
+                .font(.subheadline)
             }
             Spacer(minLength: 4)
             LevelMeter(label: "You", level: session.micLevel, tint: .accentColor)
@@ -1035,21 +1080,24 @@ struct MyNotesEditor: View {
 /// The Markdown subset notes use: headings, lists, checkboxes, inline emphasis.
 struct MarkdownNoteBody: View {
     let markdown: String
-    let onToggleTask: (Int) -> Void
+    var onToggleTask: (ActionItem) -> Void = { _ in }
+    /// Shown beside the heading of the first task list.
+    var tasksAccessory: AnyView?
 
     private enum Block {
-        case heading(String)
+        case heading(String, accessory: Bool)
         case paragraph(String)
         case bullet(String, nested: Bool)
         case numbered(String, String)
-        case task(String, done: Bool, line: Int)
+        case task(ActionItem)
     }
 
     var body: some View {
+        let blocks = blocks
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 view(for: block)
-                    .padding(.top, spacing(before: index))
+                    .padding(.top, spacing(before: index, in: blocks))
             }
         }
         .font(.system(size: 15))
@@ -1059,8 +1107,14 @@ struct MarkdownNoteBody: View {
     @ViewBuilder
     private func view(for block: Block) -> some View {
         switch block {
-        case .heading(let text):
-            Text(inline(text)).font(.system(size: 18, weight: .semibold))
+        case .heading(let text, let accessory):
+            HStack(alignment: .firstTextBaseline) {
+                Text(inline(text)).font(.system(size: 18, weight: .semibold))
+                if accessory, let tasksAccessory {
+                    Spacer()
+                    tasksAccessory.font(.callout)
+                }
+            }
         case .paragraph(let text):
             Text(inline(text)).lineSpacing(4)
         case .bullet(let text, let nested):
@@ -1074,23 +1128,27 @@ struct MarkdownNoteBody: View {
                 Text(number).monospacedDigit().foregroundStyle(.secondary)
                 Text(inline(text)).lineSpacing(3)
             }
-        case .task(let text, let done, let line):
+        case .task(let item):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Button { onToggleTask(line) } label: {
-                    Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(done ? Color.accentColor : .secondary)
+                Button { onToggleTask(item) } label: {
+                    Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(item.done ? Color.accentColor : .secondary)
                         .imageScale(.large)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(done ? "Mark as not done" : "Mark as done")
-                Text(inline(text))
-                    .strikethrough(done)
-                    .foregroundStyle(done ? .secondary : .primary)
+                .accessibilityLabel(item.done ? "Mark as not done" : "Mark as done")
+                (Text(inline(item.text)).strikethrough(item.done) + ownerText(item))
+                    .foregroundStyle(item.done ? .secondary : .primary)
             }
         }
     }
 
-    private func spacing(before index: Int) -> CGFloat {
+    private func ownerText(_ item: ActionItem) -> Text {
+        guard let owner = item.owner else { return Text("") }
+        return Text("  " + (item.isMine ? "You" : owner)).font(.callout.weight(.medium)).foregroundStyle(.secondary)
+    }
+
+    private func spacing(before index: Int, in blocks: [Block]) -> CGFloat {
         guard index > 0 else { return 0 }
         switch (blocks[index - 1], blocks[index]) {
         case (_, .heading): return 22
@@ -1106,8 +1164,11 @@ struct MarkdownNoteBody: View {
     }
 
     private var blocks: [Block] {
+        let tasks = Dictionary(ActionItem.parse(markdown).map { ($0.line, $0) }, uniquingKeysWith: { first, _ in first })
         var result: [Block] = []
         var paragraph: [String] = []
+        var lastHeading: Int?
+        var accessoryPlaced = tasksAccessory == nil
         func flush() {
             if !paragraph.isEmpty { result.append(.paragraph(paragraph.joined(separator: " "))) }
             paragraph = []
@@ -1115,10 +1176,17 @@ struct MarkdownNoteBody: View {
         for (index, rawLine) in markdown.components(separatedBy: "\n").enumerated() {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.isEmpty { flush(); continue }
-            if let match = line.firstMatch(of: /^#{1,6}\s+(.+)$/) {
-                flush(); result.append(.heading(String(match.1)))
-            } else if let match = line.firstMatch(of: /^[-*]\s+\[([ xX])\]\s+(.+)$/) {
-                flush(); result.append(.task(String(match.2), done: match.1 != " ", line: index))
+            if let item = tasks[index] {
+                flush()
+                if !accessoryPlaced, let heading = lastHeading, case .heading(let text, _) = result[heading] {
+                    result[heading] = .heading(text, accessory: true)
+                    accessoryPlaced = true
+                }
+                result.append(.task(item))
+            } else if let match = line.firstMatch(of: /^#{1,6}\s+(.+)$/) {
+                flush()
+                lastHeading = result.count
+                result.append(.heading(String(match.1), accessory: false))
             } else if let match = line.firstMatch(of: /^[-*•]\s+(.+)$/) {
                 flush(); result.append(.bullet(String(match.1), nested: rawLine.hasPrefix("  ") || rawLine.hasPrefix("\t")))
             } else if let match = line.firstMatch(of: /^(\d+[.)])\s+(.+)$/) {
@@ -1129,6 +1197,31 @@ struct MarkdownNoteBody: View {
         }
         flush()
         return result
+    }
+}
+
+/// "Add to Reminders" for a meeting's open items, or a note that they're already there.
+struct RemindersButton: View {
+    @ObservedObject var coordinator: AppCoordinator
+    let note: Note
+    var mineOnly = false
+
+    var body: some View {
+        let open = ActionItem.parse(note.body).filter { !$0.done && (!mineOnly || $0.isMine) }
+        let unsent = open.filter { !note.sentToReminders.contains($0.text) }
+        if !open.isEmpty {
+            if unsent.isEmpty {
+                Label("In Reminders", systemImage: "checkmark")
+                    .foregroundStyle(.secondary)
+                    .labelStyle(.titleAndIcon)
+            } else {
+                Button(unsent.count == open.count ? "Add to Reminders" : "Add \(unsent.count) to Reminders") {
+                    Task { await coordinator.addToReminders(unsent, noteID: note.id) }
+                }
+                .buttonStyle(.link)
+                .disabled(coordinator.sendingToReminders.contains(note.id))
+            }
+        }
     }
 }
 
@@ -1177,3 +1270,203 @@ struct LevelMeter: View {
     }
 }
 
+
+// MARK: - Speakers
+
+/// Names the other side of the call. One name labels the transcript; any names help the write-up.
+private struct SpeakersEditor: View {
+    @ObservedObject var coordinator: AppCoordinator
+    let note: Note
+    @Environment(\.dismiss) private var dismiss
+    @State private var names = ""
+    @State private var original = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Who else was on the call?").font(.headline)
+            TextField("Names, separated by commas", text: $names)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 300)
+                .onSubmit(save)
+            if !suggestions.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(suggestions, id: \.self) { name in
+                        Button("+ \(name)") { add(name) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                }
+            }
+            Text("Helps the AI say who said what and spell names right. With one name, the transcript shows it instead of “Others”.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 300, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                if coordinator.canWriteUp(note), !note.edited, parsed != Self.parse(original) {
+                    Button("Save and Update Summary") {
+                        save()
+                        coordinator.writeUpNote(note.id)
+                    }
+                }
+                Button("Save", action: save)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .onAppear {
+            names = note.participants.joined(separator: ", ")
+            original = names
+        }
+    }
+
+    private var parsed: [String] { Self.parse(names) }
+
+    private static func parse(_ text: String) -> [String] {
+        text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+
+    /// Owners of action items are usually the other people on the call.
+    private var suggestions: [String] {
+        let current = Set(parsed.map { $0.lowercased() })
+        return ActionItem.otherOwners(in: note.body).filter { !current.contains($0.lowercased()) }.prefix(4).map { $0 }
+    }
+
+    private func add(_ name: String) {
+        names = (parsed + [name]).joined(separator: ", ")
+    }
+
+    private func save() {
+        let list = parsed
+        coordinator.notes.modify(note.id, keepOrder: true) { $0.participants = list }
+        original = names
+        dismiss()
+    }
+}
+
+// MARK: - Action items
+
+private struct ActionItemsPage: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject private var store: NotesStore
+    private enum Scope { case mine, everyone }
+    @State private var scope = Scope.mine
+    @State private var showDone = false
+
+    init(coordinator: AppCoordinator) {
+        self.coordinator = coordinator
+        store = coordinator.notes
+    }
+
+    private struct Group: Identifiable {
+        let note: Note
+        let items: [ActionItem]
+        var id: UUID { note.id }
+    }
+
+    var body: some View {
+        let groups = groups
+        List {
+            ForEach(groups) { group in
+                Section {
+                    ForEach(group.items, id: \.self) { item in
+                        ActionItemRow(item: item, showOwner: scope == .everyone) {
+                            coordinator.toggleActionItem(group.note.id, item: item)
+                        }
+                        .contextMenu {
+                            NavigationLink("Open Meeting", value: NotetakerRoute.note(group.note.id))
+                        }
+                    }
+                } header: {
+                    HStack(alignment: .firstTextBaseline) {
+                        NavigationLink(value: NotetakerRoute.note(group.note.id)) {
+                            HStack(spacing: 6) {
+                                Text(group.note.title).foregroundStyle(.primary)
+                                Text(group.note.createdAt.formatted(.dateTime.month(.abbreviated).day()))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                        RemindersButton(coordinator: coordinator, note: group.note, mineOnly: scope == .mine)
+                            .font(.callout)
+                    }
+                }
+            }
+            if !groups.isEmpty {
+                Text("Ticking an item here ticks it in the meeting notes too.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
+            }
+        }
+        .listStyle(.inset)
+        .overlay {
+            if groups.isEmpty {
+                ContentUnavailableView(
+                    hasAnyItems ? "All Done" : "No Action Items",
+                    systemImage: "checklist.checked",
+                    description: Text(scope == .mine ? "Action items assigned to you in your meeting notes appear here." : "Action items from your meeting notes appear here.")
+                )
+            }
+        }
+        .navigationTitle("Action Items")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Show", selection: $scope) {
+                    Text("Mine").tag(Scope.mine)
+                    Text("Everyone").tag(Scope.everyone)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Toggle(isOn: $showDone) { Text("Show Completed") }
+                    .toggleStyle(.button)
+                    .help(showDone ? "Hide completed items" : "Show completed items")
+            }
+        }
+    }
+
+    private var groups: [Group] {
+        store.notes.sorted { $0.createdAt > $1.createdAt }.compactMap { note in
+            let items = ActionItem.parse(note.body).filter { (scope == .everyone || $0.isMine) && (showDone || !$0.done) }
+            return items.isEmpty ? nil : Group(note: note, items: items)
+        }
+    }
+
+    private var hasAnyItems: Bool {
+        store.notes.contains { note in ActionItem.parse(note.body).contains { scope == .everyone || $0.isMine } }
+    }
+}
+
+private struct ActionItemRow: View {
+    let item: ActionItem
+    let showOwner: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Button(action: onToggle) {
+                Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(item.done ? Color.accentColor : .secondary)
+                    .imageScale(.large)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(item.done ? "Mark as not done" : "Mark as done")
+            Text(item.text)
+                .strikethrough(item.done)
+                .foregroundStyle(item.done ? .secondary : .primary)
+            Spacer()
+            if showOwner, let owner = item.owner {
+                Text(item.isMine ? "You" : owner)
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(.quaternary))
+            }
+        }
+        .padding(.vertical, 3)
+    }
+}

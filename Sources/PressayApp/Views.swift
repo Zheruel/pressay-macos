@@ -279,7 +279,13 @@ struct SettingsRootView: View {
         NavigationSplitView {
             List(SettingsSection.allCases, selection: $selection) { section in
                 Label {
-                    Text(section.title)
+                    HStack {
+                        Text(section.title)
+                        if section == .notes, coordinator.liveSession != nil {
+                            Spacer()
+                            Circle().fill(.red).frame(width: 7, height: 7).accessibilityLabel("Recording")
+                        }
+                    }
                 } icon: {
                     SettingsIconTile(systemImage: section.systemImage, color: section.tint)
                 }
@@ -298,6 +304,7 @@ struct SettingsRootView: View {
                     case .general: GeneralSettingsView(coordinator: coordinator)
                     case .claude: ClaudeCleanupSettingsView(coordinator: coordinator)
                     case .dictionary: DictionarySettingsView(coordinator: coordinator)
+                    case .snippets: SnippetsSettingsView(coordinator: coordinator)
                     default: HistoryView(coordinator: coordinator)
                     }
                 }
@@ -366,6 +373,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     case general
     case claude
     case dictionary
+    case snippets
     case notes
     case history
 
@@ -375,6 +383,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "General"
         case .claude: "AI Cleanup"
         case .dictionary: "Dictionary"
+        case .snippets: "Snippets"
         case .notes: "Notetaker"
         case .history: "History"
         }
@@ -384,6 +393,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: "gearshape.fill"
         case .claude: "sparkles"
         case .dictionary: "character.book.closed.fill"
+        case .snippets: "text.quote"
         case .notes: "person.2.wave.2.fill"
         case .history: "clock.fill"
         }
@@ -393,6 +403,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: Color(nsColor: .systemGray)
         case .claude: Color(red: 0.91, green: 0.47, blue: 0.31)
         case .dictionary: .blue
+        case .snippets: .teal
         case .notes: .orange
         case .history: .purple
         }
@@ -441,7 +452,9 @@ private struct GeneralSettingsView: View {
                     )
                 } label: {
                     Text("Hold to talk")
-                    Text("Hold to dictate. Press Esc to cancel.")
+                    Text(coordinator.commandModeAvailable
+                         ? "Hold to dictate. Add Shift for Command Mode. Press Esc to cancel."
+                         : "Hold to dictate. Press Esc to cancel.")
                 }
             }
 
@@ -637,6 +650,23 @@ private struct ClaudeCleanupSettingsView: View {
             case .claude: keySection
             case .chatgpt: chatGPTAccountSection
             }
+
+            Section {
+                Toggle(isOn: $settings.matchAppStyle) {
+                    Text("Match each app’s style")
+                    Text("Casual in chats, complete sentences in email, tidy paragraphs in documents.")
+                }
+                LabeledContent {
+                    Text(coordinator.commandModeAvailable ? "Shift + \(settings.holdKey.displayName)" : "Needs a talk key other than Shift")
+                        .foregroundStyle(.secondary)
+                } label: {
+                    Text("Command Mode")
+                    Text("Hold Shift with your talk key and say what to do: “make this shorter”, “translate to German”, or “write a reply saying I’m running late”. Select text first to change it.")
+                }
+            } header: {
+                Text("Writing")
+            }
+            .disabled(!coordinator.cleanupConfigured)
         }
         .formStyle(.grouped)
         .toggleStyle(.switch)
@@ -940,7 +970,7 @@ private struct NotesSettingsView: View {
                         }
                     }
                 } else {
-                    Text(providerCaption)
+                    Text(providerCaption + " Models appear here for the providers you’ve set up in AI Cleanup.")
                 }
             }
 
@@ -964,8 +994,8 @@ private struct NotesSettingsView: View {
                 Text("The first meeting asks for permission to record system audio. Audio is never saved; only the transcript is.")
             }
 
-            Section("Recording") {
-                Picker("Maximum length", selection: $settings.maxMeetingHours) {
+            Section("While recording") {
+                Picker("Stop after", selection: $settings.maxMeetingHours) {
                     ForEach([1, 2, 3, 4, 6, 8], id: \.self) { hours in
                         Text(hours == 1 ? "1 hour" : "\(hours) hours").tag(hours)
                     }
@@ -1314,6 +1344,158 @@ private struct AddDictionaryEntrySheet: View {
             .padding([.horizontal, .bottom], 20)
         }
         .frame(width: 420)
+    }
+}
+
+// MARK: - Snippets
+
+private struct SnippetsSettingsView: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject private var settings: AppSettings
+    @State private var editing: Snippet?
+    @State private var adding = false
+
+    init(coordinator: AppCoordinator) {
+        self.coordinator = coordinator
+        settings = coordinator.settings
+    }
+
+    private func triggers(except id: UUID?) -> Set<String> {
+        Set(settings.snippets.filter { $0.id != id }.map { SnippetExpander.normalized($0.trigger) })
+    }
+
+    var body: some View {
+        Form {
+            PaneHero(section: .snippets, blurb: "Say a short phrase and Pressay types the full text: a link, an address, a sign-off.")
+
+            if settings.snippets.isEmpty {
+                Section {
+                    ContentUnavailableView {
+                        Label("No Snippets", systemImage: "text.quote")
+                    } description: {
+                        Text("Try “my calendar link” for your booking URL, or “my address” for your shipping address.")
+                    } actions: {
+                        Button("Add Snippet") { adding = true }
+                    }
+                }
+            } else {
+                Section {
+                    ForEach(settings.snippets) { snippet in
+                        SnippetRow(snippet: snippet) { editing = snippet } onDelete: {
+                            settings.snippets.removeAll { $0.id == snippet.id }
+                        }
+                    }
+                } footer: {
+                    Text("Works anywhere in a dictation, in any app. Snippet text is inserted exactly as written.")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { adding = true } label: { Label("Add Snippet", systemImage: "plus") }
+                    .help("Add a snippet")
+            }
+        }
+        .sheet(isPresented: $adding) {
+            SnippetSheet(snippet: nil, taken: triggers(except: nil)) { settings.snippets.append($0) }
+        }
+        .sheet(item: $editing) { snippet in
+            SnippetSheet(snippet: snippet, taken: triggers(except: snippet.id)) { updated in
+                if let index = settings.snippets.firstIndex(where: { $0.id == updated.id }) {
+                    settings.snippets[index] = updated
+                }
+            }
+        }
+    }
+}
+
+private struct SnippetRow: View {
+    let snippet: Snippet
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("“\(snippet.trigger)”")
+                Text(snippet.text).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            Spacer()
+            HStack(spacing: 6) {
+                Button(action: onEdit) { Image(systemName: "pencil.circle.fill") }
+                    .help("Edit")
+                Button(action: onDelete) {
+                    Image(systemName: "minus.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.white, .red)
+                }
+                .help("Remove")
+            }
+            .buttonStyle(.plain)
+            .opacity(hovering ? 1 : 0)
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(count: 2, perform: onEdit)
+        .contextMenu {
+            Button("Edit…", action: onEdit)
+            Button("Remove", role: .destructive, action: onDelete)
+        }
+    }
+}
+
+private struct SnippetSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let snippet: Snippet?
+    let taken: Set<String>
+    let onSave: (Snippet) -> Void
+    @State private var trigger = ""
+    @State private var text = ""
+
+    private var duplicate: Bool { taken.contains(SnippetExpander.normalized(trigger)) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Form {
+                Section {
+                    TextField("When you say", text: $trigger, prompt: Text("my calendar link"))
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Pressay types")
+                        TextEditor(text: $text)
+                            .font(.body)
+                            .frame(height: 110)
+                            .scrollContentBackground(.hidden)
+                            .padding(4)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(.background))
+                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+                    }
+                } header: {
+                    Text(snippet == nil ? "Add Snippet" : "Edit Snippet")
+                } footer: {
+                    Text(duplicate ? "You already have a snippet for this phrase." : "Use a phrase you wouldn’t say otherwise, like “my calendar link” rather than “calendar”.")
+                        .foregroundStyle(duplicate ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                }
+            }
+            .formStyle(.grouped)
+            .scrollDisabled(true)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button(snippet == nil ? "Add" : "Save") {
+                    onSave(Snippet(id: snippet?.id ?? UUID(), trigger: trigger.trimmingCharacters(in: .whitespacesAndNewlines), text: text))
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(SnippetExpander.normalized(trigger).isEmpty || text.isEmpty || duplicate)
+            }
+            .padding([.horizontal, .bottom], 20)
+        }
+        .frame(width: 460)
+        .onAppear {
+            trigger = snippet?.trigger ?? ""
+            text = snippet?.text ?? ""
+        }
     }
 }
 

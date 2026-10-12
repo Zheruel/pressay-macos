@@ -411,6 +411,7 @@ public struct ChatGPTCleaner: Sendable {
     public static func requestBody(
         transcript: String,
         targetBundleID: String?,
+        style: AppStyle? = nil,
         vocabulary: [VocabularyParser.Entry],
         model: String,
         effort: String?
@@ -421,7 +422,7 @@ public struct ChatGPTCleaner: Sendable {
             "instructions": ClaudeCleanupPrompt.system(vocabulary: vocabulary),
             "input": [[
                 "role": "user",
-                "content": ClaudeCleanupPrompt.user(transcript: transcript, targetBundleID: targetBundleID),
+                "content": ClaudeCleanupPrompt.user(transcript: transcript, targetBundleID: targetBundleID, style: style),
             ]],
             "store": false,
             "stream": true,
@@ -433,6 +434,7 @@ public struct ChatGPTCleaner: Sendable {
     public func clean(
         _ transcript: String,
         targetBundleID: String?,
+        style: AppStyle? = nil,
         vocabulary: [VocabularyParser.Entry],
         model: String,
         effort: String?,
@@ -442,6 +444,7 @@ public struct ChatGPTCleaner: Sendable {
         let body = Self.requestBody(
             transcript: transcript,
             targetBundleID: targetBundleID,
+            style: style,
             vocabulary: vocabulary,
             model: model,
             effort: effort

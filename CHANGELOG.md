@@ -11,6 +11,11 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 - Call detection: when Zoom, Teams, Webex, FaceTime, Slack, Discord, WhatsApp or a browser call starts using the microphone, Pressay offers to take notes. Notes started this way stop when the call ends. Pressay only checks which apps use the mic, never what they hear, and needs no extra permission.
 - A floating notepad while recording, with the timer, levels, an optional live transcript and your notes.
 - Notetaker settings (gear on the Notetaker page): AI model picker limited to the providers you have set up (Claude Haiku 5.5 or Sonnet 5.5; GPT-6.1 Sol or GPT-6 Luna), call detection, stop when the call ends, maximum length, notepad and live transcript.
+- Speaker names: tell Pressay who else was on the call (it suggests names from the action items). With one name, the transcript shows it instead of "Others", and names help the write-up attribute and spell people.
+- Action items across all meetings, filtered to yours or everyone's, with checkboxes and Add to Reminders.
+- Command Mode: hold Shift with the talk key and speak an instruction. With text selected it rewrites the selection ("make this more formal", "translate to German"); with nothing selected it writes new text ("write a reply saying Friday works"), or a shell command in a terminal. Uses your AI Cleanup provider.
+- AI Cleanup matches the app's style: casual in chat apps, full sentences and paragraphs in email, tidy paragraphs and lists in documents. Browser tabs are recognised by page title (Gmail, Slack, Google Docs). Turn it off under Settings › AI Cleanup.
+- Snippets: say a phrase like "my calendar link" and Pressay types the stored text, on its own or inside a dictation.
 - If a write-up fails, the note says why and offers Try Again.
 - Notes render nested bullets.
 

@@ -46,6 +46,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     /// Parks warming after a failed open so a broken device can't spin.
     private var warmUpFailed = false
     private var keyPressedAt = Date.distantPast
+    private var commandMode = false
     private let cleaner = ClaudeCleaner()
     private let chatGPTCleaner = ChatGPTCleaner()
     private let editWatcher = EditWatcher()
@@ -187,7 +188,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             Task { @MainActor in
                 let overlay = self.overlay
                 while true {
-                    overlay.showArming()
+                    overlay.showArming(style: commandMode ? .command : .dictation)
                     try? await Task.sleep(for: .seconds(1.5))
                     overlay.showRecording()
                     for i in 0..<40 {
@@ -247,6 +248,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
+    var commandModeAvailable: Bool { !settings.holdKey.isShift }
+
     private var cleanupActive: Bool {
         settings.claudeCleanup && cleanupConfigured
     }
@@ -254,6 +257,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private func runCleanup(
         _ raw: String,
         targetBundleID: String?,
+        style: AppStyle?,
         vocabulary: [VocabularyParser.Entry],
         timeout: TimeInterval
     ) async throws -> String {
@@ -263,6 +267,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             return try await cleaner.clean(
                 raw,
                 targetBundleID: targetBundleID,
+                style: style,
                 vocabulary: vocabulary,
                 model: settings.claudeCleanupModel,
                 apiKey: apiKey,
@@ -273,11 +278,38 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             return try await chatGPTCleaner.clean(
                 raw,
                 targetBundleID: targetBundleID,
+                style: style,
                 vocabulary: vocabulary,
                 model: settings.chatGPTModel,
                 effort: ChatGPTCleanupModel.effort(for: settings.chatGPTModel),
                 accessToken: token,
                 timeout: timeout
+            )
+        }
+    }
+
+    /// Command Mode runs on the AI Cleanup provider and model, with a longer budget than cleanup.
+    private func runCommand(_ instruction: String, selection: String?, target: CapturedTarget, style: AppStyle?) async throws -> String {
+        let context = target.context.leadingText + target.context.trailingText
+        let user = CommandPrompt.user(instruction: instruction, selection: selection, context: context, app: target.bundleID, style: style)
+        let timeout: TimeInterval = 20 + Double(selection?.count ?? 0) / 400
+        return try await Timeout.run(for: .seconds(timeout + 5)) { [self] in
+            try await requestCommand(user: user, timeout: timeout)
+        }
+    }
+
+    private func requestCommand(user: String, timeout: TimeInterval) async throws -> String {
+        switch settings.cleanupProvider {
+        case .claude:
+            guard let apiKey = claudeAPIKey else { throw NotesAIError.notConfigured }
+            return try await cleaner.complete(
+                system: CommandPrompt.system, user: user, model: settings.claudeCleanupModel, apiKey: apiKey, timeout: timeout
+            )
+        case .chatgpt:
+            let token = try await chatGPT.accessToken()
+            return try await chatGPTCleaner.complete(
+                instructions: CommandPrompt.system, user: user, model: settings.chatGPTModel,
+                effort: ChatGPTCleanupModel.effort(for: settings.chatGPTModel), accessToken: token, timeout: timeout
             )
         }
     }
@@ -436,11 +468,18 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         activeMonitor = monitor
         sessionEngine = transcriber
         keyPressedAt = Date()
+        commandMode = commandModeAvailable && NSEvent.modifierFlags.contains(.shift)
+        if commandMode, !cleanupConfigured {
+            commandMode = false
+            overlay.showError("Command Mode needs AI. Set it up in Settings › AI Cleanup.")
+            stateMachine.reset()
+            return
+        }
         coolDownTask?.cancel()
         do {
             // Cue waits for real audio: a cold Bluetooth link gives 550 ms+ of silence, and beeping
             // through it trains people to talk into a dead mic.
-            overlay.showArming()
+            overlay.showArming(style: commandMode ? .command : .dictation)
             try recorder.start()
             target = accessibility.capture(vocabulary: settings.vocabularyTerms)
             settings.hasUsedDictation = true
@@ -460,7 +499,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         stateMachine.begin()
         sounds.play(.begin)
         recorder.markEarcon(duration: sounds.beginCaptureDelay)
-        overlay.showRecording(style: .dictation)
+        overlay.showRecording(style: commandMode ? .command : .dictation)
     }
 
     private func startArmingTimeout() {
@@ -490,12 +529,25 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             }
             sounds.play(.release)
             recorder.mutePreRoll(for: sounds.beginCaptureDelay)
+            // Shift can join at any point during the hold.
+            let command = commandMode || (commandModeAvailable && cleanupConfigured && NSEvent.modifierFlags.contains(.shift))
+            if command { overlay.showRecording(style: .command) }
             overlay.showProcessing()
             let captured = target ?? accessibility.capture(vocabulary: settings.vocabularyTerms)
             let target = accessibility.refreshInsertionTarget(captured)
             let engine = sessionEngine ?? transcriber
             processingTask = Task { [weak self] in
-                await self?.process(raw, target: target, engine: engine)
+                guard let self else { return }
+                if command {
+                    var selection = target.selectedText
+                    if selection == nil, !AppStyle.copiesLineWithoutSelection(target.bundleID) {
+                        selection = await accessibility.copySelection(from: target)
+                    }
+                    if selection?.isEmpty == true { selection = nil }
+                    await process(raw, target: target, engine: engine, command: .some(selection))
+                } else {
+                    await process(raw, target: target, engine: engine)
+                }
             }
         } catch PressayError.recordingTooShort {
             resetAfterNonResult()
@@ -647,10 +699,12 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
+    /// `command` is set in Command Mode, holding the selected text if there is any.
     private func process(
         _ raw: AudioRecorder.RawCapture,
         target: CapturedTarget,
-        engine: any SpeechTranscriber
+        engine: any SpeechTranscriber,
+        command: String?? = nil
     ) async {
         let releasedAt = Date()
         let recordID = UUID()
@@ -699,7 +753,26 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             var structureLatency: TimeInterval = 0
             var usedLanguageModel = false
             let structureStarted = Date()
-            if cleanupActive,
+            let style = settings.matchAppStyle ? AppStyle.detect(bundleID: target.bundleID, windowTitle: target.windowTitle) : nil
+            let snippet = SnippetExpander.exactMatch(deterministic, snippets: settings.snippets)
+            if case .some(let selection) = command {
+                guard cleanupConfigured else {
+                    overlay.showError("Command Mode needs AI. Set it up in Settings › AI Cleanup.")
+                    resetAfterNonResult()
+                    return
+                }
+                overlay.showPolishing()
+                do {
+                    finalText = try await runCommand(deterministic, selection: selection, target: target, style: style)
+                    usedLanguageModel = true
+                } catch {
+                    logger.error("Command failed: \(error.localizedDescription, privacy: .public)")
+                    fail(error, message: "The command didn’t work. Try again.")
+                    return
+                }
+            } else if let snippet {
+                finalText = snippet.text
+            } else if cleanupActive,
                ClaudeCleanupPolicy.shouldClean(transcript.text, isTerminal: isTerminal) {
                 // Raw transcript: the rules' phonetic rewrites would only hand Claude errors to undo.
                 let raw = transcript.text
@@ -708,7 +781,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 overlay.showPolishing()
                 do {
                     finalText = try await Timeout.run(for: .seconds(timeout)) { [self] in
-                        try await runCleanup(raw, targetBundleID: target.bundleID, vocabulary: vocabulary, timeout: timeout)
+                        try await runCleanup(raw, targetBundleID: target.bundleID, style: style, vocabulary: vocabulary, timeout: timeout)
                     }
                     usedLanguageModel = true
                 } catch ChatGPTCleaner.CleanupError.usageLimit {
@@ -719,8 +792,11 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                     logger.error("AI cleanup fell back to rules: \(error.localizedDescription, privacy: .public)")
                 }
             }
-            if !usedLanguageModel, settings.structuredDictation, !isTerminal {
+            if !usedLanguageModel, snippet == nil, settings.structuredDictation, !isTerminal {
                 finalText = TranscriptStructurer.structure(deterministic)
+            }
+            if command == nil, snippet == nil {
+                finalText = SnippetExpander.expand(finalText, snippets: settings.snippets)
             }
             structureLatency = Date().timeIntervalSince(structureStarted)
 
@@ -751,7 +827,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             }
             stateMachine.succeed()
             showInsertionOutcome(insertion)
-            if settings.learnFromEdits, !isTerminal, insertion != .copied {
+            if settings.learnFromEdits, command == nil, !isTerminal, insertion != .copied {
                 editWatcher.watch(pid: target.pid, inserted: finalText) { [weak self] corrections in
                     self?.learnFromEdits(corrections)
                 }
@@ -1004,7 +1080,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
               !note.edited || replacingEdits, note.kind == .meeting, !note.lines.isEmpty else { return }
         let hasNotes = !note.myNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let system = MeetingPrompt.system(vocabulary: settings.vocabularyEntries, hasUserNotes: hasNotes)
-        let user = MeetingPrompt.user(lines: note.lines, userNotes: note.myNotes)
+        let user = MeetingPrompt.user(lines: note.lines, userNotes: note.myNotes, participants: note.participants)
         // About a minute per hour of meeting on top of the base budget.
         let timeout = 90 + note.duration / 60
         notes.modify(id, persist: false) {
@@ -1024,7 +1100,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 guard replacingEdits || notes.note(id)?.edited == false else { return }
                 notes.modify(id) {
                     $0.title = parsed.title
-                    $0.body = parsed.body
+                    $0.body = ActionItem.carryingTicks(from: $0.body, into: parsed.body)
                     $0.edited = false
                     $0.needsWriteUp = false
                 }
@@ -1086,6 +1162,32 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
         let picked: [Note] = ranked.prefix(limit).map { $0.note }
         return picked.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// Ticking a box is not an edit, so a later write-up can still replace the notes.
+    @Published private(set) var sendingToReminders: Set<UUID> = []
+
+    /// Adds the open items not already sent; false if Reminders refused.
+    @discardableResult
+    func addToReminders(_ items: [ActionItem], noteID: UUID) async -> Bool {
+        guard let note = notes.note(noteID), !sendingToReminders.contains(noteID) else { return false }
+        let fresh = items.filter { !$0.done && !note.sentToReminders.contains($0.text) }
+        guard !fresh.isEmpty else { return true }
+        sendingToReminders.insert(noteID)
+        defer { sendingToReminders.remove(noteID) }
+        do {
+            try await RemindersExporter.add(fresh, from: note)
+            notes.modify(noteID, keepOrder: true) { $0.sentToReminders.append(contentsOf: fresh.map(\.text)) }
+            return true
+        } catch {
+            recordingError = error.localizedDescription
+            return false
+        }
+    }
+
+    func toggleActionItem(_ noteID: UUID, item: ActionItem) {
+        guard let body = notes.note(noteID)?.body, let toggled = ActionItem.toggling(item, in: body) else { return }
+        notes.modify(noteID, persist: true, keepOrder: true) { $0.body = toggled }
     }
 
     func openNotetakerSettings() {

@@ -196,3 +196,69 @@ public struct CallDetectionState: Sendable {
         return nil
     }
 }
+
+/// A "- [ ] Do the thing (owner)" line from a meeting's notes.
+public struct ActionItem: Hashable, Sendable {
+    public let line: Int
+    public let text: String
+    public let owner: String?
+    public let done: Bool
+
+    public var isMine: Bool { owner?.lowercased() == "me" }
+
+    private static var pattern: Regex<(Substring, Substring, Substring, Substring, Substring)> { /^(\s*[-*]\s+\[)([ xX])(\]\s+)(.+?)\s*$/ }
+
+    public static func parse(_ markdown: String) -> [ActionItem] {
+        markdown.components(separatedBy: "\n").enumerated().compactMap { index, raw in
+            guard let match = raw.firstMatch(of: pattern) else { return nil }
+            var text = String(match.4)
+            var owner: String?
+            if let tail = text.firstMatch(of: /\s*\(([^()]+)\)$/), isOwner(String(tail.1)) {
+                owner = String(tail.1)
+                text.removeSubrange(tail.range)
+            }
+            if owner?.lowercased() == "owner unclear" { owner = nil }
+            return ActionItem(line: index, text: text, owner: owner, done: match.2 != " ")
+        }
+    }
+
+    /// "(Leo)" or "(me)" names an owner; "(draft)" is part of the task.
+    private static func isOwner(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        if lower == "me" || lower == "owner unclear" { return true }
+        return text.count <= 40 && text.split(separator: " ").count <= 4 && text.first?.isUppercase == true
+    }
+
+    /// Owners other than the user, for suggesting who was on the call.
+    public static func otherOwners(in markdown: String) -> [String] {
+        var seen = Set<String>()
+        return parse(markdown).compactMap(\.owner).filter { $0.lowercased() != "me" && seen.insert($0.lowercased()).inserted }
+    }
+
+    /// Ticks or unticks `item`, finding it again by its text if the notes changed since it was read.
+    public static func toggling(_ item: ActionItem, in markdown: String) -> String? {
+        var lines = markdown.components(separatedBy: "\n")
+        let current = parse(markdown)
+        guard let target = current.first(where: { $0.line == item.line && $0.text == item.text })
+                ?? current.first(where: { $0.text == item.text }) else { return nil }
+        lines[target.line] = lines[target.line].replacing(pattern) { match in
+            "\(match.1)\(target.done ? " " : "x")\(match.3)\(match.4)"
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Keeps the user's ticks when notes are written up again and the same tasks come back.
+    public static func carryingTicks(from old: String, into new: String) -> String {
+        let done = Set(parse(old).filter(\.done).map { key($0.text) })
+        guard !done.isEmpty else { return new }
+        var result = new
+        for item in parse(new) where !item.done && done.contains(key(item.text)) {
+            result = toggling(item, in: result) ?? result
+        }
+        return result
+    }
+
+    private static func key(_ text: String) -> String {
+        text.lowercased().split { !$0.isLetter && !$0.isNumber }.joined(separator: " ")
+    }
+}

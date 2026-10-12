@@ -81,8 +81,7 @@ private struct NotepadView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            LiveHeader(session: session, compact: true)
-                .padding(.top, 6)
+            header
             if let notice = session.notice {
                 Label(notice, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
@@ -95,19 +94,6 @@ private struct NotepadView: View {
             }
             MyNotesEditor(text: myNotes, fontSize: 13)
                 .frame(minHeight: 70)
-            HStack {
-                Button("Open Notetaker") { coordinator.showNotes() }
-                Spacer()
-                Button {
-                    coordinator.stopRecording()
-                } label: {
-                    Label("Stop", systemImage: "stop.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .disabled(session.phase != .recording)
-            }
-            .controlSize(.regular)
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 14)
@@ -115,6 +101,32 @@ private struct NotepadView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(.regularMaterial)
         .ignoresSafeArea()
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            RecordingDot(active: session.phase == .recording)
+            TimelineView(.periodic(from: session.startedAt, by: 1)) { context in
+                Text(TranscriptLine.timestamp(session.offset + context.date.timeIntervalSince(session.startedAt)))
+                    .monospacedDigit()
+            }
+            .font(.headline)
+            LevelMeter(label: nil, level: max(session.micLevel, session.othersLevel), tint: .red)
+            Spacer(minLength: 4)
+            Button { coordinator.showNotes() } label: {
+                Image(systemName: "arrow.up.forward.app")
+            }
+            .buttonStyle(.borderless)
+            .help("Open in Pressay")
+            if session.phase == .finishing {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("Stop") { coordinator.stopRecording() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .controlSize(.small)
+            }
+        }
     }
 
     private var myNotes: Binding<String> {
@@ -159,7 +171,7 @@ final class CallPromptController {
 
     func show(app: String, onStart: @escaping () -> Void) {
         dismiss()
-        let panel = FloatingPanel(size: NSSize(width: 360, height: 84), titled: false)
+        let panel = FloatingPanel(size: NSSize(width: 380, height: 72), titled: false)
         let view = CallPromptView(
             app: app,
             onStart: { [weak self] in
@@ -169,7 +181,7 @@ final class CallPromptController {
             onDismiss: { [weak self] in self?.dismiss() }
         )
         let hosting = NSHostingView(rootView: view)
-        hosting.frame = NSRect(x: 0, y: 0, width: 360, height: 84)
+        hosting.frame = NSRect(x: 0, y: 0, width: 380, height: 72)
         panel.contentView = hosting
         panel.setContentSize(hosting.fittingSize)
         panel.placeTopRight()
@@ -201,24 +213,22 @@ private struct CallPromptView: View {
         HStack(spacing: 12) {
             Image(nsImage: PressayBrand.appIcon)
                 .resizable()
-                .frame(width: 40, height: 40)
+                .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Take notes for this call?").font(.headline)
                 Text("\(app) is using your microphone.").font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 4)
-            VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Button("Not Now", action: onDismiss)
                 Button("Start", action: onStart)
                     .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: .infinity)
-                Button("Not Now", action: onDismiss)
-                    .frame(maxWidth: .infinity)
             }
             .controlSize(.small)
             .fixedSize()
         }
         .padding(14)
-        .frame(width: 360)
+        .frame(width: 380)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.separator))
     }

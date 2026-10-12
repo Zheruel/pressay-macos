@@ -22,6 +22,8 @@ final class AppSettings: ObservableObject {
         static let chatGPTWelcomeShown = "chatGPTWelcomeShown"
         static let learnFromEdits = "learnFromEdits"
         static let notesModel = "notesModel"
+        static let snippets = "snippets"
+        static let matchAppStyle = "matchAppStyle"
         static let detectCalls = "detectCalls"
         static let stopWhenCallEnds = "stopWhenCallEnds"
         static let openNotepad = "openNotepad"
@@ -59,6 +61,10 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(chatGPTWelcomeShown, forKey: Key.chatGPTWelcomeShown) }
     }
     @Published var learnFromEdits: Bool { didSet { defaults.set(learnFromEdits, forKey: Key.learnFromEdits) } }
+    @Published var snippets: [Snippet] {
+        didSet { defaults.set(try? JSONEncoder().encode(snippets), forKey: Key.snippets) }
+    }
+    @Published var matchAppStyle: Bool { didSet { defaults.set(matchAppStyle, forKey: Key.matchAppStyle) } }
     /// A `NotesModel.id`; empty follows the AI Cleanup provider.
     @Published var notesModel: String { didSet { defaults.set(notesModel, forKey: Key.notesModel) } }
     @Published var detectCalls: Bool { didSet { defaults.set(detectCalls, forKey: Key.detectCalls) } }
@@ -102,6 +108,8 @@ final class AppSettings: ObservableObject {
         vocabularySuggestions = VocabularySuggestionStore(defaults: defaults)
         learnFromEdits = defaults.object(forKey: Key.learnFromEdits) as? Bool ?? true
         notesModel = defaults.string(forKey: Key.notesModel) ?? ""
+        snippets = defaults.data(forKey: Key.snippets).flatMap { try? JSONDecoder().decode([Snippet].self, from: $0) } ?? []
+        matchAppStyle = defaults.object(forKey: Key.matchAppStyle) as? Bool ?? true
         detectCalls = defaults.object(forKey: Key.detectCalls) as? Bool ?? true
         stopWhenCallEnds = defaults.object(forKey: Key.stopWhenCallEnds) as? Bool ?? true
         openNotepad = defaults.object(forKey: Key.openNotepad) as? Bool ?? true
