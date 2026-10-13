@@ -2,6 +2,27 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.10.0] - 2026-10-13
+
+### Added
+
+- A Home page opens Pressay: words dictated this week, time saved over typing, your speaking pace and streak, and your latest dictations, with one click to start the Notetaker.
+
+### Changed
+
+- A Liquid Glass look across the app: the Ask bar floats over meetings as a glass capsule, and the Notetaker cards, the live meeting timer, the call prompt and the main buttons use glass.
+
+### Fixed
+
+- A meeting's header shows who actually spoke. It showed "You" even when only the other side was heard, and left them out until named.
+- The sidebar no longer shifts while a meeting is recording.
+- The live meeting view no longer says "Taking notes" twice, and its warnings stay in view instead of scrolling away.
+- The live transcript scrolls to "Transcribing…" when it appears.
+- My Notes keeps its scroll bar at the window edge instead of beside the text.
+- The floating notepad names speakers the way the transcript does, instead of calling everyone "Others".
+- Editing a summary keeps the same column width, so the text doesn't jump.
+- The permission rows in setup line up.
+
 ## [1.9.3] - 2026-10-13
 
 ### Changed

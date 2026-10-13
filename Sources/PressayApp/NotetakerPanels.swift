@@ -117,13 +117,15 @@ private struct NotepadView: View {
             Button { coordinator.showNotes() } label: {
                 Image(systemName: "arrow.up.forward.app")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.small)
             .help("Open in Pressay")
             if session.phase == .finishing {
                 ProgressView().controlSize(.small)
             } else {
                 Button("Stop") { coordinator.stopRecording() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .tint(.red)
                     .controlSize(.small)
             }
@@ -145,8 +147,10 @@ private struct NotepadView: View {
                     if session.lines.isEmpty {
                         Text("Listening…").foregroundStyle(.secondary)
                     }
+                    let note = coordinator.notes.note(session.noteID)
                     ForEach(Array(session.lines.suffix(40).enumerated()), id: \.offset) { _, line in
-                        Text("\(Text(line.speaker == .me ? "You  " : "Others  ").foregroundStyle(line.speaker == .me ? Color.accentColor : .orange).fontWeight(.semibold))\(line.text)")
+                        let label = note?.label(for: line) ?? (line.speaker == .me ? "You" : "Others")
+                        Text("\(Text(label + "  ").foregroundStyle(line.speaker == .me ? Color.accentColor : .orange).fontWeight(.semibold))\(line.text)")
                             .font(.callout)
                             .textSelection(.enabled)
                     }
@@ -219,15 +223,15 @@ private struct CallPromptView: View {
             Spacer(minLength: 4)
             HStack(spacing: 6) {
                 Button("Not Now", action: onDismiss)
+                    .buttonStyle(.glass)
                 Button("Start", action: onStart)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
             }
             .controlSize(.small)
             .fixedSize()
         }
         .padding(14)
         .frame(width: 380)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.separator))
+        .glassEffect(.regular, in: .rect(cornerRadius: 24))
     }
 }

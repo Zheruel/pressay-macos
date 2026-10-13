@@ -152,6 +152,7 @@ struct OnboardingView: View {
                     } icon: {
                         Image(systemName: kind.systemImage)
                             .foregroundStyle(.tint)
+                            .frame(width: 22)
                     }
                 }
                 .contextMenu {
@@ -221,7 +222,7 @@ struct OnboardingView: View {
                 Text(coordinator.modelReady ? "Start Dictating" : "Downloading Model…")
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .controlSize(.extraLarge)
             .disabled(!coordinator.modelReady)
             .keyboardShortcut(.defaultAction)

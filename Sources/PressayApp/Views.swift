@@ -273,34 +273,32 @@ struct SettingsRootView: View {
     @ObservedObject var coordinator: AppCoordinator
     // PRESSAY_PANE opens a given pane, for design review.
     @State private var selection: SettingsSection? = ProcessInfo.processInfo.environment["PRESSAY_PANE"]
-        .flatMap(SettingsSection.init(rawValue:)) ?? .general
+        .flatMap(SettingsSection.init(rawValue:)) ?? .home
 
     var body: some View {
         NavigationSplitView {
             List(SettingsSection.allCases, selection: $selection) { section in
                 Label {
-                    HStack {
-                        Text(section.title)
-                        if section == .notes, coordinator.liveSession != nil {
-                            Spacer()
-                            Circle().fill(.red).frame(width: 7, height: 7).accessibilityLabel("Recording")
-                        }
-                    }
+                    Text(section.title)
                 } icon: {
                     SettingsIconTile(systemImage: section.systemImage, color: section.tint)
                 }
+                // A badge, not a Spacer in the label: that widened the row and shifted the sidebar.
+                .badge(section == .notes && coordinator.liveSession != nil ? Text(Image(systemName: "record.circle.fill")).foregroundColor(.red) : nil)
+                .accessibilityValue(section == .notes && coordinator.liveSession != nil ? "Recording" : "")
                 .tag(section)
             }
             .frame(minWidth: 215, idealWidth: 215)
             .navigationSplitViewColumnWidth(215)
             .toolbar(removing: .sidebarToggle)
         } detail: {
-            switch selection ?? .general {
+            switch selection ?? .home {
             case .notes:
                 NotetakerPage(coordinator: coordinator)
             case let section:
                 Group {
                     switch section {
+                    case .home: HomeView(coordinator: coordinator) { selection = $0 }
                     case .general: GeneralSettingsView(coordinator: coordinator)
                     case .claude: ClaudeCleanupSettingsView(coordinator: coordinator)
                     case .dictionary: DictionarySettingsView(coordinator: coordinator)
@@ -377,6 +375,7 @@ private struct SettingsIconTile: View {
 }
 
 private enum SettingsSection: String, CaseIterable, Identifiable {
+    case home
     case general
     case claude
     case dictionary
@@ -387,6 +386,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     var id: Self { self }
     var title: String {
         switch self {
+        case .home: "Home"
         case .general: "General"
         case .claude: "AI Cleanup"
         case .dictionary: "Dictionary"
@@ -397,6 +397,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     }
     var systemImage: String {
         switch self {
+        case .home: "house.fill"
         case .general: "gearshape.fill"
         case .claude: "sparkles"
         case .dictionary: "character.book.closed.fill"
@@ -407,6 +408,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     }
     var tint: Color {
         switch self {
+        case .home: .indigo
         case .general: Color(nsColor: .systemGray)
         case .claude: Color(red: 0.91, green: 0.47, blue: 0.31)
         case .dictionary: .blue
@@ -427,6 +429,186 @@ private struct StatusLabel: View {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(text).foregroundStyle(.secondary)
         }
+    }
+}
+
+// MARK: - Home
+
+/// The landing page: how much Pressay saved this week, and the latest dictations.
+private struct HomeView: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject private var history: HistoryStore
+    @ObservedObject private var settings: AppSettings
+    @ObservedObject private var permissions: PermissionController
+    let open: (SettingsSection) -> Void
+
+    init(coordinator: AppCoordinator, open: @escaping (SettingsSection) -> Void) {
+        self.coordinator = coordinator
+        history = coordinator.history
+        settings = coordinator.settings
+        permissions = coordinator.permissions
+        self.open = open
+    }
+
+    var body: some View {
+        let stats = stats
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                greeting
+                if !permissions.allGranted || !coordinator.modelReady { attention }
+                GlassEffectContainer(spacing: 12) {
+                    Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                        GridRow {
+                            StatTile(title: "Words", value: stats.wordsThisWeek.formatted(), caption: "this week", systemImage: "text.word.spacing", tint: .indigo)
+                            StatTile(title: "Time saved", value: Self.minutes(stats.minutesSavedThisWeek), caption: "vs. typing", systemImage: "hourglass", tint: .teal)
+                        }
+                        GridRow {
+                            StatTile(title: "Pace", value: stats.wordsPerMinute.map { "\($0)" } ?? "–", caption: "words per minute", systemImage: "speedometer", tint: .orange)
+                            StatTile(title: "Streak", value: "\(stats.streakDays)", caption: stats.streakDays == 1 ? "day" : "days in a row", systemImage: "flame.fill", tint: .pink)
+                        }
+                    }
+                }
+                recent
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 20)
+            .padding(.bottom, 28)
+        }
+    }
+
+    private var stats: DictationStats {
+        DictationStats(entries: history.records.map {
+            .init(date: $0.createdAt, words: DictationStats.wordCount($0.referenceText), duration: $0.duration)
+        })
+    }
+
+    static func minutes(_ minutes: Int) -> String {
+        minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h \(minutes % 60) min"
+    }
+
+    private var greeting: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(Self.salutation())
+                .font(.system(size: 30, weight: .bold))
+            Text(coordinator.commandModeAvailable
+                 ? "Hold \(settings.holdKey.displayName) to dictate in any app. Add Shift to give a command."
+                 : "Hold \(settings.holdKey.displayName) to dictate in any app.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Button { coordinator.startMeeting() } label: {
+                    Label("Start Notetaker", systemImage: "mic.fill")
+                }
+                .buttonStyle(.glassProminent)
+                .disabled(coordinator.liveSession != nil)
+                Button { open(.dictionary) } label: {
+                    Label("Dictionary", systemImage: "character.book.closed")
+                }
+                .buttonStyle(.glass)
+                Button { open(.snippets) } label: {
+                    Label("Snippets", systemImage: "text.quote")
+                }
+                .buttonStyle(.glass)
+            }
+            .controlSize(.large)
+            .padding(.top, 10)
+        }
+    }
+
+    static func salutation(at date: Date = .now) -> String {
+        switch Calendar.current.component(.hour, from: date) {
+        case 5..<12: "Good morning"
+        case 12..<18: "Good afternoon"
+        default: "Good evening"
+        }
+    }
+
+    private var attention: some View {
+        Button {
+            if permissions.allGranted { open(.general) } else { coordinator.showOnboarding() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .symbolRenderingMode(.multicolor)
+                    .font(.title3)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(permissions.allGranted ? "The speech model isn’t ready" : "A permission needs attention")
+                        .font(.headline)
+                    Text(permissions.allGranted ? coordinator.modelStatus : "Pressay can’t hear you or type until it’s allowed.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.tint(.orange.opacity(0.15)).interactive(), in: .rect(cornerRadius: 18))
+    }
+
+    @ViewBuilder
+    private var recent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Recent").font(.title3.weight(.semibold))
+                Spacer()
+                if !history.records.isEmpty {
+                    Button("See All") { open(.history) }
+                        .buttonStyle(.link)
+                }
+            }
+            if history.records.isEmpty {
+                Text("Your dictations show up here. Hold \(settings.holdKey.displayName) in any text field and start talking.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .background(.fill.quinary, in: .rect(cornerRadius: 18))
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(history.records.prefix(6).enumerated()), id: \.element.id) { index, record in
+                        if index > 0 { Divider().padding(.leading, 48) }
+                        HistoryRow(record: record, coordinator: coordinator, showsDay: true)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                    }
+                }
+                .background(.fill.quinary, in: .rect(cornerRadius: 18))
+            }
+        }
+    }
+}
+
+private struct StatTile: View {
+    let title: String
+    let value: String
+    let caption: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: systemImage)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
+                .labelIconToTitleSpacing(6)
+                .symbolRenderingMode(.hierarchical)
+                .tint(tint)
+            Text(value)
+                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .glassEffect(.regular.tint(tint.opacity(0.1)), in: .rect(cornerRadius: 22))
     }
 }
 
@@ -1606,6 +1788,8 @@ private struct HistoryView: View {
 private struct HistoryRow: View {
     let record: DictationRecord
     let coordinator: AppCoordinator
+    /// Outside History's day sections, the time alone doesn't say when.
+    var showsDay = false
     @State private var hovering = false
     @State private var copied = false
 
@@ -1665,7 +1849,9 @@ private struct HistoryRow: View {
     private var meta: String {
         var parts: [String] = []
         if let app = AppInfo.name(for: record.targetBundleID) { parts.append(app) }
-        parts.append(record.createdAt.formatted(date: .omitted, time: .shortened))
+        parts.append(showsDay
+                     ? record.createdAt.formatted(.relative(presentation: .named))
+                     : record.createdAt.formatted(date: .omitted, time: .shortened))
         parts.append("\(Int(record.duration.rounded())) sec")
         return parts.joined(separator: " · ")
     }

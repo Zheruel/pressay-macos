@@ -185,6 +185,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             Task {
                 while !modelReady { try? await Task.sleep(for: .milliseconds(250)) }
                 startMeeting()
+                showNotes()
                 liveSession?.onInjectedFileEnd = { self.stopRecording(automatic: true) }
             }
         case "stream":
