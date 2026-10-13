@@ -579,7 +579,8 @@ private struct NoteDetailView: View {
         } else if others {
             chips.append("Others")
         }
-        return chips
+        var seen = Set<String>()
+        return chips.filter { seen.insert($0).inserted }
     }
 
     private var editor: some View {
@@ -896,32 +897,32 @@ private struct AskBar: View {
     }
 
     private var field: some View {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles").foregroundStyle(.tint)
-                TextField(placeholder, text: $question)
-                    .textFieldStyle(.plain)
-                    .focused($focused)
-                    .onSubmit(send)
-                    .disabled(!available)
-                if !exchanges.isEmpty {
-                    Button {
-                        withAnimation(.snappy) { expanded.toggle() }
-                    } label: {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.up")
-                    }
-                    .buttonStyle(.borderless)
-                    .help(expanded ? "Hide answers" : "Show answers")
-                }
-                Button(action: send) {
-                    Image(systemName: "arrow.up.circle.fill").font(.title2)
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles").foregroundStyle(.tint)
+            TextField(placeholder, text: $question)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .onSubmit(send)
+                .disabled(!available)
+            if !exchanges.isEmpty {
+                Button {
+                    withAnimation(.snappy) { expanded.toggle() }
+                } label: {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.up")
                 }
                 .buttonStyle(.borderless)
-                .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                .help(expanded ? "Hide answers" : "Show answers")
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 8)
-            .padding(.vertical, 8)
-            .glassEffect(.regular.interactive(), in: .capsule)
+            Button(action: send) {
+                Image(systemName: "arrow.up.circle.fill").font(.title2)
+            }
+            .buttonStyle(.borderless)
+            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .padding(.vertical, 8)
+        .glassEffect(.regular.interactive(), in: .capsule)
     }
 
     private var available: Bool { coordinator.notesModel != nil && coordinator.settings.notesUseAI }

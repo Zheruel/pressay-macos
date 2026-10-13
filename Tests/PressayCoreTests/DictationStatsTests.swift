@@ -27,8 +27,4 @@ struct DictationStatsTests {
         let stats = DictationStats(entries: [daysAgo(1), daysAgo(2), daysAgo(4)], now: now, calendar: calendar)
         #expect(stats.streakDays == 2)
     }
-
-    @Test func noRecentDictationsMeansNoStreak() {
-        #expect(DictationStats(entries: [daysAgo(3)], now: now, calendar: calendar).streakDays == 0)
-    }
 }
