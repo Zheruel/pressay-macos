@@ -141,13 +141,21 @@ final class LiveSession: ObservableObject {
         }
     }
 
-    /// Without System Audio Recording permission the tap is silent, with no error.
+    /// Without System Audio Recording permission the tap delivers exact zeros, with no error.
     private func watchForMissingSystemAudio() {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
-            guard let self, phase == .recording, pipeline.received(from: .others) == 0 else { return }
-            notice = "Only your microphone is being transcribed. To include the other people, allow Pressay in System Settings › Privacy & Security › Screen & System Audio Recording, under System Audio Recording Only."
+            guard let self, phase == .recording else { return }
+            if pipeline.received(from: .others) == 0 { return showMissingSystemAudio() }
+            try? await Task.sleep(for: .seconds(86))
+            guard phase == .recording, pipeline.peak(of: .others) == 0 else { return }
+            logger.error("System audio has been digital silence for 90 s")
+            showMissingSystemAudio()
         }
+    }
+
+    private func showMissingSystemAudio() {
+        notice = "Only your microphone is being transcribed. To include the other people, allow Pressay in System Settings › Privacy & Security › Screen & System Audio Recording, under System Audio Recording Only."
     }
 
     private func injectFile(_ path: String) {

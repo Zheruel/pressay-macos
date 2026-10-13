@@ -87,8 +87,14 @@ final class SystemAudioCapture: @unchecked Sendable {
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private let queue = DispatchQueue(label: "dev.localflow.app.system-audio", qos: .userInitiated)
+    private let control = DispatchQueue(label: "dev.localflow.app.system-audio.control")
     private let resampler = StreamResampler()
     private let logger = Logger(subsystem: "dev.localflow.app", category: "meeting")
+    /// The aggregate's clock, not the tap's 48 kHz: AirPods on a call deliver 24 kHz.
+    private let rate = OSAllocatedUnfairLock<Double>(initialState: 0)
+    private var running = false
+    private var outputListener: AudioObjectPropertyListenerBlock?
+    private var rateListener: AudioObjectPropertyListenerBlock?
     var onSamples: (@Sendable ([Float]) -> Void)?
 
     enum CaptureError: LocalizedError {
@@ -101,17 +107,20 @@ final class SystemAudioCapture: @unchecked Sendable {
     }
 
     func start() throws {
+        try control.sync {
+            try open()
+            running = true
+            watchOutputDevice()
+        }
+    }
+
+    private func open() throws {
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: AudioDevices.ownProcessObject.map { [$0] } ?? [])
         description.uuid = UUID()
         description.muteBehavior = .unmuted
         description.isPrivate = true
         description.name = "Pressay Meeting"
         try check(AudioHardwareCreateProcessTap(description, &tapID), "tap")
-
-        var format = AudioStreamBasicDescription()
-        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        var address = AudioObjectPropertyAddress(mSelector: kAudioTapPropertyFormat, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        try check(AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &format), "format")
 
         guard let outputUID = AudioDevices.defaultOutputUID else { try check(-1, "output"); return }
         let aggregate: [String: Any] = [
@@ -129,15 +138,20 @@ final class SystemAudioCapture: @unchecked Sendable {
         ]
         try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID), "device")
 
-        let rate = format.mSampleRate
-        let channels = Int(max(format.mChannelsPerFrame, 1))
-        let interleaved = format.mFormatFlags & kAudioFormatFlagIsNonInterleaved == 0
+        // A headset's own mic comes first; the tap is the last input stream.
+        guard let format = AudioDevices.lastInputStreamFormat(of: aggregateID) else { try check(-2, "format"); return }
         let isFloat = format.mFormatFlags & kAudioFormatFlagIsFloat != 0
-        guard isFloat, format.mBitsPerChannel == 32 else { try check(-2, "format"); return }
+        guard isFloat, format.mBitsPerChannel == 32 else { try check(-3, "format"); return }
+        let nominal = AudioDevices.nominalSampleRate(of: aggregateID) ?? format.mSampleRate
+        rate.withLock { $0 = nominal }
+        watchSampleRate()
+        logger.info("System audio from \(outputUID, privacy: .public) at \(nominal, privacy: .public) Hz, \(format.mChannelsPerFrame, privacy: .public) ch")
+
         try check(AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, queue) { [weak self] _, input, _, _, _ in
             guard let self else { return }
-            let mono = Self.downmix(UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input)), channels: channels, interleaved: interleaved)
-            let converted = resampler.convert(mono, rate: rate)
+            let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+            let mono = Self.downmix(buffers)
+            let converted = resampler.convert(mono, rate: rate.withLock { $0 })
             received += converted.count
             peak = max(peak, converted.reduce(0) { max($0, abs($1)) })
             onSamples?(converted)
@@ -145,14 +159,26 @@ final class SystemAudioCapture: @unchecked Sendable {
         try check(AudioDeviceStart(aggregateID, procID), "start")
     }
 
-    deinit { stop() }
+    deinit {
+        unwatchOutputDevice()
+        close()
+    }
 
     private var received = 0
     private var peak: Float = 0
 
     func stop() {
+        control.sync {
+            running = false
+            unwatchOutputDevice()
+            close()
+        }
+    }
+
+    private func close() {
         if aggregateID != kAudioObjectUnknown {
             logger.info("System audio: \(Double(self.received) / 16_000, privacy: .public)s, peak \(self.peak, privacy: .public)")
+            unwatchSampleRate()
             if let procID {
                 AudioDeviceStop(aggregateID, procID)
                 AudioDeviceDestroyIOProcID(aggregateID, procID)
@@ -165,35 +191,64 @@ final class SystemAudioCapture: @unchecked Sendable {
         tapID = AudioObjectID(kAudioObjectUnknown)
     }
 
+    private func watchOutputDevice() {
+        var address = AudioDevices.defaultOutputAddress
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self, running else { return }
+            logger.notice("Output device changed; reopening system audio")
+            close()
+            do { try open() } catch { logger.error("System audio lost after output change: \(error.localizedDescription, privacy: .public)") }
+        }
+        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, control, listener) == noErr {
+            outputListener = listener
+        }
+    }
+
+    private func unwatchOutputDevice() {
+        guard let outputListener else { return }
+        var address = AudioDevices.defaultOutputAddress
+        AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, control, outputListener)
+        self.outputListener = nil
+    }
+
+    private func watchSampleRate() {
+        var address = AudioDevices.nominalRateAddress
+        let device = aggregateID
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self, let nominal = AudioDevices.nominalSampleRate(of: device) else { return }
+            logger.notice("System audio rate changed to \(nominal, privacy: .public) Hz")
+            rate.withLock { $0 = nominal }
+        }
+        if AudioObjectAddPropertyListenerBlock(aggregateID, &address, control, listener) == noErr {
+            rateListener = listener
+        }
+    }
+
+    private func unwatchSampleRate() {
+        guard let rateListener else { return }
+        var address = AudioDevices.nominalRateAddress
+        AudioObjectRemovePropertyListenerBlock(aggregateID, &address, control, rateListener)
+        self.rateListener = nil
+    }
+
     private func check(_ status: OSStatus, _ step: String) throws {
         guard status == noErr else {
             logger.error("System audio \(step, privacy: .public) failed: \(status, privacy: .public)")
-            stop()
+            close()
             throw CaptureError.failed(step, status)
         }
     }
 
-    private static func downmix(_ buffers: UnsafeMutableAudioBufferListPointer, channels: Int, interleaved: Bool) -> [Float] {
-        guard let first = buffers.first, let data = first.mData else { return [] }
-        if interleaved {
-            let total = Int(first.mDataByteSize) / MemoryLayout<Float>.size
-            let samples = data.assumingMemoryBound(to: Float.self)
-            let frames = total / channels
-            return (0..<frames).map { frame in
-                var sum: Float = 0
-                for channel in 0..<channels { sum += samples[frame * channels + channel] }
-                return sum / Float(channels)
-            }
+    private static func downmix(_ buffers: UnsafeMutableAudioBufferListPointer) -> [Float] {
+        guard let last = buffers.last, let data = last.mData else { return [] }
+        let samples = data.assumingMemoryBound(to: Float.self)
+        let channels = Int(max(last.mNumberChannels, 1))
+        let frames = Int(last.mDataByteSize) / MemoryLayout<Float>.size / channels
+        return (0..<frames).map { frame in
+            var sum: Float = 0
+            for channel in 0..<channels { sum += samples[frame * channels + channel] }
+            return sum / Float(channels)
         }
-        let frames = Int(first.mDataByteSize) / MemoryLayout<Float>.size
-        var mono = [Float](repeating: 0, count: frames)
-        for buffer in buffers {
-            guard let data = buffer.mData else { continue }
-            let samples = data.assumingMemoryBound(to: Float.self)
-            for frame in 0..<frames { mono[frame] += samples[frame] }
-        }
-        let scale = 1 / Float(max(buffers.count, 1))
-        return mono.map { $0 * scale }
     }
 }
 
@@ -210,13 +265,47 @@ enum AudioDevices {
         return status == noErr && object != kAudioObjectUnknown ? object : nil
     }
 
+    static let defaultOutputAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain
+    )
+
+    static let nominalRateAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioDevicePropertyNominalSampleRate,
+        mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain
+    )
+
+    static func nominalSampleRate(of device: AudioObjectID) -> Double? {
+        var rate: Float64 = 0
+        var size = UInt32(MemoryLayout<Float64>.size)
+        var address = nominalRateAddress
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &rate) == noErr, rate > 0 else { return nil }
+        return rate
+    }
+
+    static func lastInputStreamFormat(of device: AudioObjectID) -> AudioStreamBasicDescription? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreams,
+            mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain
+        )
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr, size > 0 else { return nil }
+        var streams = [AudioStreamID](repeating: 0, count: Int(size) / MemoryLayout<AudioStreamID>.size)
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &streams) == noErr, let last = streams.last else { return nil }
+        var format = AudioStreamBasicDescription()
+        var formatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        address = AudioObjectPropertyAddress(
+            mSelector: kAudioStreamPropertyVirtualFormat,
+            mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(last, &address, 0, nil, &formatSize, &format) == noErr else { return nil }
+        return format
+    }
+
     static var defaultOutputUID: String? {
         var device = AudioDeviceID(kAudioObjectUnknown)
         var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain
-        )
+        var address = defaultOutputAddress
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr else { return nil }
         var uid: Unmanaged<CFString>?
         var uidSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
