@@ -20,6 +20,13 @@ final class MeetingPromptTests: XCTestCase {
         XCTAssertFalse(MeetingPrompt.system(vocabulary: []).contains("{vocab}"))
     }
 
+    func testFlagsTranscriptWithOnlyTheUsersSide() {
+        let mine = (0..<10).map { TranscriptLine(speaker: .me, start: TimeInterval($0 * 10), text: "Line \($0)") }
+        XCTAssertTrue(MeetingPrompt.user(lines: mine).hasPrefix("Only the user's microphone was recorded"))
+        let both = mine + [TranscriptLine(speaker: .others, start: 200, text: "Sure")]
+        XCTAssertTrue(MeetingPrompt.user(lines: both).hasPrefix("<transcript>"))
+    }
+
     func testPromptMatchesBenchmarkedFile() throws {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
