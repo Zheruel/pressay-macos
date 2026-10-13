@@ -262,7 +262,8 @@ private struct StartCard: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        // Flat, so the glass button on it reads as glass.
+        .background(.fill.quinary, in: .rect(cornerRadius: 22))
         .padding(.vertical, 6)
     }
 }
@@ -291,7 +292,7 @@ private struct CallDetectionStatus: View {
     }
 }
 
-/// Neutral glass with a red record glyph, like Voice Memos, rather than a bright accent pill.
+/// Clear glass with a red record glyph, like Voice Memos, rather than a bright accent pill.
 struct StartNotetakerButton: View {
     @ObservedObject var coordinator: AppCoordinator
 
@@ -306,9 +307,7 @@ struct StartNotetakerButton: View {
             }
             .padding(.horizontal, 4)
         }
-        // Solid, not glass: it sits on glass cards, where glass on glass vanishes.
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
+        .buttonStyle(.glass)
         .disabled(coordinator.liveSession != nil)
     }
 }
@@ -355,6 +354,7 @@ private struct NoteListRow: View {
             }
         }
         .padding(.vertical, 4)
+        .hoverHighlight()
     }
 
     private var preview: String {
@@ -1640,5 +1640,27 @@ private struct ActionItemRow: View {
             }
         }
         .padding(.vertical, 3)
+        .hoverHighlight()
     }
+}
+
+/// A soft rounded wash under the pointer, for rows that open or act on click.
+struct HoverHighlight: ViewModifier {
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.primary.opacity(hovering ? 0.06 : 0))
+                    .padding(.horizontal, -8)
+                    .padding(.vertical, -2)
+            }
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+extension View {
+    func hoverHighlight() -> some View { modifier(HoverHighlight()) }
 }

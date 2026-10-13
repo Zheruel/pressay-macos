@@ -504,8 +504,7 @@ private struct HomeView: View {
                     Label("Snippets", systemImage: "text.quote")
                 }
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.capsule)
+            .buttonStyle(.glass)
             .controlSize(.large)
             .padding(.top, 10)
         }
@@ -567,6 +566,7 @@ private struct HomeView: View {
                     ForEach(Array(history.records.prefix(6).enumerated()), id: \.element.id) { index, record in
                         if index > 0 { Divider().padding(.leading, 48) }
                         HistoryRow(record: record, coordinator: coordinator, showsDay: true)
+                            .hoverHighlight()
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
                     }
