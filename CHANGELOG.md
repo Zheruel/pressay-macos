@@ -2,6 +2,14 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.4] - 2026-10-13
+
+### Fixed
+
+- The Notetaker now hears the other people on a call when you wear AirPods or another headset. In call mode the headset runs at a lower rate and adds its own mic, so Pressay read the wrong audio at the wrong speed and transcribed only your side. It also follows switching headphones mid-call.
+- If the call's audio stays completely silent, Pressay now says how to allow System Audio Recording.
+- Meeting notes no longer hand you every action item when only your mic was recorded.
+
 ## [1.9.3] - 2026-10-13
 
 ### Changed

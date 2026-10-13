@@ -83,6 +83,9 @@ public enum MeetingPrompt {
         if lines.contains(where: { $0.voice != nil }) {
             message += "The other people's voices were told apart automatically: each \"Speaker N\" is one voice, but a line is occasionally given to the wrong voice. A name in place of \"Speaker N\" was set by the user and is reliable.\n\n"
         }
+        if lines.count >= 10, !lines.contains(where: { $0.speaker == .others }) {
+            message += "No call audio was recorded: either the other people's side is missing (the long gaps are them talking) or they were in the room and are on the \"Me\" lines. Don't assume the user owns every task. A task the user asks or tells someone else to do is that person's, or \"owner unclear\" if they aren't named.\n\n"
+        }
         if !participants.isEmpty {
             let who = participants.joined(separator: ", ")
             message += participants.count == 1
