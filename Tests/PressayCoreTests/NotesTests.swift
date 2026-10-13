@@ -22,7 +22,7 @@ final class MeetingPromptTests: XCTestCase {
 
     func testFlagsTranscriptWithOnlyTheUsersSide() {
         let mine = (0..<10).map { TranscriptLine(speaker: .me, start: TimeInterval($0 * 10), text: "Line \($0)") }
-        XCTAssertTrue(MeetingPrompt.user(lines: mine).hasPrefix("Only the user's microphone was recorded"))
+        XCTAssertTrue(MeetingPrompt.user(lines: mine).hasPrefix("No call audio was recorded"))
         let both = mine + [TranscriptLine(speaker: .others, start: 200, text: "Sure")]
         XCTAssertTrue(MeetingPrompt.user(lines: both).hasPrefix("<transcript>"))
     }

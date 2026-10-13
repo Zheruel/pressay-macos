@@ -87,13 +87,10 @@ final class SystemAudioCapture: @unchecked Sendable {
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
     private let queue = DispatchQueue(label: "dev.localflow.app.system-audio", qos: .userInitiated)
-    /// Device changes are handled here, never on the audio queue that `AudioDeviceStop` waits on.
     private let control = DispatchQueue(label: "dev.localflow.app.system-audio.control")
     private let resampler = StreamResampler()
     private let logger = Logger(subsystem: "dev.localflow.app", category: "meeting")
-    /// The rate the aggregate delivers at. The tap mixes at 48 kHz but the HAL converts it to the
-    /// output device's clock: AirPods on a call run at 24 kHz, so trusting the tap's rate played the
-    /// call back at half speed, an octave low, and nothing of it was transcribed.
+    /// The aggregate's clock, not the tap's 48 kHz: AirPods on a call deliver 24 kHz.
     private let rate = OSAllocatedUnfairLock<Double>(initialState: 0)
     private var running = false
     private var outputListener: AudioObjectPropertyListenerBlock?
@@ -141,8 +138,7 @@ final class SystemAudioCapture: @unchecked Sendable {
         ]
         try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &aggregateID), "device")
 
-        // The tap's stream comes after the output device's own inputs: a headset in call mode
-        // (AirPods) adds its microphone as the aggregate's first input stream.
+        // A headset's own mic comes first; the tap is the last input stream.
         guard let format = AudioDevices.lastInputStreamFormat(of: aggregateID) else { try check(-2, "format"); return }
         let isFloat = format.mFormatFlags & kAudioFormatFlagIsFloat != 0
         guard isFloat, format.mBitsPerChannel == 32 else { try check(-3, "format"); return }
@@ -195,7 +191,6 @@ final class SystemAudioCapture: @unchecked Sendable {
         tapID = AudioObjectID(kAudioObjectUnknown)
     }
 
-    /// Headphones connecting or disconnecting mid-call move the call's sound; follow it.
     private func watchOutputDevice() {
         var address = AudioDevices.defaultOutputAddress
         let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
@@ -216,7 +211,6 @@ final class SystemAudioCapture: @unchecked Sendable {
         self.outputListener = nil
     }
 
-    /// AirPods drop from 48 to 24 kHz when a call app opens their microphone.
     private func watchSampleRate() {
         var address = AudioDevices.nominalRateAddress
         let device = aggregateID
@@ -245,11 +239,16 @@ final class SystemAudioCapture: @unchecked Sendable {
         }
     }
 
-    /// The tap is the last input stream; each buffer says its own channel count.
     private static func downmix(_ buffers: UnsafeMutableAudioBufferListPointer) -> [Float] {
         guard let last = buffers.last, let data = last.mData else { return [] }
-        let samples = UnsafeBufferPointer(start: data.assumingMemoryBound(to: Float.self), count: Int(last.mDataByteSize) / MemoryLayout<Float>.size)
-        return SystemAudioMix.mono(samples, channels: Int(last.mNumberChannels))
+        let samples = data.assumingMemoryBound(to: Float.self)
+        let channels = Int(max(last.mNumberChannels, 1))
+        let frames = Int(last.mDataByteSize) / MemoryLayout<Float>.size / channels
+        return (0..<frames).map { frame in
+            var sum: Float = 0
+            for channel in 0..<channels { sum += samples[frame * channels + channel] }
+            return sum / Float(channels)
+        }
     }
 }
 
@@ -284,7 +283,6 @@ enum AudioDevices {
         return rate
     }
 
-    /// Format of a device's last input stream, where an aggregate puts its taps.
     static func lastInputStreamFormat(of device: AudioObjectID) -> AudioStreamBasicDescription? {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreams,

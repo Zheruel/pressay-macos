@@ -142,7 +142,6 @@ final class LiveSession: ObservableObject {
     }
 
     /// Without System Audio Recording permission the tap delivers exact zeros, with no error.
-    /// A real call is never that quiet for a minute and a half.
     private func watchForMissingSystemAudio() {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
