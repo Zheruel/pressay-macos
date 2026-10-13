@@ -108,14 +108,25 @@ struct NotetakerPage: View {
                             .listRowSeparator(.hidden)
                         if search.isEmpty, openItemCount > 0 {
                             NavigationLink(value: NotetakerRoute.actionItems) {
-                                Label {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "checklist")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 26, height: 26)
+                                        .background(Circle().fill(Color.orange.gradient))
                                     Text(openItemCount == 1 ? "1 open action item for you" : "\(openItemCount) open action items for you")
-                                } icon: {
-                                    Image(systemName: "checklist").foregroundStyle(.orange)
+                                        .font(.headline)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.tertiary)
                                 }
-                                .font(.headline)
-                                .padding(.vertical, 6)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .contentShape(.rect)
+                                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
                             }
+                            .buttonStyle(.plain)
                             .listRowSeparator(.hidden)
                         }
                     }
@@ -132,6 +143,8 @@ struct NotetakerPage: View {
                     }
                     if groups.isEmpty {
                         ContentUnavailableView.search(text: search)
+                            .frame(maxWidth: .infinity, minHeight: 220)
+                            .listRowSeparator(.hidden)
                     }
                 }
                 .listStyle(.inset)
@@ -238,14 +251,8 @@ private struct StartCard: View {
     var body: some View {
         HStack(spacing: 16) {
             if coordinator.liveSession == nil {
-                Button { coordinator.startMeeting() } label: {
-                    Label("Start Notetaker", systemImage: "mic.fill")
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 6)
-                }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .controlSize(.large)
+                StartNotetakerButton(coordinator: coordinator)
+                    .controlSize(.large)
             } else {
                 Label("Taking notes now", systemImage: "record.circle")
                     .font(.headline)
@@ -255,7 +262,8 @@ private struct StartCard: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.quaternary.opacity(0.6)))
+        // Flat, so the glass button on it reads as glass.
+        .background(.fill.quinary, in: .rect(cornerRadius: 22))
         .padding(.vertical, 6)
     }
 }
@@ -281,6 +289,26 @@ private struct CallDetectionStatus: View {
             }
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Clear glass with a red record glyph, like Voice Memos, rather than a bright accent pill.
+struct StartNotetakerButton: View {
+    @ObservedObject var coordinator: AppCoordinator
+
+    var body: some View {
+        Button { coordinator.startMeeting() } label: {
+            Label {
+                Text("Start Notetaker").fontWeight(.semibold)
+            } icon: {
+                Image(systemName: "record.circle.fill")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .red)
+            }
+            .padding(.horizontal, 4)
+        }
+        .buttonStyle(.glass)
+        .disabled(coordinator.liveSession != nil)
     }
 }
 
@@ -326,6 +354,7 @@ private struct NoteListRow: View {
             }
         }
         .padding(.vertical, 4)
+        .hoverHighlight()
     }
 
     private var preview: String {
@@ -357,13 +386,8 @@ private struct NotetakerHero: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)
-            Button { coordinator.startMeeting() } label: {
-                Label("Start Notetaker", systemImage: "record.circle")
-                    .padding(.horizontal, 8)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.extraLarge)
-            .disabled(coordinator.liveSession != nil)
+            StartNotetakerButton(coordinator: coordinator)
+                .controlSize(.extraLarge)
             .padding(.top, 6)
             CallDetectionStatus(coordinator: coordinator).padding(.top, 4)
         }
@@ -486,6 +510,8 @@ private struct NoteDetailView: View {
             case .transcript: TranscriptTab(coordinator: coordinator, note: note)
             case .myNotes: myNotesTab
             }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if !editing, note.kind == .meeting, note.hasTranscript {
                 AskBar(coordinator: coordinator, noteID: note.id)
             }
@@ -516,13 +542,13 @@ private struct NoteDetailView: View {
                 }
                 if note.kind == .meeting {
                     Text("·")
-                    ForEach(["You"] + note.speakerLabels, id: \.self) { name in
+                    ForEach(speakerChips, id: \.self) { name in
                         Text(name)
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.primary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(.quaternary))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 3)
+                            .glassEffect(.regular, in: .capsule)
                     }
                     Button(note.hasNames ? "Edit names" : "Add names") { editingNames = true }
                         .buttonStyle(.link)
@@ -542,6 +568,21 @@ private struct NoteDetailView: View {
         .padding(.bottom, 20)
     }
 
+    /// Who spoke: "You" only when the mic picked you up, then the other side.
+    private var speakerChips: [String] {
+        let others = note.lines.contains { $0.speaker == .others }
+        var chips = note.lines.contains { $0.speaker == .me } ? ["You"] : []
+        if !note.voices.isEmpty {
+            chips += note.speakerLabels
+        } else if !note.participants.isEmpty {
+            chips += note.participants
+        } else if others {
+            chips.append("Others")
+        }
+        var seen = Set<String>()
+        return chips.filter { seen.insert($0).inserted }
+    }
+
     private var editor: some View {
         VStack(alignment: .leading, spacing: 10) {
             TextField("Title", text: $title)
@@ -552,8 +593,10 @@ private struct NoteDetailView: View {
                 .lineSpacing(4)
                 .scrollContentBackground(.hidden)
         }
+        .frame(maxWidth: 700, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 40)
-        .padding(.top, 24)
+        .padding(.top, 28)
+        .frame(maxWidth: .infinity)
         .onChange(of: title) { _, value in if value != note.title { onChange(value, text) } }
         .onChange(of: text) { _, value in if value != note.body { onChange(title, value) } }
     }
@@ -644,12 +687,13 @@ private struct NoteDetailView: View {
                     }
                 }
             }
-            MyNotesEditor(text: $myNotes, fontSize: 15)
+            .frame(maxWidth: 700)
+            .padding(.horizontal, 40)
+            .frame(maxWidth: .infinity)
+            // Full width, so the scroller sits at the window edge rather than beside the text.
+            MyNotesEditor(text: $myNotes, fontSize: 15, column: 700)
         }
-        .frame(maxWidth: 700)
-        .padding(.horizontal, 40)
-        .padding(.top, 24)
-        .frame(maxWidth: .infinity)
+        .padding(.top, 28)
     }
 }
 
@@ -835,44 +879,50 @@ private struct AskBar: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-            if expanded, !exchanges.isEmpty {
-                answers
-                Divider()
-            }
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles").foregroundStyle(.secondary)
-                TextField(placeholder, text: $question)
-                    .textFieldStyle(.plain)
-                    .focused($focused)
-                    .onSubmit(send)
-                    .disabled(!available)
-                if !exchanges.isEmpty {
-                    Button {
-                        withAnimation(.snappy) { expanded.toggle() }
-                    } label: {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.up")
-                    }
-                    .buttonStyle(.borderless)
-                    .help(expanded ? "Hide answers" : "Show answers")
+        GlassEffectContainer(spacing: 8) {
+            VStack(spacing: 8) {
+                if expanded, !exchanges.isEmpty {
+                    answers
+                        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+                        .transition(.blurReplace.combined(with: .move(edge: .bottom)))
                 }
-                Button(action: send) {
-                    Image(systemName: "arrow.up.circle.fill").font(.title2)
+                field
+            }
+        }
+        .frame(maxWidth: 700)
+        .padding(.horizontal, 24)
+        .padding(.top, 6)
+        .padding(.bottom, 14)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var field: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles").foregroundStyle(.tint)
+            TextField(placeholder, text: $question)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .onSubmit(send)
+                .disabled(!available)
+            if !exchanges.isEmpty {
+                Button {
+                    withAnimation(.snappy) { expanded.toggle() }
+                } label: {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.up")
                 }
                 .buttonStyle(.borderless)
-                .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || busy)
-                .opacity(focused ? 1 : 0.6)
+                .help(expanded ? "Hide answers" : "Show answers")
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.background))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator))
-            .frame(maxWidth: 700)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 10)
+            Button(action: send) {
+                Image(systemName: "arrow.up.circle.fill").font(.title2)
+            }
+            .buttonStyle(.borderless)
+            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || busy)
         }
-        .background(.bar)
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .padding(.vertical, 8)
+        .glassEffect(.regular.interactive(), in: .capsule)
     }
 
     private var available: Bool { coordinator.notesModel != nil && coordinator.settings.notesUseAI }
@@ -907,10 +957,9 @@ private struct AskBar: View {
                         .id(exchange.id)
                     }
                 }
-                .frame(maxWidth: 700, alignment: .leading)
-                .padding(.horizontal, 32)
-                .padding(.vertical, 14)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
             }
             .frame(maxHeight: 280)
             .onChange(of: exchanges.count) { _, _ in
@@ -956,13 +1005,27 @@ private struct LiveRecordingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LiveHeader(session: session)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
-            Divider()
-            HSplitView {
-                transcript.frame(minWidth: 300)
-                myNotesEditor.frame(minWidth: 240, idealWidth: 300)
+            if let notice = session.notice {
+                Label(notice, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .symbolRenderingMode(.multicolor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .glassEffect(.regular.tint(.yellow.opacity(0.12)), in: .rect(cornerRadius: 14))
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+            }
+            // An HStack, not HSplitView: the AppKit split view nudged the sidebar while recording.
+            HStack(spacing: 0) {
+                transcript
+                    .frame(minWidth: 300, maxWidth: .infinity)
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        LiveHeader(session: session)
+                            .padding(.top, 12)
+                    }
+                Divider()
+                myNotesEditor.frame(width: 300)
             }
         }
         .toolbar { controls }
@@ -979,12 +1042,6 @@ private struct LiveRecordingView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let notice = session.notice {
-                        Label(notice, systemImage: "exclamationmark.triangle.fill")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .symbolRenderingMode(.multicolor)
-                    }
                     if allLines.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Listening…").font(.system(size: 15, weight: .medium))
@@ -1010,6 +1067,9 @@ private struct LiveRecordingView: View {
             }
             .onChange(of: session.lines.count) { _, _ in
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .onChange(of: session.pending > 0) { _, transcribing in
+                if transcribing { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) } }
             }
         }
     }
@@ -1039,7 +1099,7 @@ private struct LiveRecordingView: View {
                 Button(action: onStop) {
                     Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .tint(.red)
                 .keyboardShortcut(.return, modifiers: .command)
                 .help("Stop and write up the notes (⌘↩)")
@@ -1053,42 +1113,48 @@ private struct LiveHeader: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RecordingDot(active: session.phase == .recording)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Taking notes").font(.headline)
+            HStack(spacing: 8) {
+                RecordingDot(active: session.phase == .recording)
                 TimelineView(.periodic(from: session.startedAt, by: 1)) { context in
                     Text(TranscriptLine.timestamp(session.offset + context.date.timeIntervalSince(session.startedAt)))
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .fontWeight(.semibold)
                 }
-                .font(.subheadline)
             }
-            Spacer(minLength: 4)
             LevelMeter(label: "You", level: session.micLevel, tint: .accentColor)
             LevelMeter(label: "Others", level: session.othersLevel, tint: .orange)
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: .capsule)
     }
 }
 
 struct MyNotesEditor: View {
     @Binding var text: String
     var fontSize: CGFloat = 14
+    /// A centred reading column inside a full-width editor; nil fills the space.
+    var column: CGFloat?
 
     var body: some View {
-        TextEditor(text: $text)
-            .font(.system(size: fontSize))
-            .lineSpacing(3)
-            .scrollContentBackground(.hidden)
-            .scrollIndicators(.automatic)
-            .padding(.leading, -5)
-            .overlay(alignment: .topLeading) {
-                if text.isEmpty {
-                    Text("Jot down anything that matters…")
-                        .font(.system(size: fontSize))
-                        .foregroundStyle(.tertiary)
-                        .allowsHitTesting(false)
+        GeometryReader { proxy in
+            let inset = column.map { max(40, (proxy.size.width - $0) / 2) } ?? 0
+            TextEditor(text: $text)
+                .font(.system(size: fontSize))
+                .lineSpacing(3)
+                .scrollContentBackground(.hidden)
+                .contentMargins(.horizontal, inset, for: .scrollContent)
+                .padding(.leading, -5)
+                .overlay(alignment: .topLeading) {
+                    if text.isEmpty {
+                        Text("Jot down anything that matters…")
+                            .font(.system(size: fontSize))
+                            .foregroundStyle(.tertiary)
+                            .padding(.leading, inset)
+                            .allowsHitTesting(false)
+                    }
                 }
-            }
+        }
     }
 }
 
@@ -1575,5 +1641,27 @@ private struct ActionItemRow: View {
             }
         }
         .padding(.vertical, 3)
+        .hoverHighlight()
     }
+}
+
+/// A soft rounded wash under the pointer, for rows that open or act on click.
+struct HoverHighlight: ViewModifier {
+    @State private var hovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.primary.opacity(hovering ? 0.06 : 0))
+                    .padding(.horizontal, -8)
+                    .padding(.vertical, -2)
+            }
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+extension View {
+    func hoverHighlight() -> some View { modifier(HoverHighlight()) }
 }
