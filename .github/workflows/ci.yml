@@ -24,10 +24,23 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Show toolchain
+        id: toolchain
         run: |
           sw_vers
           xcodebuild -version
           swift --version
+          echo "xcode=$(xcodebuild -version | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      # Restores dependency checkouts and their compiled objects (FluidAudio is
+      # most of the build). Keyed on the toolchain so a runner image update
+      # never mixes modules from two compilers; saved once per dependency set.
+      - name: Restore build cache
+        uses: actions/cache@v5
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
 
       - name: Resolve dependencies
         run: xcrun swift package resolve
@@ -35,8 +48,11 @@ jobs:
       - name: Run tests
         run: xcrun swift test --disable-sandbox
 
-      # Builds the release executable, assembles the bundle (Info.plist,
-      # embedded framework, assets), ad-hoc signs, and codesign-verifies —
-      # catches packaging regressions the plain product build cannot.
+      # Assembles the bundle (Info.plist, embedded framework, assets), ad-hoc
+      # signs, and codesign-verifies, catching packaging regressions the plain
+      # product build cannot. Debug reuses the test build; an optimized build
+      # took ~3.5 minutes. The release workflow still builds release.
       - name: Build and verify app bundle
+        env:
+          CONFIGURATION: debug
         run: ./scripts/build-app.sh
