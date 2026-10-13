@@ -251,13 +251,8 @@ private struct StartCard: View {
     var body: some View {
         HStack(spacing: 16) {
             if coordinator.liveSession == nil {
-                Button { coordinator.startMeeting() } label: {
-                    Label("Start Notetaker", systemImage: "mic.fill")
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 6)
-                }
-                .buttonStyle(.glassProminent)
-                .controlSize(.large)
+                StartNotetakerButton(coordinator: coordinator)
+                    .controlSize(.large)
             } else {
                 Label("Taking notes now", systemImage: "record.circle")
                     .font(.headline)
@@ -293,6 +288,28 @@ private struct CallDetectionStatus: View {
             }
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Neutral glass with a red record glyph, like Voice Memos, rather than a bright accent pill.
+struct StartNotetakerButton: View {
+    @ObservedObject var coordinator: AppCoordinator
+
+    var body: some View {
+        Button { coordinator.startMeeting() } label: {
+            Label {
+                Text("Start Notetaker").fontWeight(.semibold)
+            } icon: {
+                Image(systemName: "record.circle.fill")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .red)
+            }
+            .padding(.horizontal, 4)
+        }
+        // Solid, not glass: it sits on glass cards, where glass on glass vanishes.
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .disabled(coordinator.liveSession != nil)
     }
 }
 
@@ -369,13 +386,8 @@ private struct NotetakerHero: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)
-            Button { coordinator.startMeeting() } label: {
-                Label("Start Notetaker", systemImage: "record.circle")
-                    .padding(.horizontal, 8)
-            }
-            .buttonStyle(.glassProminent)
-            .controlSize(.extraLarge)
-            .disabled(coordinator.liveSession != nil)
+            StartNotetakerButton(coordinator: coordinator)
+                .controlSize(.extraLarge)
             .padding(.top, 6)
             CallDetectionStatus(coordinator: coordinator).padding(.top, 4)
         }

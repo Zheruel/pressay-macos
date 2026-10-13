@@ -496,20 +496,16 @@ private struct HomeView: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
             HStack(spacing: 8) {
-                Button { coordinator.startMeeting() } label: {
-                    Label("Start Notetaker", systemImage: "mic.fill")
-                }
-                .buttonStyle(.glassProminent)
-                .disabled(coordinator.liveSession != nil)
+                StartNotetakerButton(coordinator: coordinator)
                 Button { open(.dictionary) } label: {
                     Label("Dictionary", systemImage: "character.book.closed")
                 }
-                .buttonStyle(.glass)
                 Button { open(.snippets) } label: {
                     Label("Snippets", systemImage: "text.quote")
                 }
-                .buttonStyle(.glass)
             }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
             .controlSize(.large)
             .padding(.top, 10)
         }
