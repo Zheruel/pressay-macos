@@ -2,14 +2,12 @@ import XCTest
 @testable import PressayCore
 
 final class ASRModelTests: XCTestCase {
-    // MARK: - Migration of persisted settings
-
     func testRetiredAndAbsentValuesFallBackToTheDefault() {
         for stored in ["parakeetV3", "whisperKit", "", "nonsense"] {
             XCTAssertEqual(
-                ASRModel.migrating(storedRawValue: stored), .qwen3ASR17, "stored=\(stored)")
+                ASRModel.migrating(storedRawValue: stored), .orukeet, "stored=\(stored)")
         }
-        XCTAssertEqual(ASRModel.migrating(storedRawValue: nil), .qwen3ASR17)
+        XCTAssertEqual(ASRModel.migrating(storedRawValue: nil), .orukeet)
     }
 
     func testAShippingSelectionIsPreserved() {
@@ -19,7 +17,7 @@ final class ASRModelTests: XCTestCase {
     }
 
     func testEveryModelHasADistinctArtifact() {
-        for model in ASRModel.allCases {
+        for model in ASRModel.allCases where model != .megaASR {
             XCTAssertNotNil(model.ggufDownload, "\(model.rawValue) has no GGUF")
         }
         // A shared filename would let the stale-artifact sweep delete a file another model needs.
@@ -27,7 +25,16 @@ final class ASRModelTests: XCTestCase {
         XCTAssertEqual(Set(names).count, names.count)
     }
 
-    // MARK: - Language coverage
+    func testRecommendedModelsHavePinnedIntegrityCheckedArtifacts() {
+        for model in ASRModel.recommended {
+            XCTAssertFalse(model.workerArtifacts.isEmpty)
+            for artifact in model.workerArtifacts {
+                XCTAssertGreaterThan(artifact.bytes, 0)
+                XCTAssertEqual(artifact.sha256.count, 64)
+                XCTAssertFalse(artifact.url.path.contains("/main/"))
+            }
+        }
+    }
 
     func testDefaultLanguageIsAlwaysSelectable() {
         for model in ASRModel.allCases {
@@ -45,8 +52,6 @@ final class ASRModelTests: XCTestCase {
             XCTAssertFalse(model.offersLanguageChoice, "\(model.rawValue)")
         }
     }
-
-    // MARK: - Refusal and hallucination filtering
 
     func testAssistantRefusalIsSuppressed() {
         let model = ASRModel.voxtralMini

@@ -1,439 +1,70 @@
-# Pressay benchmark notes
+# Local transcription benchmarks
 
-Pressay's defaults came from replaying real voice prompts, not from synthetic one-line demos. This page records the evidence that can be published without exposing anyone's voice or prompt history.
+**October 22, 2026 · Apple M5 Pro · 24 GB · macOS 27.0.1.** We tested 27 base models, 74 personal recordings and two public meeting cohorts. Scores below describe the exact runtime and quantization tested, not every implementation of a model.
 
-The sanitized aggregate data behind the charts lives in [`docs/benchmarks/results.json`](benchmarks/results.json). Raw audio, transcripts, and per-clip output remain private and are intentionally ignored by Git.
+![Pressay uses Orukeet for dictation and MOSS for meetings, with Parakeet Ultra, Qwen and Mega-ASR alternatives. Conceptual artwork generated with GPT Image.](assets/local-asr-overview.png)
 
-## Test environment
+## Recommended setup
 
-| Item | Value |
-| --- | --- |
-| Machine | Apple Silicon M5 Pro development Mac |
-| OS / toolchain | macOS 26, Swift 6.2 |
-| Corpus | 184 real hold-to-talk dictations |
-| Audio duration | 0.54–103.59 seconds; 36.33 minutes total |
-| Content | AI-agent prompts, team messages, technical identifiers, names, numbers, and multi-part tasks |
-| Timing | Warm model; wall-clock inference time; one engine at a time |
+Fresh installs use **Orukeet for dictation** and **MOSS for meetings**. The pickers rank the five recommended choices for each task. Existing explicit dictation selections are preserved, including legacy models for additional languages. Only the active engine remains resident; changing tasks unloads the previous worker before loading another model.
 
-The corpus is representative of the app's intended use, but it is not a standardized public benchmark. Results should be treated as product calibration on one machine, not universal model rankings.
+MOSS made 4–6% fewer word errors than Orukeet across the two meeting cohorts: about 7–17 fewer errors per 1,000 reference words. Orukeet is much faster and performed well in personal transcript reviews. Those recordings have no verified human transcripts, so this does **not** establish a personal dictation accuracy winner. The dictation order weighs useful output and responsiveness; it is not an accuracy leaderboard.
 
-## Dictation speed (October 2026)
+![Word error rates for five models across two public meeting cohorts. MOSS leads at 27.27% and 15.87%; Orukeet scores 28.95% and 16.60%. Lower is better.](assets/speech-models.svg)
 
-Measured on this Mac's last 150 dictations (Qwen3-ASR 1.7B, Haiku 5.5 cleanup): median 2.0 s from key release
-to insertion with AI Cleanup (speech-to-text 0.57 s, AI 1.24 s), 0.6 s without. The AI round trip is two thirds of it.
+## Top ten recommendations
 
-**AI round trip.** Time to first token is ~0.72 s whatever the prompt: a bare "Say hi" with no system prompt
-starts as late as the full cached 2.1k-token cleanup prompt (0.71 s). Connect plus first byte is ~0.1 s, so the rest
-is server-side and no transport (WebSocket or otherwise), prompt trimming or caching recovers it. On the 102-clip
-corpus, sequential and interleaved:
+This is a curated recommendation order that considers lexical quality, meaningful errors, robustness and processing cost. Close gaps are uncertain. The app offers the first five models; the remaining five are research comparisons.
 
-| Variant | Median | p90 | Max |
-| --- | ---: | ---: | ---: |
-| Shipped: full rewrite, adaptive thinking, effort medium | 1.10 s | 1.30 s | 4.16 s |
-| Thinking off | 1.15 s | 1.35 s | 2.27 s |
-| Reply "=" when nothing changes | 1.15 s | 1.37 s | 1.90 s |
-| Reply with edits only (`old => new`) or "=" | 1.13 s | 1.35 s | 2.08 s |
-
-Shorter reply formats saved nothing: Haiku used "=" on 16 clips and edits on 3, and output is only ~0.4 s of the
-total. Thinking ran on 3 of 102 clips and causes the rare 4 s outlier, but turning it off didn't move the median
-and raised meaning changes in the earlier cleanup benchmark (6.9% vs 4.4%), so it stays.
-
-**Skipping the AI.** Judged against the rules-only output (two blind Opus passes), the AI added nothing under
-ten words (9 clips: 8 identical outputs, mean −0.11), +0.5 at 10–12 words and +1.2 above 20. Cleanup now needs
-at least ten words (was four).
-
-**Transcribing while talking.** `PressayBench incremental` replays clips through Silero: once a piece reaches
-the minimum length, the first 0.5 s pause cuts it and it is transcribed in the background; only the tail waits for
-release. 158 single-speaker stretches from the AMI meetings (8–60 s, median 13 s), WER against the manual
-transcripts:
-
-| Minimum piece | Clips cut | WER (whole clip 28.2%) | Wait, clips ≥ 20 s (median / p90) |
-| --- | ---: | ---: | ---: |
-| whole clip | — | 28.2% | 1.00 s / 1.93 s |
-| 3 s | 79 | 28.3% | 0.31 s / 0.99 s |
-| 6 s | 71 | 28.1% | 0.37 s / 0.96 s |
-| 10 s | 50 | 28.1% | 0.40 s / 0.94 s |
-| 20 s | 13 | 28.4% | 0.75 s / 1.08 s |
-
-Accuracy is flat from 3 to 10 s pieces. Pressay ships 8 s: longer pieces keep more context per decode at almost no cost in wait.
-The app path (`PRESSAY_DEMO=stream`, real time) gave identical WER to the whole clip on the long clips checked,
-with the wait halved (e.g. 28 s clip: 0.53 s vs 1.08 s).
-
-## Meeting transcription (October 2026)
-
-Four AMI test meetings (ES2004a, IS1009a, TS3003a, EN2002a; 91 minutes, four people each, Mix-Headset
-audio) replayed through `PressayBench meeting`, which splits audio the way a live meeting does and
-transcribes each piece. Word error rate against the AMI manual transcripts, after lowercasing and
-dropping punctuation and fillers (um, uh, hmm). AMI is hard: crosstalk, laughter, non-native speakers.
-
-**Splitting audio mattered more than the model.** The energy splitter Pressay shipped kept only
-26% of TS3003a (a quiet recording) and 59% of ES2004a. Silero voice activity keeps level-independent:
-
-| Splitter (Qwen3-ASR 1.7B) | TS3003a | ES2004a |
-| --- | ---: | ---: |
-| Energy, fixed floor (1.8.0) | 58.4% | 34.7% |
-| Energy, lower floor | 20.4% | 18.2% |
-| Silero, whole file | **17.4%** | **18.0%** |
-| Silero, streamed in 256 ms chunks (shipped) | 18.3% | 18.3% |
-
-**Engines**, all on Silero splitting, pieces of at most 12 s (live) or 30 s:
-
-| Engine | 12 s | 30 s | Speed | Peak memory |
+| Model | Clean read speech WER | Meeting A WER | Meeting B WER | Approx. ASR cost |
 | --- | ---: | ---: | ---: | ---: |
-| **Qwen3-ASR 1.7B** *(default)* | **24.4%** | **23.8%** | 23x | 3.3 GB |
-| Parakeet TDT v3 (FluidAudio) | 28.5% | 25.3% | 127x | 0.6 GB |
-| Parakeet TDT v2 (FluidAudio) | 27.5% | 25.6% | 155x | 0.6 GB |
-| Qwen3-ASR 0.6B | 25.7% | 25.9% | 33x | 1.3 GB |
-| Voxtral Mini 3B | 28.6% | 27.6% | 6x | 4.4 GB |
-| Fun-ASR MLT Nano | 29.4% | 30.0% | 38x | 1.5 GB |
-| Whisper V3 Turbo | 30.4% | 30.1% | 13x | 1.4 GB |
-| Cohere Transcribe (FluidAudio) | 30.5% | 33.1% | 7x | 8.7 GB |
-
-Qwen3-ASR 1.7B is best for meetings too and keeps up live with room to spare. Transcribing after
-the meeting in 30 s pieces would gain 0.6 points, not worth keeping call audio on disk.
-
-**AI correction.** Claude Haiku 5.5 rewriting the transcript line by line (three prompt versions) left
-word errors unchanged (18.0 → 18.1%, 17.4 → 17.4%): most remaining errors are dropped words
-("yeah", "okay" under crosstalk) that no rewrite can recover, and it fixed about as many words as it
-broke. Pressay instead asks once for targeted fixes of misheard names and terms, applied everywhere
-they occur; on AMI (no jargon) Haiku proposed none to two per meeting, all correct, in about 5 s.
-
-## Real-dictation judged replay (October 2026)
-
-The 184-clip corpus measures eight technical terms. This pass measured whole-transcript accuracy
-on 24 real hold-to-talk dictations (7.5 minutes, agent prompts and team messages) recorded in
-Wispr Flow, with Wispr's own cloud transcript as a reference candidate. Every engine ran through
-`PressayBench asr`; three Sonnet judges scored each transcript 0–10 blind (shuffled labels, no
-audio — truth inferred from cross-candidate agreement). 22 clips had speech; 2 were near-silent.
-
-<p align="center">
-  <img src="assets/speech-models.svg" width="100%" alt="Judged accuracy on 24 real dictations: Wispr Flow cloud 9.05, Qwen3-ASR 1.7B 9.00, Voxtral Mini 8.91, Whisper V3 Turbo 8.77, Qwen3-ASR 0.6B 7.32, Fun-ASR 6.95">
-</p>
-
-| Engine | Judged score | Near-silent clips | Median latency | Peak memory |
-| --- | ---: | --- | ---: | ---: |
-| *Wispr Flow raw (cloud reference)* | *9.05* | *empty, correct* | — | — |
-| **Qwen3-ASR 1.7B Q6_K** *(default)* | **9.00** | **empty, correct** | 0.69 s | 2.9 GB |
-| Voxtral Mini 3B | 8.91 | 1 of 2 hallucinated | 1.63 s | 4.9 GB |
-| Whisper V3 Turbo | 8.77 | both hallucinated | 0.63 s | 1.2 GB |
-| Qwen3-ASR 0.6B Q8_0 | 7.32 | empty, correct | 0.36 s | 1.6 GB |
-| Fun-ASR MLT Nano | 6.95 | both hallucinated | 0.29 s | 1.35 GB |
-
-Fun-ASR's 86% term score did not survive whole-transcript judging: it misheard ordinary words
-("checking in the email" for "checking in with me now", "intraanimations", "network is" for
-"not work") that no vocabulary alias can repair. Qwen3-ASR 1.7B with a 64-term hotword list on
-MLX scored the same 9.05 as Wispr, but transcribe.cpp exposes no context slot for Qwen, so the
-shipped GGUF runs without one and lands within noise of it. Granite Speech 4.1 2B (8.1, 11 GB
-peak on MLX), Granite Speech 5.0 TurboCTC (6.8, no punctuation) and an MLX conversion of Fun-ASR
-with hotwords (truncated most clips) were also run and dropped.
-
-Limits: 22 speech clips from one speaker; the top three are within judge noise of each other,
-the gap down to Qwen 0.6B and Fun-ASR is not.
-
-## Pressay 1.4 — thirteen-engine sweep
-
-For 1.4 every engine in `transcribe.cpp` that plausibly beat Whisper was replayed through the same
-184-clip corpus. Three passes were needed, because two of the candidates are misleading at their
-defaults:
-
-1. **Defaults.** Fun-ASR and Granite emit no punctuation at all — they ship PNC/ITN off and Pressay
-   never asked for them. Fun-ASR scored 8/46 collapsed long clips this way.
-2. **PNC/ITN requested** where the model advertises the toggle. Fun-ASR went to 0/46.
-3. **English-locked** for the Fun-ASR variants, which removed the foreign-language hallucinations
-   auto-detect produced on near-silent clips.
-
-<p align="center">
-  <img src="assets/asr-model-comparison.svg" width="100%" alt="Fun-ASR MLT Nano and Voxtral Mini never collapsed a long dictation while Whisper V3 Turbo collapsed 3 of 47; Fun-ASR is also the fastest at a 0.14 second median">
-</p>
-
-Final numbers, best configuration per engine, sorted by the metric that decided it:
-
-| Engine | Size | Terms | Collapse | Complete | Lost | punct/caps | Median |
-| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |
-| **Fun-ASR MLT Nano** *(ships, default)* | 691 MB | **86%** | **0/47** | 97.6% | 0 | .049/.090 | **0.14 s** |
-| **Voxtral Mini 3B** *(ships)* | 2.98 GB | 81% | **0/47** | 97.5% | 0 | **.069/.099** | 1.1 s |
-| **Whisper V3 Turbo** *(ships)* | 886 MB | 75% | 3/47 | 96.1% | 0 | .056/.080 | 0.39 s |
-| Whisper Large V3 (full) | 1.67 GB | 73% | 3/47 | 96.1% | 0 | .055/.085 | 0.60 s |
-| Fun-ASR Nano | 850 MB | 60% | 1/47 | 96.9% | 0 | .049/.088 | 0.15 s |
-| Voxtral Mini 4B Realtime | 2.83 GB | 58% | 0/47 | 96.1% | 0 | **.073/.104** | 1.57 s |
-| Qwen3-ASR 1.7B | 2.19 GB | 57% | 0/47 | **98.0%** | 0 | .063/.102 | 0.44 s |
-| Granite Speech 4.1 2B | 2.56 GB | 57% | 0/47 | 97.0% | 0 | .046/.083 | 0.30 s |
-| Parakeet TDT 0.6B v3 | 1.30 GB | 56% | 0/47 | **99.2%** | 0 | .058/.099 | **0.06 s** |
-| Canary 1B Flash | 1.05 GB | 54% | 0/47 | **93.8%** | **4** | .046/.080 | 0.10 s |
-| Canary Qwen 2.5B | 2.80 GB | 53% | 0/47 | 97.1% | 0 | .037/.082 | 0.30 s |
-| Granite Speech 4.1 NAR | 2.50 GB | 38% | 0/47 | 95.5% | 2 | .056/**.000** | 0.18 s |
-| Parakeet Unified EN | 731 MB | **36%** | 0/47 | 98.0% | 0 | .037/.085 | 0.06 s |
-
-<p align="center">
-  <img src="assets/asr-selection.svg" width="100%" alt="Technical-term accuracy across thirteen engines: Fun-ASR MLT Nano leads at 86%, Voxtral Mini 81%, Whisper V3 Turbo 75%, and the rest cluster below 60% regardless of size">
-</p>
-
-Metric definitions:
-
-- **Collapse** — dictations over 15 s that came back with *exactly* zero terminal punctuation and
-  zero capitals across 25+ words. The corpus breaks cleanly here: the affected clips sit at
-  0.000/0.000 and the next-worst is 0.013/0.065.
-- **Terms** — canonical spellings as a share of all renderings, for `Kimi`, `Claude`, `Codex`,
-  `Anthropic`, `RunPod`, `SonarCloud`, `macOS` and `GitHub`, scored against the wrong renderings
-  actually observed (`Akimi`, `Kemi`, `kimimi`, `run pod`, `Rampod`, `entropic`, …).
-- **Complete** — words produced against the best engine on the same clip. This catches *silent
-  omission*, which no formatting metric sees.
-- **Lost** — real dictations (longer than 2.7 s, so not near-silent) dropped to an error.
-- **punct/caps** — median per-word density of `.!?` and of capitalized words, on clips over 15 s.
-
-### What decided it
-
-Whisper Large V3 full was tested to check whether the collapse came from Turbo's shallower decoder
-(4 blocks against 32). **It did not** — full V3 collapsed on 3/47 as well, on different clips, while
-running 1.7× slower. That hypothesis is dead, and the collapse is not a decoder-depth artifact.
-
-**Technical terms decided everything else.** The field splits into three: Fun-ASR, Voxtral and
-Whisper at 75–86%, then a cliff to 53–60% for everything newer or larger. Size does not predict it —
-a 2.8 GB Canary Qwen scores 53% where a 691 MB Fun-ASR scores 86%. For dictating agent prompts a
-wrong repository name costs more than a missing comma, so this ranking dominates.
-
-The models that write the prettiest prose are not the accurate ones. Voxtral Realtime has the best
-punctuation and capitalization measured (.073/.104) and Qwen3-ASR the best completeness (98.0%), and
-both sit at 57–58% on terms. Parakeet TDT v3 has the best completeness of all (99.2%) at the fastest
-speed (0.06 s) — and 56% on terms, which is why 1.3 was right to drop it.
-
-**Whisper also omits words**, not just punctuation: 96.1% completeness with content silently missing
-on 4 of 47 long clips, second-worst in the field. In one passage it rendered "That seems like a
-creative idea that nobody's done before" as "but it's done before".
-
-Canary 1B Flash dropped four genuine dictations (7.0, 8.5, 10.6 and 16.2 s) and showed real
-repetition looping — 8.9% duplicated 6-grams on its worst clip. Granite NAR emits no capital letters
-even with PNC requested.
+| MOSS · Metal Q6_K | 6.67% | **27.27%** | **15.87%** | 0.80 s |
+| Orukeet v0.1 · optimized Metal Q8 | 5.99% | 28.95% | 16.60% | **0.08 s** |
+| Parakeet Ultra · Metal Q8 | 5.77% | 28.35% | 16.73% | 0.14 s |
+| Qwen3-ASR 1.7B · Metal Q6_K | 4.75% | 28.35% | 18.82% | 0.66 s |
+| Mega-ASR · MLX BF16 | 4.81% | 28.38% | 18.25% | 0.84 s |
+| MiMo V2.5 ASR · corrected MLX 8-bit | **3.11%** | 31.69% | — | 2.15 s |
+| Qwen3-ASR 0.6B · Metal Q8 | 5.26% | 29.14% | — | 0.37 s |
+| GLM-ASR Nano · MLX 8-bit | 5.43% | 29.92% | 18.23% | 0.50 s |
+| Canary-Qwen 2.5B · Metal Q8 | 4.75% | 31.41% | — | 0.46 s |
+| Granite Speech 5.0 2B · MLX BF16 | 5.03% | 31.06% | 20.63% | 0.88 s |
 
-**Voxtral Mini 4B Realtime** (Apache-2.0, Feb 2026) was evaluated as a possible replacement: it has
-no practical length limit, which would remove the chunking below. In batch it is the *slowest*
-engine here at 1.57 s, because a streaming model has no advantage when the whole clip arrives at
-once. Streaming it during the hold would not help either — Fun-ASR's mean wait is 259 ms and only
-2.2% of dictations exceed one second, while Voxtral Realtime's committed delay alone is 480 ms.
+Meeting A contains 80 segments; B contains 336. A dash means that additional cohort was not tested. Unequal cohorts are never pooled to rank models. MiMo wins clean read speech but does not lead on conversations. Whisper Large V3 scored 35.26% / 22.04% on the two meeting cohorts and did not enter the top ten.
 
-An "error" is not automatically a defect. On near-silent 1.2 s clips Whisper returns `"you"`,
-`"Thank you."` or `"."`, while Voxtral and (now) Fun-ASR return nothing. Inserting nothing is the
-correct behaviour; those rows are counted as empties, not failures.
+The table’s Mega-ASR figures use the original Python MLX runtime. The release’s native Swift port was separately replayed on all 160 public clips plus 12 personal parts: **28.13% meeting-A WER and 4.75% FLEURS WER**, versus 28.38% and 4.81% originally. All 172 calls completed without truncation; peak MLX allocation was about 5.08 GiB. Its learned quality router, including all adapter aliases, is retained. Text differs on some clips; this small public difference does not establish a better model.
 
-### Limitations
+## Method and limits
 
-- The manifest's `rawTranscript` is the **production Whisper output, not a reference**, so there is
-  no hand-corrected ground truth here and **no true WER is reported**. Vocabulary is a substring
-  proxy, not a critical-token error rate.
-- The collapse definition is stricter than the 1.3 note's "7 of 47"; it reads Whisper Turbo at 3/47.
-  The same detector is applied to every engine, so the comparison holds even though the absolute
-  number differs from the earlier note.
-- One machine, one speaker, English. Latency is wall-clock on a warm model and drifts up to ~40%
-  across a long benching session as the Mac heats: Whisper's median was measured between 0.35 s and
-  0.55 s, Voxtral's between 0.99 s and 1.28 s. The *ratios* are stable across every run — Fun-ASR
-  came out ~3x faster than Whisper each time — so treat the ordering as the finding and the absolute
-  milliseconds as indicative.
+- **Clean read speech:** 80 English-US [FLEURS](https://huggingface.co/datasets/google/fleurs) test clips, 1,769 normalized reference words.
+- **Meeting A:** 80 fixed 12-second windows from AMI EN2002a and IS1009a, 3,168 words. Mixed-headset audio; 74 windows straddle word boundaries. Overlapping speakers and chronological reference serialization complicate alignment.
+- **Meeting B:** 336 production-Silero-VAD segments from AMI ES2004a and TS3003a, 5,086 words; available for 13 of the 27 base models. [AMI corpus](https://groups.inf.ed.ac.uk/ami/corpus/).
+- **Personal recordings:** 60 original and 14 fresh recordings, split into 95 parts of at most about 25 seconds. Wispr audio was an input source; **Wispr transcripts were not ground truth**. Three blinded review passes and direct raw-text inspection assessed plausibility, not spoken accuracy. No acoustic accuracy claim is made from those reviews.
+- **WER:** corpus-word-weighted substitutions + deletions + insertions divided by reference words, after symmetric Whisper English normalization and filler removal. Punctuation, case and number formatting are not counted as errors. WER does not measure speaker attribution.
+- **Coverage:** every base model has attempts for all 160 common public clips and all 95 personal parts, with required repetitions. Attempt coverage does not mean every run succeeded. Twelve selected flagged outputs, including truncation and repetition, remain disclosed in the private audit; empty output is not automatically an error.
+- **Sensitivity:** fixed interior-word masks and an all-insertion guardrail left MOSS first on pooled Meeting A under all six secondary variants. Other close orders changed. These checks cannot repair clipped audio or establish general superiority from two correlated meetings per cohort.
 
-### Chunking long dictations is a speed win, not just a safety net
+Only sanitized aggregates are committed in [the results file](benchmarks/local-asr-2026-10-22.json). Private audio, transcripts, per-clip outputs and audit artifacts remain excluded from Git. The older [results.json](benchmarks/results.json) is historical and uses a different methodology; it does not establish the current ranking.
 
-Fun-ASR and Voxtral generate a transcript token by token, so decode cost grows with output
-length. Whisper does not — it chunks inside the runtime — and the curves cross:
+## Speed and runtime
 
-| Clip length | Fun-ASR | Whisper | Voxtral |
-| --- | ---: | ---: | ---: |
-| 0–5 s | **0.08 s** | 0.43 s | 0.93 s |
-| 5–15 s | **0.20 s** | 0.43 s | 1.13 s |
-| 15–30 s | **0.43 s** | 0.48 s | 1.70 s |
-| 30–60 s | **0.96 s** | 1.01 s | 3.42 s |
-| 60 s+ | 2.94 s | **1.56 s** | 6.08 s |
+![Approximate ASR processing cost: Orukeet 0.08 seconds, Parakeet Ultra 0.14, Qwen 0.66, MOSS 0.80, Mega 0.84.](assets/asr-latency.svg)
 
-So splitting long audio is worth doing even when the decoder could hold it. Thresholds were
-swept over the 18 clips longer than 30 s:
+Timings are approximate median resident-model processing costs across the original 60 recordings. Native batch timings are single-pass because that CLI ignored its repeat flag; MLX used a second pass. Input/synchronization accounting differs. They exclude model loading, download, AI cleanup and insertion, and are not calibrated end-to-end latency predictions.
 
-| Split at | Total | Median | Worst case |
-| --- | ---: | ---: | ---: |
-| never | 16.89 s | 0.76 s | 3.68 s |
-| **60 s** | **15.32 s** | 0.76 s | **1.95 s** |
-| 40 s | 15.88 s | 0.78 s | 2.12 s |
-| 30 s | 16.98 s | 0.84 s | 2.13 s |
-| 20 s | 19.45 s | 0.98 s | 2.46 s |
+Pressay keeps one worker process resident. Bundled, signed native code runs Orukeet through its optimized Metal runtime and MOSS/Parakeet/Qwen through a pinned transcribe.cpp build. Mega-ASR runs through Swift MLX. Users do not need Python or command-line tooling. Audio crosses an anonymous local pipe and is never uploaded; meeting PCM is not written to disk by the worker.
 
-60 s is a measured optimum, not a guess: below ~40 s the per-call overhead makes long dictations
-*slower*. Quality is unaffected — technical terms 78% either way, punctuation .053 against .052,
-transcripts 99.3% identical on average. Across the whole corpus the worst-case wait fell from
-4.71 s to 2.07 s for Fun-ASR and from 13.27 s to 6.34 s for Voxtral.
+The previous installed configuration measured roughly 0.42 s ASR, 1.2 s cleanup and 1.9 s total median in recent app history. Faster ASR does not remove the cleanup delay. Kernel/thread experiments and a small SGLang comparison did not justify a further switch. A speculative decoding prototype changed outputs and was excluded from the release.
 
-Two bounds are checked, and the lower wins: what the decoder context can hold (reported by the
-runtime) and where splitting starts paying for itself (declared per model). The reactive retry on
-`outputTruncated` stays, because truncation is not purely a length problem — a repetition loop
-exhausted the context on a 2.6 s clip.
+## Release verification
 
-There is no setting that avoids this. `transcribe_session_params::n_ctx` can only *lower* the
-decoder context (`min(n_ctx, model_max_ctx)`, default 0 = model maximum), and
-`TRANSCRIBE_FEATURE_LONG_FORM` is whisper-only.
+The packaged Orukeet, MOSS, Parakeet Ultra and Qwen paths were replayed on **39 held-out audio parts each, twice** through `PressayBench` and the production worker client. All repeats matched. MOSS, Parakeet and Qwen matched all 39 earlier audit outputs; Orukeet matched 38 and differed on one unverified proper-name spelling. Three engines returned empty on the same two private parts; the client reports `emptyTranscript` rather than silently inserting text. This is a regression check, not a new personal accuracy score.
 
-### Quantization: Q6_K is the ceiling, not a compromise
+Six worker lifecycle tests cover reuse/replacement, errors/restart, cancellation, timeout, broken pipes and partial-output flags. The release bundle is built and checked with `codesign --verify --deep --strict`. The installed app’s ranked pickers, Orukeet→MOSS→Orukeet replacement, and a brief microphone-only meeting start/stop were checked interactively. The empty test meeting was removed automatically; AI notes and system audio were disabled for the test and restored afterward. Full live system-audio calls and cross-app dictation insertion were not replayed; audio-file tests do not establish those behaviors.
 
-The default ships at Q6_K (691 MB). Both larger quants were replayed through the same corpus:
+## Cleanup and vocabulary
 
-| Quant | Size | Terms | punct/caps | Collapse | Median |
-| --- | ---: | ---: | --- | ---: | ---: |
-| **Q6_K** *(ships)* | **691 MB** | **86%** | .049/.090 | 0/47 | **0.14 s** |
-| Q8_0 | 891 MB | 81% | .049/.097 | 0/47 | 0.15 s |
-| BF16 | 1590 MB | 81% | .049/.097 | 0/47 | 0.19 s |
+The cleanup prompt now makes faithfulness outrank grammar: retain short directives, modal alternatives, actors, negation and full conditional scope. An audit of 100 saved raw→clean pairs found one clear omitted directive and three possible meaning changes. Historical pairs do not store model or prompt versions, so they cannot identify a current-model error rate.
 
-Q8_0 and BF16 are the same model in practice — identical output on 93% of clips and identical on
-every aggregate metric — so the extra 700 MB buys nothing at all. Against Q6_K they differ on ~3% of
-words with **no systematic winner**: Q6_K is marginally ahead on technical terms, Q8_0 on
-capitalization, both inside noise. There is no quality headroom left to purchase here.
+The dictionary remains a spelling aid after transcription. **It is not injected wholesale into ASR.** MOSS with the existing 67-term glossary worsened read-speech WER from 6.67% to 15.94% and meeting-A WER from 27.27% to 27.59%. Custom dictionaries are preserved. Model names in the AI prompt are contextual spelling guidance; ordinary words such as “moss” must not become model names.
 
-## Pressay 1.3 — Voxtral evaluation
-
-For 1.3 we evaluated **Voxtral Mini 3B (Q4_K_M)** — an LLM-style multilingual audio model — against the shipping Whisper V3 Turbo, replaying the same 184-clip corpus through the `transcribe.cpp` engine. Parakeet was dropped in this release (quality not comparable to Whisper), so the shipped choice is Whisper (default) with Voxtral as an opt-in.
-
-### Latency and memory
-
-<p align="center">
-  <img src="assets/asr-latency.svg" width="100%" alt="ASR latency comparison on shared 6.09 and 35.89 second recordings">
-</p>
-
-| Engine | 6.09 s clip | 35.89 s clip | Corpus median | Peak RAM |
-| --- | ---: | ---: | ---: | ---: |
-| Whisper V3 Turbo Q8 | 0.41 s | 0.90 s | 0.42 s | ~1.15 GB |
-| Voxtral Mini 3B Q4_K_M | 0.75 s | 2.41 s | 0.75 s | ~4.8 GB |
-
-Voxtral is roughly 2× slower and needs about 4× the memory (and a ~3 GB download vs ~0.9 GB). Both stay well under a second on typical clips. Higher-precision Voxtral quants (Q8 ≈ 7 GB RAM, BF16 ≈ 10 GB) were not pursued: the extra memory is unreasonable for a background dictation utility, and the failure modes below are behavioral, not precision-related.
-
-### Quality
-
-The corpus splits cleanly by clip length. Short clips (≤ 15 s) are **44% of clips but only ~34% of dictated words**; long clips (> 15 s) are 26% of clips but **~66% of dictated words**.
-
-- **Short clips (≤ 15 s): effectively tied.** Both engines produce good output. Voxtral is slightly *worse* on the very shortest (≤ 2 s): 7 clips returned empty and 1 emitted an assistant-style refusal. Whisper handled those.
-- **Long clips (> 15 s): Voxtral clearly better.** It keeps punctuation, capitalization, and completeness where Whisper intermittently collapses into an unpunctuated lowercase block — Whisper fully collapsed on **7 of 47** clips over 15 s (near-zero capitals and punctuation); Voxtral collapsed on **0**. Voxtral also handled proper nouns better (e.g. "Kimi" vs "Kimmy").
-
-Raw word-for-word accuracy is close on both; the difference is formatting, completeness, and worst-case robustness on long-form dictation.
-
-### Tuning
-
-Voxtral runs greedy decoding and exposes only a `language` lever through the engine (its `pnc`/`itn` toggles are not controllable, and it has no initial-prompt path here). **Automatic language detection is safer than forcing English**: a near-silent clip that fabricated a full sentence under forced-English produced nothing under autodetect, and the 7 short-clip hard-errors became clean empties. Automatic is the app default. Whisper's own knobs were also swept (condition-on-previous-tokens, no-speech threshold, and a vocabulary initial-prompt) — none improved its long-clip collapse, and the prompt was a net negative — so Whisper ships at its defaults.
-
-### Decision
-
-Whisper V3 Turbo remains the default (light, safe on short clips, works on 8 GB Macs). Voxtral Mini is an opt-in for long-form dictation, downloaded on demand with a progress bar; only the selected model is held in memory. The rare Voxtral assistant-refusal on unintelligible short audio is filtered to insert nothing.
-
-## ASR selection
-
-The 1.0 investigation compared the former WhisperKit implementation, Whisper Large V3 Turbo and Parakeet TDT 0.6B v3 through `transcribe.cpp`, and language/worker settings. Candidate transcripts were reviewed for meaning, identifiers, numbers, negations, and obvious hallucinations.
-
-### Shared-clip latency
-
-The values below come from exactly the same two recordings for all three engines.
-
-| Engine | 6.09 s clip | 35.89 s clip | Role in 1.0 |
-| --- | ---: | ---: | --- |
-| Parakeet TDT 0.6B v3 F16 | 0.057 s | 0.215 s | Optional fastest model |
-| Whisper V3 Turbo Q8 via `transcribe.cpp` | 0.327 s | 0.765 s | Default |
-| Whisper V3 Turbo via previous WhisperKit path | 0.566 s | 1.569 s | Retired implementation |
-
-These samples show why the native GGUF path replaced WhisperKit for 1.0. Parakeet is dramatically faster, especially on long audio, but it was less reliable on very short fragments in the development corpus. Because transcript quality is the primary goal, Whisper V3 Turbo remains the default.
-
-### Worker and language sweep
-
-The previous WhisperKit implementation was replayed across the complete 184-clip corpus twice per worker setting:
-
-| Configuration | Median inference time |
-| --- | ---: |
-| 1 worker | 0.564 s |
-| 4 workers | 0.561 s |
-| 16 workers | 0.561 s |
-| 4 workers, automatic language detection | 0.600 s |
-
-More workers did not materially improve the median. Automatic language detection added a small pass and could misclassify short clips, which is why Pressay keeps fixed-language selection available even though Automatic is the UI default.
-
-## Post-processing selection
-
-An on-device Foundation Models experiment replayed 31 dictations through four prompt variants. Every output then passed through the same protected-token validator used during development. An accepted output retained the required technical tokens, numbers, URLs, names, and negations.
-
-| Variant | Accepted | Pass rate | Median latency |
-| --- | ---: | ---: | ---: |
-| Light + few-shot | 29 / 31 | 93.5% | 0.811 s |
-| Light | 27 / 31 | 87.1% | 0.762 s |
-| Shipping experiment | 21 / 31 | 67.7% | 0.813 s |
-| Light, plain instructions | 8 / 31 | 25.8% | 0.824 s |
-
-The validator is intentionally conservative. It does not measure whether prose sounds nicer; it answers the more important standard-dictation question: “Did the rewrite preserve protected meaning?” No tested generative variant was perfect, so Pressay 1.0 removed automatic LLM rewriting from its normal path.
-
-The shipping design is:
-
-1. Use deterministic cleanup for every standard dictation.
-2. Apply curated and learned vocabulary rules without asking a model to reinterpret the sentence.
-3. Keep the optional Structured Dictation pass deterministic too — punctuation, paragraphs, and lists, never a rewrite.
-
-## Structuring bake-off
-
-Before Structured Dictation shipped, `PressayBench structure` replayed a 438-clip private corpus through two candidates: the deterministic `TranscriptStructurer` rules and a formatting-only on-device Foundation Models prompt (words must be preserved verbatim; only punctuation, paragraphs, and bullets may change).
-
-| Candidate | Clips changed | Fabricated words | Dropped words | Errors | Median latency |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Rules | 93 / 438 | 0 | 0 | 0 | 0 ms |
-| On-device LLM | 26 / 438 | 7 clips | 9 clips | 7 (guardrail/decoding) | 582 ms |
-
-Even under a strictly formatting-scoped prompt, the language model completed a truncated dictation with invented words ("Maybe we could also talk about the" → "…the response in the next meeting."), silently dropped words on nine clips, and refused seven benign clips outright — while structuring fewer clips than the rules. That settled the choice: Structured Dictation is rule-based, and a fine-tuned local model was not pursued because it would have to beat a zero-defect, zero-latency baseline at its own game.
-
-## Vocabulary tuner precision
-
-`PressayBench tune-eval` replayed 680 transcripts (997 candidate terms) through the legacy and fixed deterministic matchers, with hand labels over every proposed rule:
-
-| Variant | Proposed rules | Precision |
-| --- | ---: | ---: |
-| Legacy matcher | 20 | 94% (learned `codebase → Codex`) |
-| Fixed matcher | 15 | 100% |
-
-The fixed matcher (larger English stop list, minimum phonetic key length 4, recurrence scaled to phonetic distance) kept every genuinely useful rule — including `CloudMD → CLAUDE.md` and `codecs → Codex` — while rejecting the ordinary-word rewrites the legacy matcher had learned on real machines (`mix → macOS`, `correction → Markdown`, `colleagues → Codex`).
-
-A frontier-LLM replay of the judge prompt over the same 997 candidates confirmed the two-tier design: the LLM contributed real rules the deterministic tier structurally cannot act on — ambiguity ties (`CloudCode` is phonetic distance 1 to both `Claude Code` and `CLAUDE.md`), too-short keys (`TLDA → TL;DR`), and distance-2 variants (`Sona Cloud`, `SornCloud`, `Sunr cloud → SonarCloud`) — while the anchor filter discarded 149 of its 184 raw findings as junk. The judgment tier earns its keep, but only behind that filter.
-
-### Spelling agreement (1.6)
-
-Replaying the fixed matcher over 4,691 real dictations with a 90-term personal vocabulary
-showed the phonetic key alone does not scale with the vocabulary: it proposed more than 100 rules,
-most of them wrong — `backend → Cognito` (44 sightings), `codebase → Codex`, `Porsche → Pressay`,
-`the links → Telnyx`, `merged now → Markdown`. Keys drop vowels and keep raw first letters, so
-unrelated words collide once enough terms exist. 1.6 adds `spellingAgrees`: the same onset
-(silent "wh" h and leading vowels normalized), letter length within two, and multi-word
-mishearings that split where the term does (`cloud lore → CloudLore`). Prefixed English
-(`redeploy`, `preset`) now counts as English, and no rule may start or end on a function word —
-the LLM judge had accepted `Whisperflow I`, which then deleted the pronoun. The same replay now
-proposes 39 rules, all correct. Schema version 2 drops stored det rules (rebuilt from history on
-launch) and any judge rule with a function-word edge.
-
-### Runtime phonetic fallback
-
-Learned rules only cover mishearings seen before. `PhoneticVocabularyMatcher` also fixes a
-first sighting during cleanup: one non-English word, at most one phonetic edit from a unique
-vocabulary term, with the same first two letters and a length within two characters. Replayed
-with `PressayBench post --vocabulary` over 4,691 real dictations and a 90-term vocabulary, the
-first draft (onset key only) rewrote `codebase → Codex`, `Singapore → Scooper` and
-`caffeinate → Cognito`. With the final gates it made 30 rewrites, all correct on inspection
-(`Superbase → Supabase`, `DeepGrim → Deepgram`, `clodler → CloudLore`, `Anthropix → Anthropic`).
-
-## Reproducing the harness
-
-`PressayBench` is included in the Swift package. Create your own local manifest rather than committing recordings:
-
-```bash
-swift run PressayBench manifest-from-audio \
-  --manifest /absolute/path/manifest.json
-
-swift run PressayBench asr \
-  --manifest /absolute/path/manifest.json
-
-swift run PressayBench structure \
-  --manifest /absolute/path/manifest.json
-```
-
-The manifest schema is represented by `ManifestEntry` in [`Sources/PressayBench/Bench.swift`](../Sources/PressayBench/Bench.swift). Keep paths absolute, use the same clips for every engine, warm each model before timing, and manually correct reference transcripts before calculating error rates.
-
-## What the numbers do not prove
-
-- The private corpus cannot provide independently reproducible WER.
-- Two shared clips are enough to demonstrate relative latency on the development Mac, not quality across accents and environments.
-- A validator pass is a safety check, not a blind preference score.
-- Cloud-model latency and behavior vary over time; the cloud results here are dated snapshots, not a permanent leaderboard.
-
-If public contributors provide a consented, license-compatible prompt-dictation corpus, Pressay can add normalized WER and critical-token error rates without weakening the current privacy standard.
+Benchmark plots are generated deterministically by `python3 scripts/render-asr-charts.py`. The opening conceptual artwork was generated with GPT Image; it contains no measured scores and is not an app screenshot.

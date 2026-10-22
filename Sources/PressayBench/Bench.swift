@@ -192,7 +192,8 @@ struct Bench {
         }
 
         var rows: [ASRRow] = []
-        let transcriber = GGMLTranscriber(model: engine, language: language)
+        let transcriber = SpeechTranscribers.make(model: engine, language: language,
+            bundleURL: URL(fileURLWithPath: options["runtime-app"] ?? ".build/Pressay.app"))
         try await transcriber.prepare()
         print("model ready")
         for clip in clips {

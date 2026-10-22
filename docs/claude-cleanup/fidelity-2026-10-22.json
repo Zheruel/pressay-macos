@@ -1,0 +1,46 @@
+{
+  "model": "claude-haiku-5-5",
+  "cases": [
+    {
+      "input": "So what is the best thing to do here? Keep it on the phone or both? What would be the UX best practice? Do that.",
+      "output": "So what is the best thing to do here? Keep it on the phone or both? What would be the UX best practice? Do that.",
+      "stop_reason": "end_turn"
+    },
+    {
+      "input": "Give me a preview. If you want, you can implement it after I approve it.",
+      "output": "Give me a preview. If you want, you can implement it after I approve it.",
+      "stop_reason": "end_turn"
+    },
+    {
+      "input": "I don't know whether we should should or could migrate this. Check both options.",
+      "output": "I don't know whether we should or could migrate this. Check both options.",
+      "stop_reason": "end_turn"
+    },
+    {
+      "input": "If the proposal preserves the conditions, accept it. Otherwise reject it and investigate the gaps, unless I explicitly approve an exception.",
+      "output": "If the proposal preserves the conditions, accept it. Otherwise, reject it and investigate the gaps, unless I explicitly approve an exception.",
+      "stop_reason": "end_turn"
+    },
+    {
+      "input": "Do not delete the cache unless the rebuild fails. If it succeeds, keep the cache.",
+      "output": "Do not delete the cache unless the rebuild fails. If it succeeds, keep the cache.",
+      "stop_reason": "end_turn"
+    },
+    {
+      "input": "Maybe you could ask me first, and then I can decide whether you should do it.",
+      "output": "Maybe you could ask me first, and then I can decide whether you should do it.",
+      "stop_reason": "end_turn"
+    },
+    {
+      "input": "Use MOSS for meeting transcripts. The garden has moss on the wall. Don't change that sentence's meaning.",
+      "output": "Use MOSS for meeting transcripts. The garden has moss on the wall. Don't change that sentence's meaning.",
+      "stop_reason": "end_turn"
+    },
+    {
+      "input": "So um move the the standup to ten, no sorry eleven, and then also ping Dana if the deploy passes. Do not send it if the deploy fails.",
+      "output": "Move the standup to eleven, and also ping Dana if the deploy passes. Do not send it if the deploy fails.",
+      "stop_reason": "end_turn"
+    }
+  ],
+  "method": "Eight synthetic cases, one Haiku 5.5 medium pass, manual semantic inspection. All eight preserved the tested constraints. This is not a full-corpus accuracy or meaning-change rate."
+}

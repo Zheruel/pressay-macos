@@ -30,7 +30,7 @@ No account, no telemetry, no subscription. Audio never leaves the Mac.
 ## Features
 
 - **Dictation anywhere.** Hold Right Option (configurable), speak, release. The text lands in the field that was focused when you started, in native, web and Electron apps. The clipboard is preserved.
-- **Accurate local speech recognition.** Qwen3-ASR 1.7B runs on Metal through `transcribe.cpp`. Voxtral Mini 3B, Whisper Large V3 Turbo (100 languages), Qwen3-ASR 0.6B and Fun-ASR MLT Nano are also available.
+- **Local speech recognition for each task.** Orukeet is recommended for fast everyday dictation; MOSS for meeting accuracy. Ranked pickers also offer Parakeet Ultra, Qwen3-ASR 1.7B and Mega-ASR. Legacy models remain available for additional languages.
 - **AI Cleanup (optional).** Fixes misheard words, removes fillers and false starts, and formats lists and paragraphs, without changing what you said. Runs on your Anthropic API key or your ChatGPT Plus/Pro plan. Only text is sent. It matches the app: casual in Slack, full sentences in Mail, tidy paragraphs in Notes.
 - **Command Mode.** Hold Shift with your talk key and say what to do. Select text and say "make this shorter" or "translate to German", or say "write a reply saying I'm running late" with nothing selected.
 - **Snippets.** Say "my calendar link" and Pressay types the URL. Works inside any dictation.
@@ -49,10 +49,16 @@ Without AI Cleanup, a deterministic on-device pipeline applies the dictionary, c
 ## Transcription
 
 <p align="center">
-  <img src="docs/assets/speech-models.svg" width="100%" alt="Judged accuracy on 24 real dictations: Wispr Flow cloud 9.05, Qwen3-ASR 1.7B on-device 9.00, Voxtral Mini 8.91, Whisper V3 Turbo 8.77, Qwen3-ASR 0.6B 7.32, Fun-ASR 6.95">
+  <img src="docs/assets/local-asr-overview.png" width="100%" alt="Pressay: Orukeet for dictation and MOSS for meetings, with Parakeet Ultra, Qwen and Mega-ASR alternatives. Conceptual artwork generated with GPT Image.">
 </p>
 
-The default Qwen3-ASR 1.7B matches Wispr Flow's cloud transcript within judge noise, running entirely on your Mac. Pick another model in Settings for more languages or a smaller download. Details: [`docs/benchmarks.md`](docs/benchmarks.md).
+**Orukeet for dictation. MOSS for meetings.** Fresh installs use these task-specific defaults. Choose from five ranked local models in Settings; existing explicit choices and custom dictionaries are preserved. Models download on first use, and only the active model stays loaded. No Python installation is needed.
+
+<p align="center">
+  <img src="docs/assets/speech-models.svg" width="100%" alt="Human-reference meeting word error rates: MOSS 27.27% and 15.87%, Orukeet 28.95% and 16.60%. Lower is better; two meeting cohorts are shown separately.">
+</p>
+
+We tested 27 models and reviewed 74 personal recordings before cleanup. MOSS led both public meeting cohorts; Orukeet was much faster. Personal recordings have no verified human transcripts, so there is no established personal dictation accuracy winner. Wispr transcripts were not ground truth. Exact configurations, the top ten and limitations: [`docs/benchmarks.md`](docs/benchmarks.md).
 
 ## AI Cleanup
 
@@ -62,19 +68,13 @@ The default Qwen3-ASR 1.7B matches Wispr Flow's cloud transcript within judge no
 
 Choose a provider under **Settings › AI Cleanup**.
 
-| Provider | Model | Quality | Added latency | Cost |
-| --- | --- | ---: | ---: | --- |
-| Anthropic API key | **Claude Haiku 5.5** (recommended) | 8.7 | ~1.0 s | under $1/month at 100 dictations/day |
-| | Claude Sonnet 5.5 | 8.9 | ~1.3 s | ~$5/month |
-| ChatGPT Plus or Pro | **GPT-6.1 Sol** (recommended) | best on plan | ~3.3 s | included in your plan's usage limits |
-| | GPT-6 Luna | | ~2.5 s | included |
-| None | On-device rules | 7.6 | none | free |
+| Provider | Recommended option | Processing |
+| --- | --- | --- |
+| Anthropic API key | Claude Haiku 5.5 | Optional text-only cleanup; cached instructions |
+| ChatGPT Plus or Pro | GPT-6.1 Sol | Included in your plan’s usage limits |
+| None | On-device rules | Fully offline; no account required |
 
-<p align="center">
-  <img src="docs/assets/ai-cleanup-benchmark.svg" width="100%" alt="Cleanup quality out of 10: Claude Sonnet 5.5 8.9, Claude Haiku 5.5 8.7, Wispr Flow 7.7, on-device rules 7.6">
-</p>
-
-Scores are 0–10 from a blind, judged replay of 102 real dictations; Wispr Flow's own cleanup scored 7.7 on the same clips. In a separate replay of the ChatGPT options, Sol scored 7.96, Sonnet 7.85, Haiku 7.67 and Luna 7.42. Method and data: [`docs/claude-cleanup/`](docs/claude-cleanup/README.md).
+Cleanup preserves meaning before improving grammar, including short instructions, permissions and conditional scope. The dictionary supplies contextual spellings after transcription, without biasing ASR with a full hotword list. Earlier cleanup model comparisons remain in [`docs/claude-cleanup/`](docs/claude-cleanup/README.md); they do not validate the new prompt or prove spoken accuracy.
 
 ChatGPT sign-in runs in your browser (OAuth with PKCE). Pressay never sees your password. Your API key is stored in the macOS keychain.
 
@@ -126,7 +126,7 @@ The speech model downloads once from Hugging Face. After that, dictation works o
 
 ## Install from source
 
-Requirements: Apple Silicon, macOS 26+, Xcode 26+ and about 3 GB of free space.
+Requirements: Apple Silicon, macOS 26+, Xcode 26+, CMake, the Xcode Metal Toolchain, and at least 8 GB of free space for builds and model caches. Orukeet needs about 715 MB; the optional Mega-ASR download is much larger.
 
 ```bash
 git clone https://github.com/Zheruel/pressay-macos.git
@@ -134,6 +134,8 @@ cd pressay-macos
 make test
 make install
 ```
+
+If Xcode reports a missing Metal Toolchain, install it with `xcodebuild -downloadComponent MetalToolchain`. The app build fetches pinned native runtimes and Swift MLX dependencies; these are bundled and signed, so end users install no extra tools.
 
 `make app` builds `.build/Pressay.app` without installing; `make dmg` builds a disk image. On first launch Pressay asks for Microphone, Accessibility (to insert text) and Input Monitoring (for the hold key), then downloads and warms the speech model.
 
@@ -165,13 +167,15 @@ make test
 Sources/
 ├── PressayApp/             SwiftUI/AppKit app: audio, overlay, insertion, notes
 ├── PressayCore/            Cleanup, AI providers, vocabulary, prompts, retention
-├── PressayTranscription/   transcribe.cpp-backed ASR
+├── PressayTranscription/   Local worker lifecycle, model downloads, legacy ASR
 ├── PressayPostProcessing/  Experimental on-device benchmark module
 ├── PressayBench/           Corpus replay and tuning CLI
 └── TranscribeCpp/          Vendored Swift wrapper for the native runtime
 ```
 
 CI runs the tests and a full app build on every pull request. Pushing a `vX.Y.Z` tag that matches `Config/Info.plist` publishes a DMG release. The bundle identifier stays `dev.localflow.app` so permission grants from earlier builds carry over.
+
+The separate `Runtime/` Swift package builds the bundled speech worker. Model data stays in Application Support; executable runtimes ship inside the signed app.
 
 Benchmarks: [ASR](docs/benchmarks.md), [AI Cleanup](docs/claude-cleanup/README.md), [meeting notes](docs/notes/meetings/README.md). Keep audio, transcripts and API keys out of the repository. See [CONTRIBUTING.md](CONTRIBUTING.md).
 

@@ -1,0 +1,1471 @@
+{
+  "date": "2026-10-22",
+  "hardware": "Apple M5 Pro, 24GB, macOS 27.0.1",
+  "purpose": "Sanitized audit aggregates for tested configurations, not a universal ranking.",
+  "dictation_order": [
+    "orukeet",
+    "moss",
+    "parakeet-ultra",
+    "qwen3-1.7b",
+    "mega"
+  ],
+  "meeting_order": [
+    "moss",
+    "orukeet",
+    "parakeet-ultra",
+    "qwen3-1.7b",
+    "mega"
+  ],
+  "top_ten": [
+    {
+      "model": "moss",
+      "why": "My meeting-quality pick. Best WER in both AMI cohorts; some technical names improved, but occasional raw stress loops."
+    },
+    {
+      "model": "orukeet",
+      "why": "My everyday dictation pick. Strong conversation results and very low processing cost; names still need context."
+    },
+    {
+      "model": "parakeet-ultra",
+      "why": "Close rival to Orukeet. Strong private usefulness and bounded stress output; very fast."
+    },
+    {
+      "model": "qwen3-1.7b",
+      "why": "Strong read speech; sometimes best on a technical term. Still competitive, without a universal accuracy lead."
+    },
+    {
+      "model": "mega",
+      "why": "Near Qwen on the common public screen; useful private output, but slower than the fast backends."
+    },
+    {
+      "model": "mimo",
+      "why": "Best clean read-speech score. Conversation and technical dictation did not justify its extra latency and ~11.7GB MLX peak."
+    },
+    {
+      "model": "qwen3-0.6b",
+      "why": "Good smaller fallback. Strong common conversation result; more private ambiguities than the larger Qwen."
+    },
+    {
+      "model": "glm",
+      "why": "Useful alternative, including some good technical names; conditional wording and other local garbling remain."
+    },
+    {
+      "model": "canary-qwen-2.5b",
+      "why": "Very good read speech, but behind the leaders on conversation. No clear private advantage."
+    },
+    {
+      "model": "granite5",
+      "why": "The October 20 release works locally, but did not displace the leaders in this configuration."
+    }
+  ],
+  "limitations": [
+    "74 private recordings have no verified human reference; text-only judgments are plausibility, not measured spoken accuracy.",
+    "AMI80 has fixed word-boundary cuts; AMI336 uses production VAD; each cohort contains two meetings.",
+    "139 empty outputs are not automatically errors. Selected truncation/repetition outputs remain scored.",
+    "Native single-pass and MLX second-pass timing methods differ. ASR cost excludes model loading and cleanup.",
+    "Mega figures are for the benchmarked Python MLX implementation, not guaranteed identical Swift-port behavior."
+  ],
+  "models": [
+    {
+      "model": "cohere-transcribe-03-2026",
+      "personal_n": 60,
+      "personal_median": 0.18745,
+      "personal_p90": 0.5396000000000001,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 26.819,
+          "words": 5086,
+          "sub": 159,
+          "deletions": 1012,
+          "insertions": 193,
+          "failures": 0,
+          "compute": 34.355
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 34.88,
+          "words": 3168,
+          "sub": 141,
+          "deletions": 930,
+          "insertions": 34,
+          "failures": 1,
+          "compute": 13.9252
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 6.218,
+          "words": 1769,
+          "sub": 51,
+          "deletions": 9,
+          "insertions": 50,
+          "failures": 0,
+          "compute": 11.737
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 25.731,
+          "words": 10023,
+          "sub": 351,
+          "deletions": 1951,
+          "insertions": 277,
+          "failures": 1,
+          "compute": 60.0172
+        }
+      }
+    },
+    {
+      "model": "whisper-large-v3",
+      "personal_n": 60,
+      "personal_median": 0.64845,
+      "personal_p90": 1.5710000000000002,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 22.041,
+          "words": 5086,
+          "sub": 221,
+          "deletions": 725,
+          "insertions": 175,
+          "failures": 0,
+          "compute": 206.4061
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 35.259,
+          "words": 3168,
+          "sub": 148,
+          "deletions": 932,
+          "insertions": 37,
+          "failures": 0,
+          "compute": 46.205799999999996
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.088,
+          "words": 1769,
+          "sub": 46,
+          "deletions": 7,
+          "insertions": 37,
+          "failures": 0,
+          "compute": 43.7817
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 23.227,
+          "words": 10023,
+          "sub": 415,
+          "deletions": 1664,
+          "insertions": 249,
+          "failures": 0,
+          "compute": 296.3936
+        }
+      }
+    },
+    {
+      "model": "canary-1b-v2",
+      "personal_n": 60,
+      "personal_median": 0.14100000000000001,
+      "personal_p90": 0.3883,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 32.323,
+          "words": 3168,
+          "sub": 169,
+          "deletions": 808,
+          "insertions": 47,
+          "failures": 0,
+          "compute": 15.799199999999999
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.201,
+          "words": 1769,
+          "sub": 41,
+          "deletions": 9,
+          "insertions": 42,
+          "failures": 0,
+          "compute": 12.554
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 22.605,
+          "words": 4937,
+          "sub": 210,
+          "deletions": 817,
+          "insertions": 89,
+          "failures": 0,
+          "compute": 28.3532
+        }
+      }
+    },
+    {
+      "model": "canary-qwen-2.5b",
+      "personal_n": 60,
+      "personal_median": 0.4585,
+      "personal_p90": 1.3782999999999999,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 31.408,
+          "words": 3168,
+          "sub": 165,
+          "deletions": 782,
+          "insertions": 48,
+          "failures": 0,
+          "compute": 44.0836
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 4.748,
+          "words": 1769,
+          "sub": 33,
+          "deletions": 8,
+          "insertions": 43,
+          "failures": 0,
+          "compute": 35.2832
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 21.855,
+          "words": 4937,
+          "sub": 198,
+          "deletions": 790,
+          "insertions": 91,
+          "failures": 0,
+          "compute": 79.3668
+        }
+      }
+    },
+    {
+      "model": "funasr-nano",
+      "personal_n": 60,
+      "personal_median": 0.2714,
+      "personal_p90": 0.9385,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 32.197,
+          "words": 3168,
+          "sub": 251,
+          "deletions": 721,
+          "insertions": 48,
+          "failures": 0,
+          "compute": 17.2303
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.879,
+          "words": 1769,
+          "sub": 45,
+          "deletions": 13,
+          "insertions": 46,
+          "failures": 0,
+          "compute": 14.661
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 22.767,
+          "words": 4937,
+          "sub": 296,
+          "deletions": 734,
+          "insertions": 94,
+          "failures": 0,
+          "compute": 31.8913
+        }
+      }
+    },
+    {
+      "model": "parakeet-ultra",
+      "personal_n": 60,
+      "personal_median": 0.14395000000000002,
+      "personal_p90": 0.5073,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 16.732,
+          "words": 5086,
+          "sub": 238,
+          "deletions": 478,
+          "insertions": 135,
+          "failures": 0,
+          "compute": 14.8989
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 28.346,
+          "words": 3168,
+          "sub": 177,
+          "deletions": 682,
+          "insertions": 39,
+          "failures": 0,
+          "compute": 6.0069
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.766,
+          "words": 1769,
+          "sub": 45,
+          "deletions": 13,
+          "insertions": 44,
+          "failures": 0,
+          "compute": 5.1329
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 18.468,
+          "words": 10023,
+          "sub": 460,
+          "deletions": 1173,
+          "insertions": 218,
+          "failures": 0,
+          "compute": 26.0387
+        }
+      }
+    },
+    {
+      "model": "moonshine",
+      "personal_n": 60,
+      "personal_median": 0.31275,
+      "personal_p90": 1.0011999999999999,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 34.88,
+          "words": 3168,
+          "sub": 233,
+          "deletions": 825,
+          "insertions": 47,
+          "failures": 1,
+          "compute": 18.9816
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 7.01,
+          "words": 1769,
+          "sub": 71,
+          "deletions": 11,
+          "insertions": 42,
+          "failures": 0,
+          "compute": 13.8927
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 24.894,
+          "words": 4937,
+          "sub": 304,
+          "deletions": 836,
+          "insertions": 89,
+          "failures": 1,
+          "compute": 32.8743
+        }
+      }
+    },
+    {
+      "model": "qwen3-1.7b",
+      "personal_n": 60,
+      "personal_median": 0.65855,
+      "personal_p90": 2.2556000000000003,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 18.816,
+          "words": 5086,
+          "sub": 247,
+          "deletions": 598,
+          "insertions": 112,
+          "failures": 0,
+          "compute": 0
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 28.346,
+          "words": 3168,
+          "sub": 131,
+          "deletions": 738,
+          "insertions": 29,
+          "failures": 0,
+          "compute": 35.8956
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 4.748,
+          "words": 1769,
+          "sub": 37,
+          "deletions": 9,
+          "insertions": 38,
+          "failures": 0,
+          "compute": 26.2675
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 19.346,
+          "words": 10023,
+          "sub": 415,
+          "deletions": 1345,
+          "insertions": 179,
+          "failures": 0,
+          "compute": 62.1631
+        }
+      }
+    },
+    {
+      "model": "moss",
+      "personal_n": 60,
+      "personal_median": 0.8007,
+      "personal_p90": 2.3762000000000003,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 15.867,
+          "words": 5086,
+          "sub": 243,
+          "deletions": 366,
+          "insertions": 198,
+          "failures": 2,
+          "compute": 162.8218
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 27.273,
+          "words": 3168,
+          "sub": 243,
+          "deletions": 497,
+          "insertions": 124,
+          "failures": 0,
+          "compute": 57.2267
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 6.67,
+          "words": 1769,
+          "sub": 52,
+          "deletions": 13,
+          "insertions": 53,
+          "failures": 0,
+          "compute": 38.0178
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 17.849,
+          "words": 10023,
+          "sub": 538,
+          "deletions": 876,
+          "insertions": 375,
+          "failures": 2,
+          "compute": 258.0663
+        }
+      }
+    },
+    {
+      "model": "whisper-turbo",
+      "personal_n": 60,
+      "personal_median": 0.47240000000000004,
+      "personal_p90": 1.0729,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 22.532,
+          "words": 5086,
+          "sub": 205,
+          "deletions": 755,
+          "insertions": 186,
+          "failures": 0,
+          "compute": 158.8494
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 35.89,
+          "words": 3168,
+          "sub": 143,
+          "deletions": 944,
+          "insertions": 50,
+          "failures": 0,
+          "compute": 50.0912
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.709,
+          "words": 1769,
+          "sub": 49,
+          "deletions": 9,
+          "insertions": 43,
+          "failures": 0,
+          "compute": 48.7433
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 23.785,
+          "words": 10023,
+          "sub": 397,
+          "deletions": 1708,
+          "insertions": 279,
+          "failures": 0,
+          "compute": 257.6839
+        }
+      }
+    },
+    {
+      "model": "voxtral",
+      "personal_n": 60,
+      "personal_median": 1.35745,
+      "personal_p90": 3.5169000000000006,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 33.87,
+          "words": 3168,
+          "sub": 153,
+          "deletions": 872,
+          "insertions": 48,
+          "failures": 0,
+          "compute": 72.428
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 4.805,
+          "words": 1769,
+          "sub": 36,
+          "deletions": 7,
+          "insertions": 42,
+          "failures": 0,
+          "compute": 92.5202
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 23.456,
+          "words": 4937,
+          "sub": 189,
+          "deletions": 879,
+          "insertions": 90,
+          "failures": 0,
+          "compute": 164.94819999999999
+        }
+      }
+    },
+    {
+      "model": "funasr-mlt",
+      "personal_n": 60,
+      "personal_median": 0.33569999999999994,
+      "personal_p90": 0.9292,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 34.785,
+          "words": 3168,
+          "sub": 220,
+          "deletions": 836,
+          "insertions": 46,
+          "failures": 2,
+          "compute": 26.4227
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.766,
+          "words": 1769,
+          "sub": 46,
+          "deletions": 15,
+          "insertions": 41,
+          "failures": 0,
+          "compute": 20.4976
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 24.387,
+          "words": 4937,
+          "sub": 266,
+          "deletions": 851,
+          "insertions": 87,
+          "failures": 2,
+          "compute": 46.9203
+        }
+      }
+    },
+    {
+      "model": "qwen3-0.6b",
+      "personal_n": 60,
+      "personal_median": 0.3679,
+      "personal_p90": 1.1303999999999998,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 29.135,
+          "words": 3168,
+          "sub": 162,
+          "deletions": 728,
+          "insertions": 33,
+          "failures": 0,
+          "compute": 22.7024
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.257,
+          "words": 1769,
+          "sub": 45,
+          "deletions": 6,
+          "insertions": 42,
+          "failures": 0,
+          "compute": 16.479400000000002
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 20.579,
+          "words": 4937,
+          "sub": 207,
+          "deletions": 734,
+          "insertions": 75,
+          "failures": 0,
+          "compute": 39.1818
+        }
+      }
+    },
+    {
+      "model": "orukeet",
+      "personal_n": 60,
+      "personal_median": 0.08023302096989937,
+      "personal_p90": 0.19744950102176517,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 16.595,
+          "words": 5086,
+          "sub": 217,
+          "deletions": 496,
+          "insertions": 131,
+          "failures": 0,
+          "compute": 17.512873633764684
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 28.946,
+          "words": 3168,
+          "sub": 149,
+          "deletions": 729,
+          "insertions": 39,
+          "failures": 0,
+          "compute": 6.216990001208615
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.992,
+          "words": 1769,
+          "sub": 48,
+          "deletions": 10,
+          "insertions": 48,
+          "failures": 0,
+          "compute": 5.5206657509552315
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 18.627,
+          "words": 10023,
+          "sub": 414,
+          "deletions": 1235,
+          "insertions": 218,
+          "failures": 0,
+          "compute": 29.25052938592853
+        }
+      }
+    },
+    {
+      "model": "mega",
+      "personal_n": 60,
+      "personal_median": 0.839905187021941,
+      "personal_p90": 2.2428688330110162,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 18.246,
+          "words": 5086,
+          "sub": 220,
+          "deletions": 588,
+          "insertions": 120,
+          "failures": 0,
+          "compute": 141.09955454611918
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 28.378,
+          "words": 3168,
+          "sub": 143,
+          "deletions": 730,
+          "insertions": 26,
+          "failures": 0,
+          "compute": 68.33474766561994
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 4.805,
+          "words": 1769,
+          "sub": 39,
+          "deletions": 9,
+          "insertions": 37,
+          "failures": 0,
+          "compute": 56.55355420499109
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 19.076,
+          "words": 10023,
+          "sub": 402,
+          "deletions": 1327,
+          "insertions": 183,
+          "failures": 0,
+          "compute": 265.9878564167302
+        }
+      }
+    },
+    {
+      "model": "nemotron",
+      "personal_n": 60,
+      "personal_median": 0.32011470801080577,
+      "personal_p90": 0.9419833329739049,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 22.749,
+          "words": 5086,
+          "sub": 269,
+          "deletions": 787,
+          "insertions": 101,
+          "failures": 0,
+          "compute": 53.206881536054425
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 36.174,
+          "words": 3168,
+          "sub": 149,
+          "deletions": 969,
+          "insertions": 28,
+          "failures": 0,
+          "compute": 28.04711795714684
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 9.158,
+          "words": 1769,
+          "sub": 86,
+          "deletions": 30,
+          "insertions": 46,
+          "failures": 0,
+          "compute": 23.738792331772856
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 24.593,
+          "words": 10023,
+          "sub": 504,
+          "deletions": 1786,
+          "insertions": 175,
+          "failures": 0,
+          "compute": 104.99279182497412
+        }
+      }
+    },
+    {
+      "model": "ark",
+      "personal_n": 60,
+      "personal_median": 2.294908707990544,
+      "personal_p90": 8.939096708025318,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 42.172,
+          "words": 3168,
+          "sub": 156,
+          "deletions": 957,
+          "insertions": 223,
+          "failures": 0,
+          "compute": 84.33638384204824
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.483,
+          "words": 1769,
+          "sub": 39,
+          "deletions": 7,
+          "insertions": 51,
+          "failures": 0,
+          "compute": 93.35357354115695
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 29.026,
+          "words": 4937,
+          "sub": 195,
+          "deletions": 964,
+          "insertions": 274,
+          "failures": 0,
+          "compute": 177.68995738320518
+        }
+      }
+    },
+    {
+      "model": "firered",
+      "personal_n": 60,
+      "personal_median": 5.550272541498998,
+      "personal_p90": 35.75438549998216,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 33.302,
+          "words": 3168,
+          "sub": 197,
+          "deletions": 823,
+          "insertions": 35,
+          "failures": 0,
+          "compute": 92.63546629087068
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 7.292,
+          "words": 1769,
+          "sub": 63,
+          "deletions": 10,
+          "insertions": 56,
+          "failures": 0,
+          "compute": 153.95202358294046
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 23.982,
+          "words": 4937,
+          "sub": 260,
+          "deletions": 833,
+          "insertions": 91,
+          "failures": 0,
+          "compute": 246.58748987381114
+        }
+      }
+    },
+    {
+      "model": "glm",
+      "personal_n": 60,
+      "personal_median": 0.5021782084950246,
+      "personal_p90": 1.413952375005465,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 18.227,
+          "words": 5086,
+          "sub": 242,
+          "deletions": 557,
+          "insertions": 128,
+          "failures": 0,
+          "compute": 105.35045257996535
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 29.924,
+          "words": 3168,
+          "sub": 169,
+          "deletions": 738,
+          "insertions": 41,
+          "failures": 0,
+          "compute": 39.62230137264123
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.427,
+          "words": 1769,
+          "sub": 40,
+          "deletions": 11,
+          "insertions": 45,
+          "failures": 0,
+          "compute": 34.02002841519425
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 19.665,
+          "words": 10023,
+          "sub": 451,
+          "deletions": 1306,
+          "insertions": 214,
+          "failures": 0,
+          "compute": 178.99278236780083
+        }
+      }
+    },
+    {
+      "model": "granite5",
+      "personal_n": 60,
+      "personal_median": 0.882236979494337,
+      "personal_p90": 2.5654112500487827,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 20.625,
+          "words": 5086,
+          "sub": 205,
+          "deletions": 712,
+          "insertions": 132,
+          "failures": 0,
+          "compute": 154.42566204466857
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 31.061,
+          "words": 3168,
+          "sub": 185,
+          "deletions": 763,
+          "insertions": 36,
+          "failures": 0,
+          "compute": 86.7691276242258
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.031,
+          "words": 1769,
+          "sub": 40,
+          "deletions": 6,
+          "insertions": 43,
+          "failures": 0,
+          "compute": 60.41364596463973
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 21.171,
+          "words": 10023,
+          "sub": 430,
+          "deletions": 1481,
+          "insertions": 211,
+          "failures": 0,
+          "compute": 301.6084356335341
+        }
+      }
+    },
+    {
+      "model": "apple",
+      "personal_n": 60,
+      "personal_median": 0.15486150979995728,
+      "personal_p90": 0.4242590665817261,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 21.51,
+          "words": 5086,
+          "sub": 301,
+          "deletions": 648,
+          "insertions": 145,
+          "failures": 0,
+          "compute": 69.97655510902405
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 33.586,
+          "words": 3168,
+          "sub": 172,
+          "deletions": 850,
+          "insertions": 42,
+          "failures": 0,
+          "compute": 11.79066801071167
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 7.744,
+          "words": 1769,
+          "sub": 75,
+          "deletions": 11,
+          "insertions": 51,
+          "failures": 0,
+          "compute": 11.95987093448639
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 22.897,
+          "words": 10023,
+          "sub": 548,
+          "deletions": 1509,
+          "insertions": 238,
+          "failures": 0,
+          "compute": 93.7270940542221
+        }
+      }
+    },
+    {
+      "model": "granite-ctc",
+      "personal_n": 60,
+      "personal_median": 0.05916010451619513,
+      "personal_p90": 0.16610479197697714,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 39.615,
+          "words": 3168,
+          "sub": 104,
+          "deletions": 1131,
+          "insertions": 20,
+          "failures": 0,
+          "compute": 1.7734517048229463
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.596,
+          "words": 1769,
+          "sub": 46,
+          "deletions": 11,
+          "insertions": 42,
+          "failures": 0,
+          "compute": 1.8687653339002281
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 27.426,
+          "words": 4937,
+          "sub": 150,
+          "deletions": 1142,
+          "insertions": 62,
+          "failures": 0,
+          "compute": 3.6422170387231745
+        }
+      }
+    },
+    {
+      "model": "granite-plus",
+      "personal_n": 60,
+      "personal_median": 0.7204191874770913,
+      "personal_p90": 2.1590343749849126,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 35.606,
+          "words": 3168,
+          "sub": 424,
+          "deletions": 630,
+          "insertions": 74,
+          "failures": 0,
+          "compute": 60.36975091812201
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 5.54,
+          "words": 1769,
+          "sub": 48,
+          "deletions": 7,
+          "insertions": 43,
+          "failures": 0,
+          "compute": 48.690456249867566
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 24.833,
+          "words": 4937,
+          "sub": 472,
+          "deletions": 637,
+          "insertions": 117,
+          "failures": 0,
+          "compute": 109.06020716798957
+        }
+      }
+    },
+    {
+      "model": "mimo",
+      "personal_n": 60,
+      "personal_median": 2.1517821254965384,
+      "personal_p90": 6.1053788749850355,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 31.692,
+          "words": 3168,
+          "sub": 195,
+          "deletions": 766,
+          "insertions": 43,
+          "failures": 0,
+          "compute": 174.7565927891992
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 3.109,
+          "words": 1769,
+          "sub": 22,
+          "deletions": 5,
+          "insertions": 28,
+          "failures": 0,
+          "compute": 129.11660590471
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 21.45,
+          "words": 4937,
+          "sub": 217,
+          "deletions": 771,
+          "insertions": 71,
+          "failures": 0,
+          "compute": 303.8731986939092
+        }
+      }
+    },
+    {
+      "model": "higgs",
+      "personal_n": 60,
+      "personal_median": 0.7050269999890588,
+      "personal_p90": 2.059898916981183,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 66.13,
+          "words": 3168,
+          "sub": 184,
+          "deletions": 741,
+          "insertions": 1170,
+          "failures": 0,
+          "compute": 70.24251158168772
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 4.353,
+          "words": 1769,
+          "sub": 35,
+          "deletions": 5,
+          "insertions": 37,
+          "failures": 0,
+          "compute": 46.8111859956407
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 43.994,
+          "words": 4937,
+          "sub": 219,
+          "deletions": 746,
+          "insertions": 1207,
+          "failures": 0,
+          "compute": 117.05369757732842
+        }
+      }
+    },
+    {
+      "model": "vibevoice",
+      "personal_n": 60,
+      "personal_median": 1.9639786664920393,
+      "personal_p90": 5.617787082970608,
+      "groups": {
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 35.48,
+          "words": 3168,
+          "sub": 383,
+          "deletions": 497,
+          "insertions": 244,
+          "failures": 0,
+          "compute": 240.81128907907987
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 8.027,
+          "words": 1769,
+          "sub": 73,
+          "deletions": 10,
+          "insertions": 59,
+          "failures": 0,
+          "compute": 163.72860808490077
+        },
+        "all-public": {
+          "n": 160,
+          "expected": 496,
+          "complete": false,
+          "wer": 25.643,
+          "words": 4937,
+          "sub": 456,
+          "deletions": 507,
+          "insertions": 303,
+          "failures": 0,
+          "compute": 404.53989716398064
+        }
+      }
+    },
+    {
+      "model": "phonon",
+      "personal_n": 60,
+      "personal_median": 0.01651698350906372,
+      "personal_p90": 0.11412513256072998,
+      "groups": {
+        "ami-old": {
+          "n": 336,
+          "expected": 336,
+          "complete": true,
+          "wer": 21.215,
+          "words": 5086,
+          "sub": 219,
+          "deletions": 730,
+          "insertions": 130,
+          "failures": 0,
+          "compute": 5.0009472370147705
+        },
+        "ami-extra": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 37.816,
+          "words": 3168,
+          "sub": 137,
+          "deletions": 1034,
+          "insertions": 27,
+          "failures": 0,
+          "compute": 1.9390758275985718
+        },
+        "fleurs": {
+          "n": 80,
+          "expected": 80,
+          "complete": true,
+          "wer": 6.501,
+          "words": 1769,
+          "sub": 58,
+          "deletions": 9,
+          "insertions": 48,
+          "failures": 0,
+          "compute": 2.1538816690444946
+        },
+        "all-public": {
+          "n": 496,
+          "expected": 496,
+          "complete": true,
+          "wer": 23.865,
+          "words": 10023,
+          "sub": 414,
+          "deletions": 1773,
+          "insertions": 205,
+          "failures": 0,
+          "compute": 9.093904733657837
+        }
+      }
+    }
+  ],
+  "release_mega_swift_verification": {
+    "ami-extra": {
+      "n": 80,
+      "swift_wer": 28.125,
+      "original_wer": 28.378,
+      "normalized_identical": 66
+    },
+    "fleurs": {
+      "n": 80,
+      "swift_wer": 4.748,
+      "original_wer": 4.805,
+      "normalized_identical": 79
+    },
+    "calls": 172,
+    "truncated": 0,
+    "peak_memory_gib": 5.078,
+    "routed_calls": 7
+  },
+  "release_native_replay": {
+    "orukeet": {
+      "attempts": 78,
+      "successful": 74,
+      "empty_or_error": 4,
+      "median_warm_seconds": 0.077,
+      "exact_vs_audit": 38,
+      "normalized_same_vs_audit": 38,
+      "cases": 39
+    },
+    "moss": {
+      "attempts": 78,
+      "successful": 74,
+      "empty_or_error": 4,
+      "median_warm_seconds": 0.636,
+      "exact_vs_audit": 39,
+      "normalized_same_vs_audit": 39,
+      "cases": 39
+    },
+    "parakeetUltra": {
+      "attempts": 78,
+      "successful": 74,
+      "empty_or_error": 4,
+      "median_warm_seconds": 0.116,
+      "exact_vs_audit": 39,
+      "normalized_same_vs_audit": 39,
+      "cases": 39
+    },
+    "qwen3ASR17": {
+      "attempts": 78,
+      "successful": 78,
+      "empty_or_error": 0,
+      "median_warm_seconds": 0.486,
+      "exact_vs_audit": 39,
+      "normalized_same_vs_audit": 39,
+      "cases": 39
+    }
+  },
+  "release_native_replay_note": "39 held-out parts per engine, two passes. MOSS, Parakeet Ultra and Qwen matched all 39 audit outputs; Orukeet matched 38, differing on one unverified proper-name spelling. Repeats were identical for all four engines. Three engines returned empty on the same two private parts; these are surfaced as emptyTranscript, not silently treated as recognized speech."
+}

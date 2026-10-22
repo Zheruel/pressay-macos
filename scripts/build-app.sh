@@ -12,11 +12,20 @@ if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]
     export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fi
 export CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-$ROOT/.build/ModuleCache}"
+"$ROOT/scripts/build-asr-runtime.sh"
 xcrun swift build --disable-sandbox -c "$CONFIGURATION" --product Pressay
 
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Frameworks"
 cp "$ROOT/.build/$CONFIGURATION/Pressay" "$CONTENTS/MacOS/Pressay"
+cp "$ROOT/Runtime/.build/$CONFIGURATION/PressayASRWorker" "$CONTENTS/MacOS/PressayASRWorker"
+mkdir -p "$CONTENTS/Resources/ASRRuntime"
+ditto "$ROOT/.build/asr-runtime/transcribe" "$CONTENTS/Resources/ASRRuntime/transcribe"
+ditto "$ROOT/.build/asr-runtime/orukeet" "$CONTENTS/Resources/ASRRuntime/orukeet"
+ditto "$ROOT/.build/asr-runtime/licenses" "$CONTENTS/Resources/ASRRuntime/licenses"
+for resource in "$ROOT/Runtime/.build/$CONFIGURATION/"*.bundle; do
+    ditto "$resource" "$CONTENTS/Resources/${resource:t}"
+done
 cp "$ROOT/Config/Info.plist" "$CONTENTS/Info.plist"
 
 # transcribe.cpp ships as a dynamic framework; the binary references it via
@@ -89,6 +98,12 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
     if [[ "$SIGNING_IDENTITY" == Developer\ ID\ Application:* ]]; then
         TIMESTAMP_ARGUMENT="--timestamp"
     fi
+    for library in "$CONTENTS/Resources/ASRRuntime/"{transcribe,orukeet/lib}/*.dylib; do
+        [[ -L "$library" ]] || codesign --force --sign "$SIGNING_IDENTITY" "$TIMESTAMP_ARGUMENT" "$library"
+    done
+    codesign --force --sign "$SIGNING_IDENTITY" --options runtime "$TIMESTAMP_ARGUMENT" \
+        --entitlements "$ROOT/Config/ASRWorker.entitlements" \
+        "$CONTENTS/MacOS/PressayASRWorker"
     codesign --force \
         --sign "$SIGNING_IDENTITY" \
         "$TIMESTAMP_ARGUMENT" \
@@ -101,6 +116,10 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
         "$APP"
     echo "Signed with $SIGNING_IDENTITY"
 else
+    for library in "$CONTENTS/Resources/ASRRuntime/"{transcribe,orukeet/lib}/*.dylib; do
+        [[ -L "$library" ]] || codesign --force --sign - "$library"
+    done
+    codesign --force --sign - "$CONTENTS/MacOS/PressayASRWorker"
     codesign --force --sign - "$CONTENTS/Frameworks/CTranscribe.framework"
     codesign --force \
         --sign - \

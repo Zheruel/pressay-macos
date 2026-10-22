@@ -40,7 +40,11 @@ struct MenuContentView: View {
                     MenuRow(title: "Stop Notetaker") { coordinator.stopRecording() }
                     MenuRow(title: "Show Notepad") { coordinator.showNotepadIfRecording() }
                 } else {
-                    MenuRow(title: "Start Notetaker") { coordinator.startMeeting() }
+                    if coordinator.meetingStarting {
+                        MenuRow(title: "Cancel Notetaker Setup") { coordinator.cancelMeetingStart() }
+                    } else {
+                        MenuRow(title: "Start Notetaker") { coordinator.startMeeting() }
+                    }
                 }
                 MenuRow(title: "Notetaker") { coordinator.showNotes() }
                 MenuRow(title: "Settings…", shortcut: "⌘,") { coordinator.showSettings() }
@@ -662,12 +666,28 @@ private struct GeneralSettingsView: View {
 
             Section("Transcription") {
                 Picker(selection: $settings.asrModel) {
-                    ForEach(ASRModel.allCases) { Text($0.displayName).tag($0) }
+                    ForEach(Array(ASRModel.recommended.enumerated()), id: \.element.id) { rank, model in
+                        Text("\(rank + 1). \(model.displayName)\(model == .defaultDictation ? " (Recommended)" : "")").tag(model)
+                    }
+                    Section("More languages and smaller models") {
+                        ForEach(ASRModel.otherModels) { Text($0.displayName).tag($0) }
+                    }
                 } label: {
-                    Text("Speech model")
+                    Text("Dictation model")
                     Text(settings.asrModel.caption)
                 }
+                .disabled(coordinator.liveSession != nil || coordinator.meetingStarting || coordinator.modelPreparing)
                 .onChange(of: settings.asrModel) { _, _ in coordinator.applyASRModel() }
+
+                Text("Ranked for everyday dictation. Meeting transcription has its own recommended model in Notetaker Settings. Models download when selected and run entirely on this Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if settings.asrModel != .defaultDictation || settings.meetingASRModel != .defaultMeeting {
+                    Button("Use recommended models") {
+                        settings.asrModel = .defaultDictation
+                        settings.meetingASRModel = .defaultMeeting
+                    }
+                    .disabled(coordinator.liveSession != nil || coordinator.meetingStarting || coordinator.modelPreparing)
+                }
 
                 if settings.asrModel.offersLanguageChoice {
                     Picker("Language", selection: $settings.language) {
@@ -1121,6 +1141,20 @@ private struct NotesSettingsView: View {
     var body: some View {
         Form {
             PaneHero(section: .notes, title: "Notetaker Settings", blurb: "Takes notes in your meetings. Pressay transcribes on this Mac as people talk, then writes up clear notes when the call ends.")
+
+            Section("Local transcription") {
+                Picker(selection: $settings.meetingASRModel) {
+                    ForEach(Array(ASRModel.meetingRecommendations.enumerated()), id: \.element.id) { rank, model in
+                        Text("\(rank + 1). \(model.displayName)\(model == .defaultMeeting ? " (Recommended)" : "")").tag(model)
+                    }
+                } label: {
+                    Text("Meeting speech model")
+                    Text(settings.meetingASRModel.caption)
+                }
+                .disabled(coordinator.liveSession != nil || coordinator.meetingStarting)
+                Text("Ranked for meeting accuracy. English configurations. Downloads on first use; only the active model stays loaded. Your dictation model returns when the meeting ends.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
 
             Section {
                 Toggle(isOn: Binding(get: { settings.notesUseAI && !options.isEmpty }, set: { settings.notesUseAI = $0 })) {
