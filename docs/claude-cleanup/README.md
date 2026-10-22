@@ -1,4 +1,14 @@
-# Claude cleanup benchmark — October 2026
+# Cleanup fidelity and historical benchmarks
+
+## Current prompt · October 22, 2026
+
+Pressay 1.11 makes preserving meaning outrank grammar. It explicitly keeps short directives, can/could/should alternatives, actors, permissions, negation and conditional scope. Eight synthetic regression cases were run once through **Haiku 5.5 at medium effort** with the new prompt; manual inspection found all eight preserved those constraints while removing genuine stumbles and corrections. This small smoke check does not establish a general meaning-change rate. [Synthetic inputs and outputs](fidelity-2026-10-22.json). No Sonnet comparison was run for this release.
+
+The 100-pair historical audit found one clear omitted directive and three possible meaning changes. Those saved rows do not identify their model or prompt versions. Proper-name mistakes can also originate before cleanup. The dictionary remains contextual spelling guidance, without injecting the full list into ASR.
+
+The comparisons below precede this prompt revision. Their scores do not validate the new prompt. Their text-only judges could not establish spoken ground truth.
+
+## Historical model comparison
 
 Can a Claude model replace the rules-only cleanup step (DeterministicPromptCleaner + TranscriptStructurer)?
 
@@ -10,7 +20,7 @@ Yes. Pressay ships **Haiku 5.5, effort `medium`, with `prompt.txt`** as the defa
 
 On a ChatGPT plan, **GPT-6.1 Sol at effort `medium`** is the default (see below). All models run at `medium` since October 2026 (see "Effort recheck").
 
-Keep **Qwen3-ASR 1.7B** as the speech model. Claude cannot recover words the ASR got wrong, so smaller ASR models lose quality even after cleanup.
+The current task-specific ASR defaults and human-reference measurements are in [the transcription audit](../benchmarks.md). Cleanup cannot reliably recover words missing from the ASR output.
 
 <p align="center">
   <img src="../assets/ai-cleanup-benchmark.svg" width="100%" alt="Cleanup quality out of 10: Claude Sonnet 5.5 8.9, Claude Haiku 5.5 8.7, Wispr Flow 7.7, on-device rules 7.6">

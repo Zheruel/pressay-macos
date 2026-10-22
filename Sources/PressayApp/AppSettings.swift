@@ -9,6 +9,7 @@ final class AppSettings: ObservableObject {
         static let holdKeyCode = "holdKeyCode"
         static let language = "language"
         static let asrModel = "asrModel"
+        static let meetingASRModel = "meetingASRModel"
         static let structuredDictation = "structuredDictation"
         static let vocabulary = "vocabulary"
         static let onboardingComplete = "onboardingComplete"
@@ -42,6 +43,7 @@ final class AppSettings: ObservableObject {
     @Published var holdKey: HoldKey { didSet { defaults.set(holdKey.keyCode, forKey: Key.holdKeyCode) } }
     @Published var language: TranscriptionLanguage { didSet { defaults.set(language.rawValue, forKey: Key.language) } }
     @Published var asrModel: ASRModel { didSet { defaults.set(asrModel.rawValue, forKey: Key.asrModel) } }
+    @Published var meetingASRModel: ASRModel { didSet { defaults.set(meetingASRModel.rawValue, forKey: Key.meetingASRModel) } }
     @Published var structuredDictation: Bool { didSet { defaults.set(structuredDictation, forKey: Key.structuredDictation) } }
     @Published var vocabularySource: String { didSet { defaults.set(vocabularySource, forKey: Key.vocabulary) } }
     @Published var onboardingComplete: Bool { didSet { defaults.set(onboardingComplete, forKey: Key.onboardingComplete) } }
@@ -126,6 +128,7 @@ final class AppSettings: ObservableObject {
         )
         let model = Self.readASRModel(defaults)
         asrModel = model
+        meetingASRModel = defaults.string(forKey: Key.meetingASRModel).flatMap(ASRModel.init(rawValue:)) ?? .defaultMeeting
         // A language stored against a previous model may not exist on this one
         // (Fun-ASR runs English only; Voxtral covers eight languages).
         let storedLanguage =

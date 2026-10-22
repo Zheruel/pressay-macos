@@ -72,6 +72,10 @@ let package = Package(
             name: "PressayCoreTests",
             dependencies: ["PressayCore"]
         ),
+        .testTarget(
+            name: "PressayTranscriptionTests",
+            dependencies: ["PressayTranscription", "PressayCore"]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

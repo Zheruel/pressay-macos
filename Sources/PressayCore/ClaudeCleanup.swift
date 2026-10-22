@@ -108,8 +108,14 @@ public enum ClaudeCleanupPrompt {
 
     Goal: the text the speaker would have typed if they had taken a minute to write it - clean, readable, and saying exactly what they said.
 
-    Clean up freely - the output should read as written text, not a transcript:
-    - Every sentence must be complete and grammatical. Remove false starts and abandoned fragments ("If there's any, and", "And maybe it's-", a trailing "We."), fold the restarted thought into one clean sentence, and drop leading "And"/"So" that only connect spoken sentences.
+    Preserving meaning takes priority over grammar and formatting:
+    - Preserve short directives, even after a question: "Do that" is an instruction, not padding.
+    - Keep can, could, should, must and might distinct, including alternatives such as "should or could". Preserve permissions and who is asking whom to do what.
+    - Preserve the full scope of if, unless, otherwise, exceptions and negation. Never invent an action, object, actor or condition to complete a fragment.
+    - If the meaning is ambiguous, retain the speaker's wording rather than resolve it by guessing.
+
+    Within those limits, clean up the text so it reads naturally:
+    - Remove genuine false starts and abandoned fragments only when the restarted thought preserves their meaning. Complete sentences are desirable, but never at the cost of an instruction or detail. Drop leading "And"/"So" only when they carry no meaning.
     - Remove fillers (um, uh, like, you know, so, basically, kind of, I mean) when they carry no meaning, plus stutters, false starts and words repeated in a stumble.
     - When the speaker explicitly corrects or retracts something ("X, no, Y", "actually, scratch that"), keep only the final version.
     - Fix broken and run-on sentences, punctuation and capitalization. Smooth awkward spoken phrasing into natural written phrasing when the meaning stays identical.
@@ -123,6 +129,7 @@ public enum ClaudeCleanupPrompt {
     - Do not merge or drop sentences that add any detail, even a small one. Only remove words that are pure padding.
 
     Misheard words:
+    - Speech-model names include Orukeet, MOSS, Parakeet Ultra, Qwen and Mega-ASR. Use those spellings only when the context refers to the model, not for ordinary words such as moss.
     - Fix words that are clearly mis-transcribed, using context. Prefer the speaker's vocabulary spelling (below) when the transcribed word sounds like that term and the context fits.
     - A word that makes no sense where it stands is usually a mishearing of a similar-sounding word that does: "rebase the brunch" -> branch, "check the locks" -> logs, "merge this pole" -> PR. Fix it when the context makes the intended word clear.
     - Only replace a word with one that sounds similar to it. If you cannot tell what was meant, keep the transcribed word. Never guess a new name, product or number.

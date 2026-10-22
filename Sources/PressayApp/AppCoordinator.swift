@@ -29,6 +29,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private let overlay = OverlayPanelController()
     private let sounds = DictationSoundPlayer()
     private var transcriber: any SpeechTranscriber
+    private var engineModel: ASRModel
+    private var modelChangeTask: Task<Void, Never>?
+    private var meetingStartTask: Task<Void, Never>?
+    @Published private(set) var meetingStarting = false
     private let logger = Logger(subsystem: "dev.localflow.app", category: "pipeline")
     private var stateMachine = DictationStateMachine()
     private var target: CapturedTarget?
@@ -88,6 +92,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             history = try! HistoryStore(inMemory: true)
             lastError = "History will not persist: \(error.localizedDescription)"
         }
+        engineModel = settings.asrModel
         transcriber = Self.makeTranscriber(for: settings.asrModel, language: settings.language)
         hotkey.delegate = self
         recorder.onLevel = { [weak self] frame in
@@ -420,20 +425,40 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         for model: ASRModel,
         language: TranscriptionLanguage
     ) -> any SpeechTranscriber {
-        GGMLTranscriber(model: model, language: language.whisperCode)
+        SpeechTranscribers.make(model: model, language: language.whisperCode)
     }
 
     /// An in-flight dictation keeps the engine captured at its key press.
     func applyASRModel() {
+        // Never swap the live meeting engine or a dictation captured at key-down.
+        modelChangeTask?.cancel()
+        guard liveSession == nil, !meetingStarting else { return }
+        guard stateMachine.phase == .idle else {
+            modelChangeTask = Task { [weak self] in
+                while let self, self.stateMachine.phase != .idle {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    guard !Task.isCancelled else { return }
+                }
+                guard !Task.isCancelled else { return }
+                self?.applyASRModel()
+            }
+            return
+        }
         let model = settings.asrModel
         if !model.supportedLanguages.contains(settings.language) {
             settings.language = model.defaultLanguage
         }
+        installEngine(model)
+        Task { await prepareModel(force: true) }
+    }
+
+    private func installEngine(_ model: ASRModel) {
+        sessionEngine = nil
+        engineModel = model
         transcriber = Self.makeTranscriber(for: model, language: settings.language)
         modelReady = false
         // A prepare for the old engine may still be running; its completion must not mark this one ready.
         prepareGeneration += 1
-        Task { await prepareModel(force: true) }
     }
 
     func prepareModel(force: Bool = false) async {
@@ -461,6 +486,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             }
         }
         do {
+            if !engineModel.usesWorker { await WorkerTranscriber.releaseResidentModel() }
             try await preparing.prepare()
             guard generation == prepareGeneration else { return }
             modelReady = true
@@ -596,6 +622,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             let captured = target ?? accessibility.capture(vocabulary: settings.vocabularyTerms)
             let target = accessibility.refreshInsertionTarget(captured)
             let engine = sessionEngine ?? transcriber
+            sessionEngine = nil
             processingTask = Task { [weak self] in
                 guard let self else { return }
                 if command {
@@ -621,6 +648,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     func holdKeyCancelled(_ monitor: HotkeyMonitor) {
         guard monitor === activeMonitor else { return }
         guard stateMachine.phase == .recording || stateMachine.phase == .arming else { return }
+        sessionEngine = nil
         armingTimeoutTask?.cancel()
         armingTimeoutTask = nil
         recorder.cancel()
@@ -994,6 +1022,43 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func startMeeting() {
+        guard !meetingStarting, liveSession == nil, finishTask == nil else { return }
+        guard permissions.microphoneGranted, stateMachine.phase == .idle, !modelPreparing else {
+            recordingError = !permissions.microphoneGranted
+                ? "Allow microphone access in System Settings to start the Notetaker."
+                : "Finish dictating or preparing the model, then start the Notetaker."
+            showNotes()
+            return
+        }
+        meetingStarting = true
+        recorder.forceClose()
+        installEngine(settings.meetingASRModel)
+        showNotes()
+        meetingStartTask = Task { [weak self] in
+            guard let self else { return }
+            await prepareModel(force: true)
+            guard !Task.isCancelled, meetingStarting else { return }
+            meetingStarting = false
+            meetingStartTask = nil
+            if modelReady {
+                beginMeetingCapture()
+            } else {
+                recordingError = lastError ?? "Could not prepare the meeting model. Try again or choose another model."
+                applyASRModel()
+            }
+        }
+    }
+
+    func cancelMeetingStart() {
+        meetingStartTask?.cancel()
+        meetingStartTask = nil
+        meetingStarting = false
+        // Invalidates the old completion. The serial host cancels/kills the
+        // in-flight load before preparing the dictation engine.
+        applyASRModel()
+    }
+
+    private func beginMeetingCapture() {
         guard liveSession == nil, finishTask == nil else { return }
         guard permissions.microphoneGranted else {
             recordingError = "Pressay needs microphone access to record. Allow it in System Settings › Privacy & Security › Microphone."
@@ -1049,6 +1114,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             recordingError = "Couldn’t start the Notetaker: \(error.localizedDescription)"
             showNotes()
             applyMicWarmth()
+            applyASRModel()
         }
     }
 
@@ -1100,6 +1166,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             guard let self else { return }
             liveSession = nil
             finishTask = nil
+            applyASRModel()
             applyMicWarmth()
             finishNote(session.noteID, newLines: lines, from: session.offset, duration: duration, automatic: automatic)
         }
@@ -1120,6 +1187,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         liveSession = nil
         notepad.dismiss()
         sounds.play(.cancel)
+        applyASRModel()
         if session.createdNote {
             notes.delete(session.noteID)
         } else {

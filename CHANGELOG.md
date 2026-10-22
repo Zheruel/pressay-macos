@@ -2,6 +2,20 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.11.0] - 2026-10-22
+
+### Added
+
+- Separate ranked speech-model pickers for dictation and meetings: Orukeet, MOSS, Parakeet Ultra, Qwen3-ASR 1.7B and Mega-ASR.
+- Bundled local Metal/MLX runtimes, integrity-checked model downloads and a single resident worker. No Python installation is required.
+- Updated benchmark documentation, reproducible comparison charts and new GPT Image artwork.
+
+### Changed
+
+- Fresh installs use Orukeet for dictation and MOSS for meetings. Existing explicit dictation choices are preserved.
+- Cleanup prioritizes meaning over grammar, preserving short directives, permissions, modal alternatives and conditional scope.
+- Dictionaries remain post-transcription spelling aids; the full glossary is not injected into ASR.
+
 ## [1.10.0] - 2026-10-13
 
 ### Added

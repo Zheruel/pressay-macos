@@ -95,11 +95,14 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     ]
 }
 
-/// Declaration order is the Settings picker order, best first (see docs/benchmarks.md).
+/// Local transcription choices. Recommendations are task-specific; see docs/benchmarks.md.
 public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
-    /// Default: judged 9.0/10, level with Wispr Flow's cloud transcript.
+    case orukeet
+    case moss
+    case parakeetUltra
     case qwen3ASR17 = "qwen3ASR17"
-    /// 8.9/10, best punctuation, at ~2.4x Qwen's latency.
+    case megaASR
+    // Retained for existing users who need their language coverage.
     case voxtralMini = "voxtralMini"
     case whisperTurboGGML = "whisperTurboGGML"
     case qwen3ASR06 = "qwen3ASR06"
@@ -108,15 +111,26 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
 
     public var id: String { rawValue }
 
-    /// Retired or unknown raw values fall back to the default.
+    public static let defaultDictation: ASRModel = .orukeet
+    public static let defaultMeeting: ASRModel = .moss
+    public static let recommended: [ASRModel] = [.orukeet, .moss, .parakeetUltra, .qwen3ASR17, .megaASR]
+    public static let meetingRecommendations: [ASRModel] = [.moss, .orukeet, .parakeetUltra, .qwen3ASR17, .megaASR]
+    public static var otherModels: [ASRModel] { allCases.filter { !recommended.contains($0) } }
+    public var usesWorker: Bool { Self.recommended.contains(self) }
+
+    /// Preserve explicit choices; fresh installs and retired values use the default.
     public static func migrating(storedRawValue: String?) -> ASRModel {
         guard let stored = storedRawValue,
-              let model = ASRModel(rawValue: stored) else { return .qwen3ASR17 }
+              let model = ASRModel(rawValue: stored) else { return .defaultDictation }
         return model
     }
 
     public var displayName: String {
         switch self {
+        case .orukeet: "Orukeet"
+        case .moss: "MOSS"
+        case .parakeetUltra: "Parakeet Ultra"
+        case .megaASR: "Mega-ASR"
         case .funASRMLTNano: "Fun-ASR MLT Nano"
         case .whisperTurboGGML: "Whisper V3 Turbo"
         case .voxtralMini: "Voxtral Mini 3B"
@@ -127,16 +141,27 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
 
     public var caption: String {
         switch self {
-        case .qwen3ASR17: "Most accurate. English only. Uses 3 GB of memory."
-        case .voxtralMini: "Nearly as accurate, but slower. 8 languages. Uses 5 GB of memory."
-        case .whisperTurboGGML: "Good accuracy. 100 languages. Uses 1 GB of memory."
-        case .qwen3ASR06: "Faster, but less accurate. English only."
-        case .funASRMLTNano: "Fastest and least accurate. English only."
+        case .orukeet: "Recommended for dictation. Strong accuracy with very fast local processing. English."
+        case .moss: "Recommended for meetings. Best meeting accuracy in our tests; slower than Orukeet. English."
+        case .parakeetUltra: "Fast alternative with strong conversational accuracy. English."
+        case .megaASR: "Alternative for difficult audio. Larger download and slower processing. English."
+        case .qwen3ASR17: "Strong accuracy on clear speech and technical terms. English."
+        case .voxtralMini: "Multilingual alternative. 8 languages. Uses about 5 GB of memory."
+        case .whisperTurboGGML: "Multilingual alternative. 100 languages. Uses about 1 GB of memory."
+        case .qwen3ASR06: "Smaller English-only alternative."
+        case .funASRMLTNano: "Legacy English-only alternative."
         }
     }
 
     public var ggufDownload: (url: URL, fileName: String)? {
         switch self {
+        case .orukeet:
+            (URL(string: "https://huggingface.co/oruk/orukeet/resolve/555136b50265a132d4cea0d35560c26fc4f657ab/orukeet-v0.1.0-q8.gguf")!, "orukeet-v0.1.0-q8.gguf")
+        case .moss:
+            (URL(string: "https://huggingface.co/handy-computer/MOSS-Transcribe-Diarize-gguf/resolve/8c603aa6da33a068e39bbd109786f85786a21834/MOSS-Transcribe-Diarize-Q6_K.gguf")!, "MOSS-Transcribe-Diarize-Q6_K.gguf")
+        case .parakeetUltra:
+            (URL(string: "https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/a1539be1b849ea7463b88343e5277b373d0c4ea9/parakeet-ultra-Q8_0.gguf")!, "parakeet-ultra-Q8_0.gguf")
+        case .megaASR: nil
         case .funASRMLTNano:
             (URL(string: "https://huggingface.co/handy-computer/Fun-ASR-MLT-Nano-2512-gguf/resolve/main/Fun-ASR-MLT-Nano-2512-Q6_K.gguf")!,
              "Fun-ASR-MLT-Nano-2512-Q6_K.gguf")
@@ -160,7 +185,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     public var supportedLanguages: [TranscriptionLanguage] {
         switch self {
         // Qwen takes no hint; English-only keeps the non-Latin hallucination filter armed.
-        case .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: [.english]
+        case .orukeet, .moss, .parakeetUltra, .megaASR, .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: [.english]
         case .whisperTurboGGML: TranscriptionLanguage.allCases
         // Auto is Voxtral's default: forcing a language made it fabricate text for near-silent audio.
         case .voxtralMini:
@@ -172,7 +197,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     /// Used when the current selection isn't in `supportedLanguages`.
     public var defaultLanguage: TranscriptionLanguage {
         switch self {
-        case .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: .english
+        case .orukeet, .moss, .parakeetUltra, .megaASR, .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: .english
         case .whisperTurboGGML, .voxtralMini: .auto
         }
     }
@@ -180,6 +205,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     /// Measured: 60 s splits cut Voxtral worst case 13.3 s → 7.7 s; below ~40 s overhead wins. Whisper chunks internally.
     public var preferredChunkSeconds: TimeInterval? {
         switch self {
+        case .orukeet, .moss, .parakeetUltra, .megaASR: 25
         case .funASRMLTNano, .voxtralMini, .qwen3ASR17, .qwen3ASR06: 60
         case .whisperTurboGGML: nil
         }
@@ -189,7 +215,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
 
     public var languageCaption: String {
         switch self {
-        case .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: "English (this model takes no language hint)"
+        case .orukeet, .moss, .parakeetUltra, .megaASR, .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: "English (this model takes no language hint)"
         case .whisperTurboGGML: "Automatic handles mixed Norwegian and English"
         case .voxtralMini: "Automatic is safest on short clips for this model"
         }
@@ -198,7 +224,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     public var supportsLanguageHint: Bool {
         switch self {
         case .funASRMLTNano, .whisperTurboGGML, .voxtralMini: true
-        case .qwen3ASR17, .qwen3ASR06: false
+        case .orukeet, .moss, .parakeetUltra, .megaASR, .qwen3ASR17, .qwen3ASR06: false
         }
     }
 
@@ -207,7 +233,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     public var requestsExplicitFormatting: Bool {
         switch self {
         case .funASRMLTNano: true
-        case .whisperTurboGGML, .voxtralMini, .qwen3ASR17, .qwen3ASR06: false
+        case .orukeet, .moss, .parakeetUltra, .megaASR, .whisperTurboGGML, .voxtralMini, .qwen3ASR17, .qwen3ASR06: false
         }
     }
 
@@ -219,8 +245,8 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     /// Whisper excluded: it never refuses, so the filter would drop a real "I'm sorry, I didn't understand."
     var emitsAssistantRefusals: Bool {
         switch self {
-        case .funASRMLTNano, .voxtralMini, .qwen3ASR17, .qwen3ASR06: true
-        case .whisperTurboGGML: false
+        case .moss, .megaASR, .funASRMLTNano, .voxtralMini, .qwen3ASR17, .qwen3ASR06: true
+        case .orukeet, .parakeetUltra, .whisperTurboGGML: false
         }
     }
 

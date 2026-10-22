@@ -7,9 +7,9 @@ final class ASRModelTests: XCTestCase {
     func testRetiredAndAbsentValuesFallBackToTheDefault() {
         for stored in ["parakeetV3", "whisperKit", "", "nonsense"] {
             XCTAssertEqual(
-                ASRModel.migrating(storedRawValue: stored), .qwen3ASR17, "stored=\(stored)")
+                ASRModel.migrating(storedRawValue: stored), .orukeet, "stored=\(stored)")
         }
-        XCTAssertEqual(ASRModel.migrating(storedRawValue: nil), .qwen3ASR17)
+        XCTAssertEqual(ASRModel.migrating(storedRawValue: nil), .orukeet)
     }
 
     func testAShippingSelectionIsPreserved() {
@@ -19,12 +19,29 @@ final class ASRModelTests: XCTestCase {
     }
 
     func testEveryModelHasADistinctArtifact() {
-        for model in ASRModel.allCases {
+        for model in ASRModel.allCases where model != .megaASR {
             XCTAssertNotNil(model.ggufDownload, "\(model.rawValue) has no GGUF")
         }
         // A shared filename would let the stale-artifact sweep delete a file another model needs.
         let names = ASRModel.allCases.compactMap { $0.ggufDownload?.fileName }
         XCTAssertEqual(Set(names).count, names.count)
+    }
+
+    func testRecommendedModelsHavePinnedIntegrityCheckedArtifacts() {
+        XCTAssertEqual(ASRModel.recommended.count, 5)
+        XCTAssertEqual(Set(ASRModel.recommended).count, 5)
+        XCTAssertEqual(ASRModel.recommended.first, .defaultDictation)
+        XCTAssertEqual(ASRModel.defaultMeeting, .moss)
+        for model in ASRModel.recommended {
+            XCTAssertFalse(model.workerArtifacts.isEmpty)
+            for artifact in model.workerArtifacts {
+                XCTAssertGreaterThan(artifact.bytes, 0)
+                XCTAssertEqual(artifact.sha256.count, 64)
+                XCTAssertFalse(artifact.url.path.contains("/main/"))
+            }
+        }
+        XCTAssertTrue(ASRModel.megaASR.workerArtifacts.contains { $0.path == "extras/router.safetensors" })
+        XCTAssertTrue(ASRModel.megaASR.workerArtifacts.contains { $0.path == "extras/lora.safetensors" })
     }
 
     // MARK: - Language coverage

@@ -113,7 +113,8 @@ extension Bench {
             }
         default:
             guard let model = ASRModel(rawValue: name) else { throw BenchError.usage("unknown --engine \(name)") }
-            let transcriber = GGMLTranscriber(model: model, language: "en")
+            let transcriber = SpeechTranscribers.make(model: model, language: "en",
+                bundleURL: URL(fileURLWithPath: options["runtime-app"] ?? ".build/Pressay.app"))
             try await transcriber.prepare()
             return { samples in try await transcriber.transcribe(AudioClip(samples: samples)).text }
         }

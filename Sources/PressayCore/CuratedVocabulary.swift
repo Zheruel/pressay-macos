@@ -15,6 +15,8 @@ package enum CuratedVocabulary {
     OpenAI <= open ai
     ChatGPT <= chat gpt
     Wispr Flow <= whisper flow, whisperflow
+    Pressay
+    Orukeet
     SonarCloud <= soonercloud, sooner cloud
     RunPod <= rumpod
     TL;DR <= tldr

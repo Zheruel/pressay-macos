@@ -297,18 +297,26 @@ struct StartNotetakerButton: View {
     @ObservedObject var coordinator: AppCoordinator
 
     var body: some View {
-        Button { coordinator.startMeeting() } label: {
-            Label {
-                Text("Start Notetaker").fontWeight(.semibold)
-            } icon: {
-                Image(systemName: "record.circle.fill")
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, .red)
+        if coordinator.meetingStarting {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(coordinator.modelStatus).font(.caption)
+                Button("Cancel") { coordinator.cancelMeetingStart() }
             }
-            .padding(.horizontal, 4)
+        } else {
+            Button { coordinator.startMeeting() } label: {
+                Label {
+                    Text("Start Notetaker").fontWeight(.semibold)
+                } icon: {
+                    Image(systemName: "record.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .red)
+                }
+                .padding(.horizontal, 4)
+            }
+            .buttonStyle(.glass)
+            .disabled(coordinator.liveSession != nil)
         }
-        .buttonStyle(.glass)
-        .disabled(coordinator.liveSession != nil)
     }
 }
 

@@ -17,7 +17,7 @@ jobs:
   test:
     name: Swift tests
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Check out source
@@ -37,8 +37,10 @@ jobs:
       - name: Restore build cache
         uses: actions/cache@v5
         with:
-          path: .build
-          key: spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.resolved') }}
+          path: |
+            .build
+            Runtime/.build
+          key: spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.resolved', 'Runtime/Package.resolved') }}
           restore-keys: |
             spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
 
@@ -55,4 +57,8 @@ jobs:
       - name: Build and verify app bundle
         env:
           CONFIGURATION: debug
-        run: ./scripts/build-app.sh
+        run: |
+          if ! xcrun metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          ./scripts/build-app.sh
