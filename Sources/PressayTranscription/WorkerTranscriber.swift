@@ -2,8 +2,6 @@ import Foundation
 import CryptoKit
 import PressayCore
 
-/// The host serializes all engine requests and owns exactly one resident worker.
-/// Switching tasks exits the old process before loading a different model.
 public actor WorkerTranscriber: SpeechTranscriber {
     private let model: ASRModel
     private var directory: URL?
@@ -63,15 +61,13 @@ public actor WorkerTranscriber: SpeechTranscriber {
 
     private func segment(_ samples: [Float], directory: URL, depth: Int) async throws -> String {
         try Task.checkCancellation()
-        // Match the common benchmark chunk size, and bound the Mega router's
-        // positional window. Split at a low-energy point, never a fixed word cut.
+        // Bound the Mega router's positional window to 25 seconds.
         if samples.count > 25 * 16_000 { return try await split(samples, directory: directory, depth: depth) }
         let result = try await host.request(model: model, directory: directory, audio: samples)
         if result.truncated {
             if depth < 6, samples.count >= 2 * 16_000 {
                 return try await split(samples, directory: directory, depth: depth)
             }
-            // A partial, repetitive decode is not silently inserted as complete text.
             throw PressayError.modelUnavailable("\(model.displayName) could not finish this audio. Try another model.")
         }
         let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -88,8 +84,7 @@ public actor WorkerTranscriber: SpeechTranscriber {
 
 private actor ASRArtifactStore {
     static let shared = ASRArtifactStore()
-    // Actor serialization plus an in-flight task prevents simultaneous downloads
-    // of the same model when dictation and meeting preparation meet.
+    // Coalesce downloads across reentrant preparation calls.
     private var tasks: [ASRModel: Task<URL, Error>] = [:]
 
     func invalidate(_ model: ASRModel) { tasks[model] = nil }
@@ -118,7 +113,6 @@ private actor ASRArtifactStore {
                     guard try Self.valid(downloaded, artifact: artifact) else {
                         throw PressayError.modelUnavailable("\(model.displayName) download failed its integrity check. Try again.")
                     }
-                    // Validate first, then atomically replace the destination.
                     if FileManager.default.fileExists(atPath: target.path) {
                         _ = try FileManager.default.replaceItemAt(target, withItemAt: downloaded)
                     } else { try FileManager.default.moveItem(at: downloaded, to: target) }
@@ -145,7 +139,6 @@ private actor ASRArtifactStore {
     }
 }
 
-/// A delegate exposes real download progress without buffering model weights.
 private final class ArtifactDownload: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     let progress: @Sendable (Double?) -> Void
     let continuation: CheckedContinuation<URL, Error>

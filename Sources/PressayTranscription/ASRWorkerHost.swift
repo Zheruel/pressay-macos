@@ -69,8 +69,6 @@ final class ASRWorkerHost: @unchecked Sendable {
                             continuation.resume(returning: ASRWorkerReply(text: "", truncated: false))
                             return
                         }
-                        // Audio crosses an anonymous local pipe, never a file
-                        // or a network connection. Meetings leave no PCM cache.
                         let pcm = audio.withUnsafeBytes { Data($0).base64EncodedString() }
                         let request = try JSONSerialization.data(withJSONObject: ["pcm": pcm])
                         try input?.write(contentsOf: request + Data([10]))

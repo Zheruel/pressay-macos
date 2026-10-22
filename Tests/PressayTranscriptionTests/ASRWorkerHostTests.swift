@@ -3,7 +3,6 @@ import XCTest
 import PressayCore
 @testable import PressayTranscription
 
-// XCTest initializes and tears down each instance around its async test.
 final class ASRWorkerHostTests: XCTestCase, @unchecked Sendable {
     private var directory: URL!
     override func setUpWithError() throws {

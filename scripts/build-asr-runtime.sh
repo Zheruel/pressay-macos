@@ -28,8 +28,7 @@ for library in "$STAGE/native-install/lib/"*.dylib; do
     cp -L "$library" "$STAGE/transcribe/"
 done
 
-# Official Orukeet optimized Metal runtime, hash-pinned to the benchmarked
-# release. Executable code is bundled and signed, never downloaded by the app.
+# Official optimized Orukeet runtime; verify before bundling.
 ARCHIVE="$STAGE/orukeet-0.1.1.tar.gz"
 if [[ ! -f "$ARCHIVE" ]]; then
     curl --fail --location --retry 3 \

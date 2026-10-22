@@ -430,7 +430,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
 
     /// An in-flight dictation keeps the engine captured at its key press.
     func applyASRModel() {
-        // Never swap the live meeting engine or a dictation captured at key-down.
         modelChangeTask?.cancel()
         guard liveSession == nil, !meetingStarting else { return }
         guard stateMachine.phase == .idle else {
@@ -1053,8 +1052,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         meetingStartTask?.cancel()
         meetingStartTask = nil
         meetingStarting = false
-        // Invalidates the old completion. The serial host cancels/kills the
-        // in-flight load before preparing the dictation engine.
         applyASRModel()
     }
 

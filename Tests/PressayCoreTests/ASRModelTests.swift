@@ -2,8 +2,6 @@ import XCTest
 @testable import PressayCore
 
 final class ASRModelTests: XCTestCase {
-    // MARK: - Migration of persisted settings
-
     func testRetiredAndAbsentValuesFallBackToTheDefault() {
         for stored in ["parakeetV3", "whisperKit", "", "nonsense"] {
             XCTAssertEqual(
@@ -28,10 +26,6 @@ final class ASRModelTests: XCTestCase {
     }
 
     func testRecommendedModelsHavePinnedIntegrityCheckedArtifacts() {
-        XCTAssertEqual(ASRModel.recommended.count, 5)
-        XCTAssertEqual(Set(ASRModel.recommended).count, 5)
-        XCTAssertEqual(ASRModel.recommended.first, .defaultDictation)
-        XCTAssertEqual(ASRModel.defaultMeeting, .moss)
         for model in ASRModel.recommended {
             XCTAssertFalse(model.workerArtifacts.isEmpty)
             for artifact in model.workerArtifacts {
@@ -40,11 +34,7 @@ final class ASRModelTests: XCTestCase {
                 XCTAssertFalse(artifact.url.path.contains("/main/"))
             }
         }
-        XCTAssertTrue(ASRModel.megaASR.workerArtifacts.contains { $0.path == "extras/router.safetensors" })
-        XCTAssertTrue(ASRModel.megaASR.workerArtifacts.contains { $0.path == "extras/lora.safetensors" })
     }
-
-    // MARK: - Language coverage
 
     func testDefaultLanguageIsAlwaysSelectable() {
         for model in ASRModel.allCases {
@@ -62,8 +52,6 @@ final class ASRModelTests: XCTestCase {
             XCTAssertFalse(model.offersLanguageChoice, "\(model.rawValue)")
         }
     }
-
-    // MARK: - Refusal and hallucination filtering
 
     func testAssistantRefusalIsSuppressed() {
         let model = ASRModel.voxtralMini

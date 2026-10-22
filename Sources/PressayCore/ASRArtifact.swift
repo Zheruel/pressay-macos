@@ -1,6 +1,5 @@
 import Foundation
 
-/// Immutable, integrity-checked model data. Executable runtimes ship in the signed app.
 public struct ASRArtifact: Sendable {
     public let path: String
     public let bytes: Int64

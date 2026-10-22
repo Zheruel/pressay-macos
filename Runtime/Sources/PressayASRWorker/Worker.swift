@@ -8,8 +8,7 @@ enum WorkerError: Error, LocalizedError {
     var errorDescription: String? { if case .message(let s) = self { s } else { "Transcription failed" } }
 }
 
-/// Private, local-only protocol. stdout is reserved for JSON; native/MLX
-/// diagnostic output goes to stderr, which the app discards (never transcript logs).
+// Reserve stdout for JSON; redirect native/MLX diagnostics to stderr.
 @main struct Worker {
     static func main() async {
         let output = FileHandle(fileDescriptor: dup(STDOUT_FILENO), closeOnDealloc: true)
@@ -38,8 +37,7 @@ enum WorkerError: Error, LocalizedError {
                 var error = [CChar](repeating: 0, count: 1024)
                 native = pressay_asr_load(library.path, path, isOrukeet ? 1 : 0, &error, error.count)
                 guard native != nil else { throw WorkerError.message(String(cString: error)) }
-                // Compile Metal pipelines before telling the app it is ready.
-                // Discard warmup text; it is never a transcript or history row.
+                // Compile Metal pipelines before reporting ready.
                 var discarded: UnsafePointer<CChar>?
                 let silence = [Float](repeating: 0, count: 16_000)
                 _ = silence.withUnsafeBufferPointer {

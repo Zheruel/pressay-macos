@@ -1,8 +1,7 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// Separate process: MLX and the two ggml runtimes never share a symbol namespace
-// with the app's legacy CTranscribe framework. No Python installation is needed.
+// Isolate MLX/ggml symbols from the app's legacy CTranscribe framework.
 let package = Package(
     name: "PressayASRRuntime",
     platforms: [.macOS(.v26)],

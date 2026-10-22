@@ -4,9 +4,7 @@ import MLXNN
 import MLXAudioCore
 import MLXAudioSTT
 
-/// Mega-ASR's Qwen backbone, learned quality router and LoRA adapter. Port of
-/// mlx-audio 0.6.1 mega_asr/{router,lora}.py (MIT). All three are required: a
-/// plain Qwen load would silently omit the part that makes this Mega-ASR.
+/// Router and LoRA ported from mlx-audio 0.6.1 mega_asr/{router,lora}.py (MIT).
 final class MegaASR {
     private let model: Qwen3ASRModel
     private let router: [String: MLXArray]
@@ -59,7 +57,6 @@ final class MegaASR {
         return gelu(scaled)
     }
 
-    /// Exposed in the worker's optional diagnostic reply for reference parity.
     func degradedProbability(_ audio: MLXArray) -> Float {
         let window = hanningWindow(size: 400, periodic: true)
         let spec = stft(audio: audio, window: window, nFft: 400, hopLength: 160)
@@ -112,7 +109,6 @@ final class MegaASR {
                 eval(changed)
                 model.update(parameters: ModuleParameters.unflattened([path + ".weight": changed]))
             }
-            // Same reversible BF16 addition/subtraction as the benchmark runtime.
             eval(model)
             active = want
             Memory.clearCache()
