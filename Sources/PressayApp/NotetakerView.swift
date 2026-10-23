@@ -249,14 +249,17 @@ extension Note {
 // MARK: - Note page
 
 private struct NotePage: View {
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var store: NotesStore
     let id: UUID
     let onDelete: () -> Void
     #if DEBUG
-    @State private var tab = ProcessInfo.processInfo.environment["PRESSAY_OPEN_NOTE"].flatMap(NoteTab.init(rawValue:)) ?? .summary
+        @State private var tab =
+            ProcessInfo.processInfo.environment["PRESSAY_OPEN_NOTE"].flatMap(NoteTab.init(rawValue:))
+            ?? .summary
     #else
-    @State private var tab: NoteTab = .summary
+        @State private var tab: NoteTab = .summary
     #endif
     @State private var editing = false
 
@@ -283,24 +286,28 @@ private struct NotePage: View {
                 .navigationTitle("")
                 .navigationBarBackButtonHidden(true)
             } else if let note = store.note(id) {
-                NoteDetailView(
-                    coordinator: coordinator,
-                    note: note,
-                    tab: tab,
-                    editing: $editing,
-                    myNotes: myNotes(persist: true),
-                    canWriteUp: coordinator.canWriteUp(note),
-                    onChange: { title, body in
-                        store.modify(id) {
-                            $0.title = title
-                            $0.body = body
-                            $0.edited = true
-                        }
-                    },
-                    onToggleTask: { item in coordinator.toggleActionItem(note.id, item: item) }
-                )
-                .navigationTitle(note.createdAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                .toolbar { toolbar(for: note) }
+                VStack(spacing: 0) {
+                    header(for: note)
+                    NoteDetailView(
+                        coordinator: coordinator,
+                        note: note,
+                        tab: tab,
+                        editing: $editing,
+                        myNotes: myNotes(persist: true),
+                        canWriteUp: coordinator.canWriteUp(note),
+                        onChange: { title, body in
+                            store.modify(id) {
+                                $0.title = title
+                                $0.body = body
+                                $0.edited = true
+                            }
+                        },
+                        onToggleTask: { item in coordinator.toggleActionItem(note.id, item: item) }
+                    )
+                }
+                .background(PressayPalette.base)
+                .navigationTitle("")
+                .navigationBarBackButtonHidden(true)
             } else {
                 ContentUnavailableView("Meeting Deleted", systemImage: "trash")
             }
@@ -314,30 +321,64 @@ private struct NotePage: View {
         )
     }
 
-    @ToolbarContentBuilder
-    private func toolbar(for note: Note) -> some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            Picker("View", selection: $tab) {
-                ForEach(NoteTab.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .fixedSize()
-            .disabled(editing || !note.hasTranscript)
-        }
-        ToolbarItemGroup(placement: .primaryAction) {
-            Button(editing ? "Done" : "Edit") { editing.toggle() }
-                .disabled(tab != .summary || (!editing && note.formatting))
-                .help(editing ? "Finish editing" : "Edit the summary")
-            ShareLink(item: note.exportText, subject: Text(note.title)) {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-            Menu {
-                NoteMenuItems(coordinator: coordinator, note: note, onDelete: onDelete)
+    private func header(for note: Note) -> some View {
+        HStack(spacing: 16) {
+            Button {
+                dismiss()
             } label: {
-                Label("More", systemImage: "ellipsis.circle")
+                Image(systemName: "arrow.left")
+                    .font(.system(size: 13))
+                    .frame(width: 26, height: 30)
             }
-            .help("More")
+            .buttonStyle(.plain).foregroundStyle(PressayPalette.muted)
+            .help("Back to Notetaker").accessibilityLabel("Back to Notetaker")
+            Rectangle().fill(PressayPalette.line).frame(width: 1, height: 16)
+            HStack(spacing: 22) {
+                ForEach(NoteTab.allCases, id: \.self) { choice in
+                    Button {
+                        tab = choice
+                    } label: {
+                        Text(choice.title)
+                            .font(.system(size: 13, weight: tab == choice ? .semibold : .medium))
+                            .foregroundStyle(tab == choice ? PressayPalette.text : PressayPalette.muted)
+                            .fixedSize()
+                            .frame(height: 56)
+                            .overlay(alignment: .bottom) {
+                                if tab == choice {
+                                    Rectangle().fill(PressayPalette.accent).frame(height: 2)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(tab == choice ? .isSelected : [])
+                }
+            }
+            .disabled(editing || !note.hasTranscript)
+            Spacer(minLength: 8)
+            HStack(spacing: 6) {
+                Button(editing ? "Done" : "Edit") { editing.toggle() }
+                    .buttonStyle(PressayButtonStyle())
+                    .disabled(tab != .summary || (!editing && note.formatting))
+                    .help(editing ? "Finish editing" : "Edit the summary")
+                ShareLink(item: note.exportText, subject: Text(note.title)) {
+                    Image(systemName: "square.and.arrow.up").frame(width: 14)
+                }
+                .buttonStyle(PressayButtonStyle(kind: .quiet))
+                .help("Share meeting").accessibilityLabel("Share meeting")
+                Menu {
+                    NoteMenuItems(coordinator: coordinator, note: note, onDelete: onDelete)
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 14, height: 30)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .foregroundStyle(PressayPalette.muted)
+                .help("More meeting actions").accessibilityLabel("More meeting actions")
+            }
         }
+        .padding(.horizontal, 24)
+        .frame(height: 56)
+        .background(PressayPalette.base)
+        .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
     }
 }
 
@@ -386,24 +427,17 @@ private struct NoteDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(note.title)
-                .font(.system(size: 28, weight: .bold, design: .serif))
+                .font(.system(size: 28, weight: .semibold))
                 .textSelection(.enabled)
             HStack(spacing: 6) {
-                Text(note.createdAt.formatted(.dateTime.hour().minute()))
+                Text(note.createdAt.formatted(date: .abbreviated, time: .shortened))
                 if note.duration >= 60 {
                     Text("·")
                     Text(note.durationText)
                 }
                 if note.kind == .meeting {
                     Text("·")
-                    ForEach(speakerChips, id: \.self) { name in
-                        Text(name)
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 3)
-                            .glassEffect(.regular, in: .capsule)
-                    }
+                    Text(speakerChips.joined(separator: ", "))
                     Button(note.hasNames ? "Edit names" : "Add names") { editingNames = true }
                         .buttonStyle(.link)
                         .help("Who else was on the call")
@@ -416,8 +450,8 @@ private struct NoteDetailView: View {
                         }
                 }
             }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+            .font(.system(size: 12))
+            .foregroundStyle(PressayPalette.muted)
         }
         .padding(.bottom, 20)
     }
@@ -441,7 +475,7 @@ private struct NoteDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             TextField("Title", text: $title)
                 .textFieldStyle(.plain)
-                .font(.system(size: 28, weight: .bold, design: .serif))
+                .font(.system(size: 28, weight: .semibold))
             TextEditor(text: $text)
                 .font(.system(size: 15))
                 .lineSpacing(4)

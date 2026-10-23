@@ -7,7 +7,7 @@
   "title": "Pressay · Graphite",
   "launch": {
     "view": "focused",
-    "file": "Live-Meeting.dc.html"
+    "file": "Saved-Note-Summary.dc.html"
   },
   "boards": {
     "Home.dc.html": {
@@ -765,6 +765,60 @@
       "title": "Live meeting · Finishing · Light",
       "is_interactive": true,
       "page": "light"
+    },
+    "Saved-Note-Summary.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Saved note · Summary",
+      "page": "saved-notes",
+      "is_interactive": true
+    },
+    "Saved-Note-Transcript.dc.html": {
+      "x": 1180,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Saved note · Transcript",
+      "page": "saved-notes",
+      "is_interactive": true
+    },
+    "Saved-Note-My-Notes.dc.html": {
+      "x": 2360,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Saved note · My Notes",
+      "page": "saved-notes",
+      "is_interactive": true
+    },
+    "Saved-Note-Summary-Light.dc.html": {
+      "x": 0,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Saved note · Summary · Light",
+      "page": "saved-notes",
+      "is_interactive": true
+    },
+    "Saved-Note-Transcript-Light.dc.html": {
+      "x": 1180,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Saved note · Transcript · Light",
+      "page": "saved-notes",
+      "is_interactive": true
+    },
+    "Saved-Note-My-Notes-Light.dc.html": {
+      "x": 2360,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Saved note · My Notes · Light",
+      "page": "saved-notes",
+      "is_interactive": true
     }
   },
   "order": [
@@ -851,7 +905,13 @@
     "Live-Meeting-Finishing.dc.html",
     "Live-Meeting-Light.dc.html",
     "Live-Meeting-Empty-Light.dc.html",
-    "Live-Meeting-Finishing-Light.dc.html"
+    "Live-Meeting-Finishing-Light.dc.html",
+    "Saved-Note-Summary.dc.html",
+    "Saved-Note-Transcript.dc.html",
+    "Saved-Note-My-Notes.dc.html",
+    "Saved-Note-Summary-Light.dc.html",
+    "Saved-Note-Transcript-Light.dc.html",
+    "Saved-Note-My-Notes-Light.dc.html"
   ],
   "notes": {},
   "pages": [
@@ -886,6 +946,10 @@
     {
       "id": "recording",
       "name": "08 · Live meeting"
+    },
+    {
+      "id": "saved-notes",
+      "name": "09 · Saved notes"
     }
   ],
   "designSystems": []

@@ -2,7 +2,7 @@ Pressay · Graphite
 
 Approved design reference and native implementation.
 
-Canonical editable artboards: project/ (84 boards, 42 dark + 42 matching light).
+Canonical editable artboards: project/ (90 boards, 45 dark + 45 matching light).
 Offline screen browser: review.html.
 Contact sheet: contact-sheet.html.
 Visual tokens: tokens.json.
@@ -17,11 +17,14 @@ Export a standalone full editor with:
 python3 /Users/tinzeljar/.codex/skills/design/scripts/design.py export designs/pressay-macos --output designs/Pressay-Graphite.html
 Portable edits stay in the browser tab; the local canvas saves into project/.
 
-The saved note reader and transcription notch are protected and unchanged. The live recording workspace uses the approved Live-Meeting artboards. The top-right meeting widget retains its transcript and personal notes while adopting Graphite chrome. System menus, focus, scrollbars and window controls use native macOS behavior.
+Saved-note content rendering and the transcription notch are retained. The approved Saved-Note artboards revise the saved-note navigation and document title/metadata. The live recording workspace uses the approved Live-Meeting artboards. The top-right meeting widget retains its transcript and personal notes while adopting Graphite chrome. System menus, focus, scrollbars and window controls use native macOS behavior.
 
 The implementation includes the agreed feature removals, unified settings, ranked models, automatic language handling and quiet background dictionary learning. Prototype fixtures remain illustrative; production behavior lives in Sources/. Native screenshots use isolated synthetic data.
 
-Validation: all 84 artboards valid; 172 native tests passed; release app built and signed; 20 synthetic multilingual checks across nine speech models succeeded. Final hardware QA verified webcam dictation and insertion into TextEdit/Stickies, MOSS system-audio meetings and saved personal notes. Claude connection verification passed. Bluetooth, physical global hotkey dispatch, ChatGPT browser sign-in and Reminders writes were not exercised. See the verification document for details.
+Validation: all 90 artboards valid; 172 native tests passed; release app built and signed; 20 synthetic multilingual checks across nine speech models succeeded. Final hardware QA verified webcam dictation and insertion into TextEdit/Stickies, MOSS system-audio meetings and saved personal notes. Claude connection verification passed. Bluetooth, physical global hotkey dispatch, ChatGPT browser sign-in and Reminders writes were not exercised. See the verification document for details.
 
 Live meeting design revision
 The new Live-Meeting artboards supersede the previous protected live recording layout in the design reference. Saved note display and the transcription notch remain outside this revision. Added recording, listening and finishing states in both appearances, grouped transcript/notes panels, quiet recording controls and a menu-based discard confirmation. Stop enters Finishing and disables repeat stops; notes become read-only. The local canvas opens this screen by default. The native implementation uses these six artboards. Listening includes a quiet five-bar waveform animation with a static Reduce Motion variant. Saved-note rendering is unchanged.
+
+Saved-note header revision · 1.12.1
+Saved-Note-Summary/Transcript/My-Notes and their light counterparts use one 56-point navigation bar. Document titles and metadata belong to the scrolling content. The native change replaces the floating toolbar, retains saved-content rendering, and was checked at 1080 and 900 points with long titles and scrolling, editing, navigation, sharing and menu actions.

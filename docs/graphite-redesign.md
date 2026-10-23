@@ -1,10 +1,10 @@
 # Graphite redesign
 
-The native SwiftUI/AppKit implementation follows the approved Graphite canvas in both appearances. The canonical reference is [`designs/pressay-macos/project`](../designs/pressay-macos/project); [`review.html`](../designs/pressay-macos/review.html) provides an offline screen browser. The canvas contains 42 dark screens and their 42 light counterparts.
+The native SwiftUI/AppKit implementation follows the approved Graphite canvas in both appearances. The canonical reference is [`designs/pressay-macos/project`](../designs/pressay-macos/project); [`review.html`](../designs/pressay-macos/review.html) provides an offline screen browser. The canvas contains 45 dark screens and their 45 light counterparts.
 
 Shared tokens, controls and spacing live in `PressayDesign.swift`. The main window starts at 1080 × 740, with a 216-point text sidebar. Content, editors, confirmations, onboarding, menu bar and the floating meeting widget use the same palette. Real app icons come from the existing cached `NSWorkspace` lookup.
 
-The saved note reader and summary/transcript rendering are byte-identical to the original protected region. The live recording workspace follows the subsequently approved live meeting artboards. `OverlayPanel.swift`, including the transcription notch animation, is unchanged.
+The saved note content renderers are retained. The subsequently approved compact header replaces the saved-note toolbar and styles its document title and metadata. The live recording workspace follows the subsequently approved live meeting artboards. `OverlayPanel.swift`, including the transcription notch animation, is unchanged.
 
 ## Product changes
 
@@ -27,7 +27,7 @@ All speech models default to automatic detection. Fixed language choices are ava
 - 20 synthetic speech checks: English and German through all nine models, Japanese through Qwen 1.7B and Whisper. All completed successfully with automatic language detection. [Outputs](assets/redesign/asr-smoke.json) are smoke evidence, not an accuracy ranking.
 - Native interaction checks: navigation; history search using ⌘F; dictionary validation/save; Add/Edit snippet forms; personal task completion and undo; ranked model menu; Whisper language list and Japanese selection; switching to Qwen resets to Automatic; onboarding permission progression and completion; meeting widget Open navigation; empty state.
 - Native screenshots use isolated synthetic content. Both appearances, the menu bar, onboarding, live meeting workspace and recording widget were inspected against the canvas. System menus, scrollbars, traffic lights and focus rendering follow macOS preferences.
-- Saved note reader checked byte-for-byte; `git diff --check` and the 84-artboard design validator passed.
+- Saved summary body, transcript and My Notes renderers checked against 1.12.0; `git diff --check` and the 90-artboard design validator passed.
 
 Final hardware QA used the installed profile with synthetic speech: webcam microphone → Orukeet → automatic insertion into TextEdit and Stickies; MOSS meeting capture from system audio; live transcript, personal notes and Stop/save. The existing Claude connection verified successfully. Temporary QA dictations/meetings were removed and original preferences restored. The MacBook was in clamshell mode, so its built-in microphone returned silence; dictation used the webcam input.
 
@@ -78,3 +78,17 @@ open -n /path/to/Pressay-Review.app \
 ```
 
 Review mode is compiled only in DEBUG. It uses an isolated defaults suite, in-memory history, temporary meeting notes and synthetic fixtures. It skips hotkeys, model loading, provider credentials, login registration and system permission requests. Use `PRESSAY_REVIEW_APPEARANCE=light`, `PRESSAY_REVIEW_EMPTY=1`, or `PRESSAY_REVIEW_PERMISSIONS=missing` for variants; `PRESSAY_DEMO` also accepts `menu`, `onboarding`, `notepad` and `call`. With `notepad`, use `PRESSAY_REVIEW_MEETING_STATE=listening|recording|finishing|long` to inspect live states; `PRESSAY_REVIEW_REDUCE_MOTION=1` renders a static listening waveform without changing macOS settings.
+
+## Compact saved-note header · 1.12.1
+
+Saved notes use a 56-point opaque bar for Back, Summary, Transcript, My Notes and note actions. It occupies layout space, so content cannot scroll underneath the controls. The document title and plain participant/date metadata scroll with the summary. The sidebar, content renderers, live recording view and transcription notch retain their behavior.
+
+Native QA covered dark/light appearance, 1080-point and 900-point windows, long titles and scrolling, Summary edits/Done, disabled tabs during editing, Transcript search/copy controls, My Notes editing and persistence after Back/reopen, Share popover and More actions. Review data is isolated and synthetic. All 172 tests and the signed release build passed. No new structure-only UI tests were added. Hardware capture, account sign-in and Reminders writes were not repeated for this presentation-only patch.
+
+| Previous | Compact |
+| --- | --- |
+| ![Previous saved-note toolbar](assets/redesign/native-saved-note-before.png) | ![Compact saved-note navigation](assets/redesign/native-saved-note-dark.png) |
+
+![Compact saved-note navigation, light](assets/redesign/native-saved-note-light.png)
+
+![Narrow window with a long note scrolled](assets/redesign/native-saved-note-narrow-scroll.png)
