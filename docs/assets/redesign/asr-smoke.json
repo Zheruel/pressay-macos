@@ -1,0 +1,239 @@
+[
+  {
+    "model": "orukeet",
+    "manifest": "manifest.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 5.106438,
+        "id": "german",
+        "latency": 0.0496465,
+        "rep": 1,
+        "text": "Bitte senden Sie die überarbeiteten Besprechungsnotizen bis Donnerstagnachmittag.",
+        "workers": 1
+      },
+      {
+        "duration": 3.411375,
+        "id": "english",
+        "latency": 0.039929833,
+        "rep": 1,
+        "text": "Please send the revised meeting notes before Thursday afternoon.",
+        "workers": 1
+      }
+    ]
+  },
+  {
+    "model": "moss",
+    "manifest": "manifest.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 5.106438,
+        "id": "german",
+        "latency": 0.347854416,
+        "rep": 1,
+        "text": "Bitte senden Sie die überarbeiteten Besprechungsnotizen bis Donnerstagnachmittag.",
+        "workers": 1
+      },
+      {
+        "duration": 3.411375,
+        "id": "english",
+        "latency": 0.291243209,
+        "rep": 1,
+        "text": "Please send the revised meeting notes before Thursday afternoon.",
+        "workers": 1
+      }
+    ]
+  },
+  {
+    "model": "parakeetUltra",
+    "manifest": "manifest.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 5.106438,
+        "id": "german",
+        "latency": 0.224495542,
+        "rep": 1,
+        "text": "Bitte senden Sie die überarbeiteten Besprechungsnotizen bis Donnerstagnachmittag.",
+        "workers": 1
+      },
+      {
+        "duration": 3.411375,
+        "id": "english",
+        "latency": 0.096986291,
+        "rep": 1,
+        "text": "Please send the revised meeting notes before Thursday afternoon.",
+        "workers": 1
+      }
+    ]
+  },
+  {
+    "model": "qwen3ASR17",
+    "manifest": "manifest.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 5.106438,
+        "id": "german",
+        "latency": 0.392184042,
+        "rep": 1,
+        "text": "Bitte senden Sie die überarbeiteten Besprechungsnotizen bis Donnerstag Nachmittag.",
+        "workers": 1
+      },
+      {
+        "duration": 3.411375,
+        "id": "english",
+        "latency": 0.201270167,
+        "rep": 1,
+        "text": "Please send the revised meeting notes before Thursday afternoon.",
+        "workers": 1
+      }
+    ]
+  },
+  {
+    "model": "megaASR",
+    "manifest": "manifest.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 5.106438,
+        "id": "german",
+        "latency": 7.647774166,
+        "rep": 1,
+        "text": "Bitte senden Sie die überarbeiteten Besprechungsnotizen bis Donnerstag Nachmittag.",
+        "workers": 1
+      },
+      {
+        "duration": 3.411375,
+        "id": "english",
+        "latency": 0.361303292,
+        "rep": 1,
+        "text": "Please send the revised meeting notes before Thursday afternoon.",
+        "workers": 1
+      }
+    ]
+  },
+  {
+    "model": "voxtralMini",
+    "manifest": "manifest.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 5.106438,
+        "id": "german",
+        "latency": 0.738311792,
+        "rep": 1,
+        "text": "Ich werde die überarbeiteten Besprechungsnotizen bis Donnerstagnachmittag senden.",
+        "workers": 1
+      },
+      {
+        "duration": 3.411375,
+        "id": "english",
+        "latency": 0.660260584,
+        "rep": 1,
+        "text": "I'll make sure to send the revised meeting notes before Thursday afternoon.",
+        "workers": 1
+      }
+    ]
+  },
+  {
+    "model": "whisperTurboGGML",
+    "manifest": "manifest.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 5.106438,
+        "id": "german",
+        "latency": 0.348718375,
+        "rep": 1,
+        "text": "Bitte senden Sie die überarbeiteten Besprechungsnotizen bis Donnerstag Nachmittag.",
+        "workers": 1
+      },
+      {
+        "duration": 3.411375,
+        "id": "english",
+        "latency": 0.332842167,
+        "rep": 1,
+        "text": "Please send the revised meeting notes before Thursday afternoon.",
+        "workers": 1
+      }
+    ]
+  },
+  {
+    "model": "qwen3ASR06",
+    "manifest": "manifest.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 5.106438,
+        "id": "german",
+        "latency": 0.249910208,
+        "rep": 1,
+        "text": "Bitte senden Sie die überarbeiteten Besprechungsnotizen bis Donnerstag Nachmittag.",
+        "workers": 1
+      },
+      {
+        "duration": 3.411375,
+        "id": "english",
+        "latency": 0.091221875,
+        "rep": 1,
+        "text": "Please send the revised meeting notes before Thursday afternoon.",
+        "workers": 1
+      }
+    ]
+  },
+  {
+    "model": "funASRMLTNano",
+    "manifest": "manifest.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 5.106438,
+        "id": "german",
+        "latency": 0.132378083,
+        "rep": 1,
+        "text": "Bitte senden Sie die überarbeiteten Besprechungsnotizen bis Donnerstagnachmittag.",
+        "workers": 1
+      },
+      {
+        "duration": 3.411375,
+        "id": "english",
+        "latency": 0.083030416,
+        "rep": 1,
+        "text": "Please send the revised meeting notes before Thursday afternoon.",
+        "workers": 1
+      }
+    ]
+  },
+  {
+    "model": "qwen3ASR17",
+    "manifest": "japanese.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 3.930563,
+        "id": "japanese",
+        "latency": 0.219844,
+        "rep": 1,
+        "text": "木曜日の午後までに会議のメモを送ってください。",
+        "workers": 1
+      }
+    ]
+  },
+  {
+    "model": "whisperTurboGGML",
+    "manifest": "japanese.json",
+    "exit": 0,
+    "rows": [
+      {
+        "duration": 3.930563,
+        "id": "japanese",
+        "latency": 0.347794292,
+        "rep": 1,
+        "text": "木曜日の午後までに会議のメモを送ってください。",
+        "workers": 1
+      }
+    ]
+  }
+]

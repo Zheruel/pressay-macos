@@ -1,0 +1,828 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-23T14:13:04.352303+00:00"
+  },
+  "title": "Pressay · Graphite",
+  "launch": {
+    "view": "focused",
+    "file": "Home.dc.html"
+  },
+  "boards": {
+    "Home.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Home",
+      "is_interactive": true,
+      "page": "main"
+    },
+    "Notetaker.dc.html": {
+      "x": 1180,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Notetaker",
+      "is_interactive": true,
+      "page": "main"
+    },
+    "History.dc.html": {
+      "x": 2360,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "History",
+      "is_interactive": true,
+      "page": "main"
+    },
+    "Action-Items.dc.html": {
+      "x": 0,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Action items",
+      "is_interactive": true,
+      "page": "main"
+    },
+    "Dictionary.dc.html": {
+      "x": 1180,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Dictionary",
+      "is_interactive": true,
+      "page": "main"
+    },
+    "Snippets.dc.html": {
+      "x": 2360,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Snippets",
+      "is_interactive": true,
+      "page": "main"
+    },
+    "General.dc.html": {
+      "x": 0,
+      "y": 1700,
+      "w": 1080,
+      "h": 740,
+      "title": "General",
+      "is_interactive": true,
+      "page": "main"
+    },
+    "AI-Cleanup.dc.html": {
+      "x": 1180,
+      "y": 1700,
+      "w": 1080,
+      "h": 740,
+      "title": "AI Cleanup",
+      "is_interactive": true,
+      "page": "main"
+    },
+    "Home-Light.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Home · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Notetaker-Light.dc.html": {
+      "x": 1180,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Notetaker · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "History-Light.dc.html": {
+      "x": 2360,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "History · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Dictionary-Light.dc.html": {
+      "x": 0,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Dictionary · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Snippets-Light.dc.html": {
+      "x": 1180,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Snippets · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "General-Light.dc.html": {
+      "x": 2360,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "General · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "AI-Cleanup-Light.dc.html": {
+      "x": 0,
+      "y": 1700,
+      "w": 1080,
+      "h": 740,
+      "title": "AI Cleanup · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Meeting-Settings.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "General · Notetaker",
+      "is_interactive": true,
+      "page": "editors"
+    },
+    "Add-Word.dc.html": {
+      "x": 1180,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Add Word",
+      "is_interactive": true,
+      "page": "editors"
+    },
+    "Add-Snippet.dc.html": {
+      "x": 2360,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Add Snippet",
+      "is_interactive": true,
+      "page": "editors"
+    },
+    "Edit-Snippet.dc.html": {
+      "x": 0,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Edit Snippet",
+      "is_interactive": true,
+      "page": "editors"
+    },
+    "Meeting-People.dc.html": {
+      "x": 1180,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Meeting People",
+      "is_interactive": true,
+      "page": "editors"
+    },
+    "Voice-Names.dc.html": {
+      "x": 2360,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Voice Names",
+      "is_interactive": true,
+      "page": "editors"
+    },
+    "Onboarding-Permissions.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 540,
+      "h": 720,
+      "title": "Onboarding Permissions",
+      "is_interactive": true,
+      "page": "setup"
+    },
+    "Onboarding-Ready.dc.html": {
+      "x": 1180,
+      "y": 0,
+      "w": 540,
+      "h": 720,
+      "title": "Onboarding Ready",
+      "is_interactive": true,
+      "page": "setup"
+    },
+    "Menu-Bar.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 348,
+      "h": 620,
+      "title": "Menu Bar",
+      "is_interactive": true,
+      "page": "utilities"
+    },
+    "Menu-Setup.dc.html": {
+      "x": 1180,
+      "y": 0,
+      "w": 348,
+      "h": 310,
+      "title": "Menu Setup",
+      "is_interactive": true,
+      "page": "utilities"
+    },
+    "Menu-Attention.dc.html": {
+      "x": 2360,
+      "y": 0,
+      "w": 348,
+      "h": 685,
+      "title": "Menu Attention",
+      "is_interactive": true,
+      "page": "utilities"
+    },
+    "Call-Prompt.dc.html": {
+      "x": 0,
+      "y": 850,
+      "w": 496,
+      "h": 104,
+      "title": "Call Prompt",
+      "is_interactive": true,
+      "page": "utilities"
+    },
+    "Floating-Notepad.dc.html": {
+      "x": 1180,
+      "y": 850,
+      "w": 360,
+      "h": 490,
+      "title": "Meeting recording · Notepad",
+      "is_interactive": true,
+      "page": "utilities"
+    },
+    "Home-First-Use.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Home First Use",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "Notetaker-Empty.dc.html": {
+      "x": 1180,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Notetaker Empty",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "History-Empty.dc.html": {
+      "x": 2360,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "History Empty",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "Dictionary-Empty.dc.html": {
+      "x": 0,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Dictionary Empty",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "Snippets-Empty.dc.html": {
+      "x": 1180,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Snippets Empty",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "Actions-Empty.dc.html": {
+      "x": 2360,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Actions Empty",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "General-Download.dc.html": {
+      "x": 0,
+      "y": 1700,
+      "w": 1080,
+      "h": 740,
+      "title": "General Download",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "General-Error.dc.html": {
+      "x": 1180,
+      "y": 1700,
+      "w": 1080,
+      "h": 740,
+      "title": "General Error",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "General-Permissions.dc.html": {
+      "x": 2360,
+      "y": 1700,
+      "w": 1080,
+      "h": 740,
+      "title": "General Permissions",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "History-No-Results.dc.html": {
+      "x": 0,
+      "y": 2550,
+      "w": 1080,
+      "h": 740,
+      "title": "History No Results",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "AI-Disconnected.dc.html": {
+      "x": 1180,
+      "y": 2550,
+      "w": 1080,
+      "h": 740,
+      "title": "AI Disconnected",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "Meeting-Preparing.dc.html": {
+      "x": 2360,
+      "y": 2550,
+      "w": 1080,
+      "h": 740,
+      "title": "Meeting Preparing",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "AI-Sign-In.dc.html": {
+      "x": 0,
+      "y": 3400,
+      "w": 1080,
+      "h": 740,
+      "title": "AI Sign In",
+      "is_interactive": true,
+      "page": "states"
+    },
+    "Delete-History.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Delete History",
+      "is_interactive": true,
+      "page": "confirm"
+    },
+    "Restore-Dictionary.dc.html": {
+      "x": 1180,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Restore Dictionary",
+      "is_interactive": true,
+      "page": "confirm"
+    },
+    "Remove-Key.dc.html": {
+      "x": 2360,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Remove Key",
+      "is_interactive": true,
+      "page": "confirm"
+    },
+    "Delete-Snippet.dc.html": {
+      "x": 0,
+      "y": 850,
+      "w": 1080,
+      "h": 740,
+      "title": "Delete Snippet",
+      "is_interactive": true,
+      "page": "confirm"
+    },
+    "Floating-Notepad-Finishing.dc.html": {
+      "x": 2360,
+      "y": 850,
+      "w": 360,
+      "h": 490,
+      "title": "Meeting recording · Finishing",
+      "is_interactive": true,
+      "page": "utilities"
+    },
+    "Action-Items-Light.dc.html": {
+      "x": 0,
+      "y": 2550,
+      "w": 1080,
+      "h": 740,
+      "title": "Action items · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Meeting-Settings-Light.dc.html": {
+      "x": 1180,
+      "y": 2550,
+      "w": 1080,
+      "h": 740,
+      "title": "General · Notetaker · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Add-Word-Light.dc.html": {
+      "x": 2360,
+      "y": 2550,
+      "w": 1080,
+      "h": 740,
+      "title": "Add Word · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Add-Snippet-Light.dc.html": {
+      "x": 0,
+      "y": 3400,
+      "w": 1080,
+      "h": 740,
+      "title": "Add Snippet · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Edit-Snippet-Light.dc.html": {
+      "x": 1180,
+      "y": 3400,
+      "w": 1080,
+      "h": 740,
+      "title": "Edit Snippet · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Meeting-People-Light.dc.html": {
+      "x": 2360,
+      "y": 3400,
+      "w": 1080,
+      "h": 740,
+      "title": "Meeting People · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Voice-Names-Light.dc.html": {
+      "x": 0,
+      "y": 4250,
+      "w": 1080,
+      "h": 740,
+      "title": "Voice Names · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Onboarding-Permissions-Light.dc.html": {
+      "x": 1180,
+      "y": 4250,
+      "w": 540,
+      "h": 720,
+      "title": "Onboarding Permissions · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Onboarding-Ready-Light.dc.html": {
+      "x": 2360,
+      "y": 4250,
+      "w": 540,
+      "h": 720,
+      "title": "Onboarding Ready · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Menu-Bar-Light.dc.html": {
+      "x": 0,
+      "y": 5100,
+      "w": 348,
+      "h": 620,
+      "title": "Menu Bar · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Menu-Setup-Light.dc.html": {
+      "x": 1180,
+      "y": 5100,
+      "w": 348,
+      "h": 310,
+      "title": "Menu Setup · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Menu-Attention-Light.dc.html": {
+      "x": 2360,
+      "y": 5100,
+      "w": 348,
+      "h": 685,
+      "title": "Menu Attention · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Call-Prompt-Light.dc.html": {
+      "x": 0,
+      "y": 5950,
+      "w": 496,
+      "h": 104,
+      "title": "Call Prompt · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Floating-Notepad-Light.dc.html": {
+      "x": 1180,
+      "y": 5950,
+      "w": 360,
+      "h": 490,
+      "title": "Meeting recording · Notepad · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Floating-Notepad-Finishing-Light.dc.html": {
+      "x": 2360,
+      "y": 5950,
+      "w": 360,
+      "h": 490,
+      "title": "Meeting recording · Finishing · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Home-First-Use-Light.dc.html": {
+      "x": 0,
+      "y": 6800,
+      "w": 1080,
+      "h": 740,
+      "title": "Home First Use · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Notetaker-Empty-Light.dc.html": {
+      "x": 1180,
+      "y": 6800,
+      "w": 1080,
+      "h": 740,
+      "title": "Notetaker Empty · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "History-Empty-Light.dc.html": {
+      "x": 2360,
+      "y": 6800,
+      "w": 1080,
+      "h": 740,
+      "title": "History Empty · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Dictionary-Empty-Light.dc.html": {
+      "x": 0,
+      "y": 7650,
+      "w": 1080,
+      "h": 740,
+      "title": "Dictionary Empty · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Snippets-Empty-Light.dc.html": {
+      "x": 1180,
+      "y": 7650,
+      "w": 1080,
+      "h": 740,
+      "title": "Snippets Empty · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Actions-Empty-Light.dc.html": {
+      "x": 2360,
+      "y": 7650,
+      "w": 1080,
+      "h": 740,
+      "title": "Actions Empty · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "General-Download-Light.dc.html": {
+      "x": 0,
+      "y": 8500,
+      "w": 1080,
+      "h": 740,
+      "title": "General Download · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "General-Error-Light.dc.html": {
+      "x": 1180,
+      "y": 8500,
+      "w": 1080,
+      "h": 740,
+      "title": "General Error · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "General-Permissions-Light.dc.html": {
+      "x": 2360,
+      "y": 8500,
+      "w": 1080,
+      "h": 740,
+      "title": "General Permissions · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "History-No-Results-Light.dc.html": {
+      "x": 0,
+      "y": 9350,
+      "w": 1080,
+      "h": 740,
+      "title": "History No Results · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "AI-Disconnected-Light.dc.html": {
+      "x": 1180,
+      "y": 9350,
+      "w": 1080,
+      "h": 740,
+      "title": "AI Disconnected · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Meeting-Preparing-Light.dc.html": {
+      "x": 2360,
+      "y": 9350,
+      "w": 1080,
+      "h": 740,
+      "title": "Meeting Preparing · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "AI-Sign-In-Light.dc.html": {
+      "x": 0,
+      "y": 10200,
+      "w": 1080,
+      "h": 740,
+      "title": "AI Sign In · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Delete-History-Light.dc.html": {
+      "x": 1180,
+      "y": 10200,
+      "w": 1080,
+      "h": 740,
+      "title": "Delete History · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Restore-Dictionary-Light.dc.html": {
+      "x": 2360,
+      "y": 10200,
+      "w": 1080,
+      "h": 740,
+      "title": "Restore Dictionary · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Remove-Key-Light.dc.html": {
+      "x": 0,
+      "y": 11050,
+      "w": 1080,
+      "h": 740,
+      "title": "Remove Key · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Delete-Snippet-Light.dc.html": {
+      "x": 1180,
+      "y": 11050,
+      "w": 1080,
+      "h": 740,
+      "title": "Delete Snippet · Light",
+      "is_interactive": true,
+      "page": "light"
+    }
+  },
+  "order": [
+    "Home.dc.html",
+    "Notetaker.dc.html",
+    "History.dc.html",
+    "Action-Items.dc.html",
+    "Dictionary.dc.html",
+    "Snippets.dc.html",
+    "General.dc.html",
+    "AI-Cleanup.dc.html",
+    "Home-Light.dc.html",
+    "Notetaker-Light.dc.html",
+    "History-Light.dc.html",
+    "Dictionary-Light.dc.html",
+    "Snippets-Light.dc.html",
+    "General-Light.dc.html",
+    "AI-Cleanup-Light.dc.html",
+    "Action-Items-Light.dc.html",
+    "Meeting-Settings-Light.dc.html",
+    "Add-Word-Light.dc.html",
+    "Add-Snippet-Light.dc.html",
+    "Edit-Snippet-Light.dc.html",
+    "Meeting-People-Light.dc.html",
+    "Voice-Names-Light.dc.html",
+    "Onboarding-Permissions-Light.dc.html",
+    "Onboarding-Ready-Light.dc.html",
+    "Menu-Bar-Light.dc.html",
+    "Menu-Setup-Light.dc.html",
+    "Menu-Attention-Light.dc.html",
+    "Call-Prompt-Light.dc.html",
+    "Floating-Notepad-Light.dc.html",
+    "Floating-Notepad-Finishing-Light.dc.html",
+    "Home-First-Use-Light.dc.html",
+    "Notetaker-Empty-Light.dc.html",
+    "History-Empty-Light.dc.html",
+    "Dictionary-Empty-Light.dc.html",
+    "Snippets-Empty-Light.dc.html",
+    "Actions-Empty-Light.dc.html",
+    "General-Download-Light.dc.html",
+    "General-Error-Light.dc.html",
+    "General-Permissions-Light.dc.html",
+    "History-No-Results-Light.dc.html",
+    "AI-Disconnected-Light.dc.html",
+    "Meeting-Preparing-Light.dc.html",
+    "AI-Sign-In-Light.dc.html",
+    "Delete-History-Light.dc.html",
+    "Restore-Dictionary-Light.dc.html",
+    "Remove-Key-Light.dc.html",
+    "Delete-Snippet-Light.dc.html",
+    "Meeting-Settings.dc.html",
+    "Add-Word.dc.html",
+    "Add-Snippet.dc.html",
+    "Edit-Snippet.dc.html",
+    "Meeting-People.dc.html",
+    "Voice-Names.dc.html",
+    "Onboarding-Permissions.dc.html",
+    "Onboarding-Ready.dc.html",
+    "Menu-Bar.dc.html",
+    "Menu-Setup.dc.html",
+    "Menu-Attention.dc.html",
+    "Call-Prompt.dc.html",
+    "Floating-Notepad.dc.html",
+    "Floating-Notepad-Finishing.dc.html",
+    "Home-First-Use.dc.html",
+    "Notetaker-Empty.dc.html",
+    "History-Empty.dc.html",
+    "Dictionary-Empty.dc.html",
+    "Snippets-Empty.dc.html",
+    "Actions-Empty.dc.html",
+    "General-Download.dc.html",
+    "General-Error.dc.html",
+    "General-Permissions.dc.html",
+    "History-No-Results.dc.html",
+    "AI-Disconnected.dc.html",
+    "Meeting-Preparing.dc.html",
+    "AI-Sign-In.dc.html",
+    "Delete-History.dc.html",
+    "Restore-Dictionary.dc.html",
+    "Remove-Key.dc.html",
+    "Delete-Snippet.dc.html"
+  ],
+  "notes": {},
+  "pages": [
+    {
+      "id": "main",
+      "name": "01 · Main screens"
+    },
+    {
+      "id": "light",
+      "name": "02 · Light appearance"
+    },
+    {
+      "id": "editors",
+      "name": "03 · Editors & meeting settings"
+    },
+    {
+      "id": "setup",
+      "name": "04 · Onboarding"
+    },
+    {
+      "id": "utilities",
+      "name": "05 · Menu & floating windows"
+    },
+    {
+      "id": "states",
+      "name": "06 · Empty, loading & error"
+    },
+    {
+      "id": "confirm",
+      "name": "07 · Confirmations"
+    }
+  ],
+  "designSystems": []
+}

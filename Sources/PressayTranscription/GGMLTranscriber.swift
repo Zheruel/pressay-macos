@@ -20,7 +20,7 @@ public actor GGMLTranscriber: SpeechTranscriber {
     /// Sub-second fragments carry no usable context.
     private static let minimumSplitSeconds: TimeInterval = 1.0
 
-    public init(model: ASRModel, language: String = "en") {
+    public init(model: ASRModel, language: String = "auto") {
         self.asrModel = model
         self.language = language
     }
@@ -172,7 +172,7 @@ public actor GGMLTranscriber: SpeechTranscriber {
             let transcript = try await activeSession.run(samples, options: options)
             let text = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
             // LLM-style engines answer near-silence with a refusal or invented foreign-script text.
-            return asrModel.isTranscriptionRefusal(text) ? "" : text
+            return asrModel.isTranscriptionRefusal(text, language: language) ? "" : text
         } catch TranscribeError.outputTruncated(_, let partial) {
             // A repetition loop can exhaust context even on a 3 s clip, so length checks can't prevent this.
             if canSplit(samples, sampleRate, depth) {
@@ -182,7 +182,7 @@ public actor GGMLTranscriber: SpeechTranscriber {
             // Can't divide further: keep the partial decode rather than drop it.
             let salvaged = (partial?.text ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return asrModel.isTranscriptionRefusal(salvaged) ? "" : salvaged
+            return asrModel.isTranscriptionRefusal(salvaged, language: language) ? "" : salvaged
         }
     }
 

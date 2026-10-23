@@ -1,0 +1,1117 @@
+{
+  "status": "Shipping model coverage; fixed-language controls follow the installed runtime capabilities.",
+  "models": {
+    "orukeet": {
+      "name": "Orukeet",
+      "coverage": "25 languages · automatic detection",
+      "languages": [
+        {
+          "code": "bg",
+          "name": "Bulgarian"
+        },
+        {
+          "code": "hr",
+          "name": "Croatian"
+        },
+        {
+          "code": "cs",
+          "name": "Czech"
+        },
+        {
+          "code": "da",
+          "name": "Danish"
+        },
+        {
+          "code": "nl",
+          "name": "Dutch"
+        },
+        {
+          "code": "en",
+          "name": "English"
+        },
+        {
+          "code": "et",
+          "name": "Estonian"
+        },
+        {
+          "code": "fi",
+          "name": "Finnish"
+        },
+        {
+          "code": "fr",
+          "name": "French"
+        },
+        {
+          "code": "de",
+          "name": "German"
+        },
+        {
+          "code": "el",
+          "name": "Greek"
+        },
+        {
+          "code": "hu",
+          "name": "Hungarian"
+        },
+        {
+          "code": "it",
+          "name": "Italian"
+        },
+        {
+          "code": "lv",
+          "name": "Latvian"
+        },
+        {
+          "code": "lt",
+          "name": "Lithuanian"
+        },
+        {
+          "code": "mt",
+          "name": "Maltese"
+        },
+        {
+          "code": "pl",
+          "name": "Polish"
+        },
+        {
+          "code": "pt",
+          "name": "Portuguese"
+        },
+        {
+          "code": "ro",
+          "name": "Romanian"
+        },
+        {
+          "code": "ru",
+          "name": "Russian"
+        },
+        {
+          "code": "sk",
+          "name": "Slovak"
+        },
+        {
+          "code": "sl",
+          "name": "Slovenian"
+        },
+        {
+          "code": "es",
+          "name": "Spanish"
+        },
+        {
+          "code": "sv",
+          "name": "Swedish"
+        },
+        {
+          "code": "uk",
+          "name": "Ukrainian"
+        }
+      ],
+      "manual": false,
+      "source": "https://huggingface.co/oruk/orukeet"
+    },
+    "moss": {
+      "name": "MOSS",
+      "coverage": "50+ languages · automatic detection",
+      "languages": [],
+      "manual": false,
+      "source": "https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize"
+    },
+    "parakeetUltra": {
+      "name": "Parakeet Ultra",
+      "coverage": "25 languages · automatic detection",
+      "languages": [
+        {
+          "code": "bg",
+          "name": "Bulgarian"
+        },
+        {
+          "code": "hr",
+          "name": "Croatian"
+        },
+        {
+          "code": "cs",
+          "name": "Czech"
+        },
+        {
+          "code": "da",
+          "name": "Danish"
+        },
+        {
+          "code": "nl",
+          "name": "Dutch"
+        },
+        {
+          "code": "en",
+          "name": "English"
+        },
+        {
+          "code": "et",
+          "name": "Estonian"
+        },
+        {
+          "code": "fi",
+          "name": "Finnish"
+        },
+        {
+          "code": "fr",
+          "name": "French"
+        },
+        {
+          "code": "de",
+          "name": "German"
+        },
+        {
+          "code": "el",
+          "name": "Greek"
+        },
+        {
+          "code": "hu",
+          "name": "Hungarian"
+        },
+        {
+          "code": "it",
+          "name": "Italian"
+        },
+        {
+          "code": "lv",
+          "name": "Latvian"
+        },
+        {
+          "code": "lt",
+          "name": "Lithuanian"
+        },
+        {
+          "code": "mt",
+          "name": "Maltese"
+        },
+        {
+          "code": "pl",
+          "name": "Polish"
+        },
+        {
+          "code": "pt",
+          "name": "Portuguese"
+        },
+        {
+          "code": "ro",
+          "name": "Romanian"
+        },
+        {
+          "code": "ru",
+          "name": "Russian"
+        },
+        {
+          "code": "sk",
+          "name": "Slovak"
+        },
+        {
+          "code": "sl",
+          "name": "Slovenian"
+        },
+        {
+          "code": "es",
+          "name": "Spanish"
+        },
+        {
+          "code": "sv",
+          "name": "Swedish"
+        },
+        {
+          "code": "uk",
+          "name": "Ukrainian"
+        }
+      ],
+      "manual": false,
+      "source": "https://huggingface.co/moondream/parakeet-ultra"
+    },
+    "qwen3ASR17": {
+      "name": "Qwen3-ASR 1.7B",
+      "coverage": "30 languages · automatic detection",
+      "languages": [
+        {
+          "code": "ar",
+          "name": "Arabic"
+        },
+        {
+          "code": "yue",
+          "name": "Cantonese"
+        },
+        {
+          "code": "zh",
+          "name": "Chinese"
+        },
+        {
+          "code": "cs",
+          "name": "Czech"
+        },
+        {
+          "code": "da",
+          "name": "Danish"
+        },
+        {
+          "code": "nl",
+          "name": "Dutch"
+        },
+        {
+          "code": "en",
+          "name": "English"
+        },
+        {
+          "code": "fil",
+          "name": "Filipino"
+        },
+        {
+          "code": "fi",
+          "name": "Finnish"
+        },
+        {
+          "code": "fr",
+          "name": "French"
+        },
+        {
+          "code": "de",
+          "name": "German"
+        },
+        {
+          "code": "el",
+          "name": "Greek"
+        },
+        {
+          "code": "hi",
+          "name": "Hindi"
+        },
+        {
+          "code": "hu",
+          "name": "Hungarian"
+        },
+        {
+          "code": "id",
+          "name": "Indonesian"
+        },
+        {
+          "code": "it",
+          "name": "Italian"
+        },
+        {
+          "code": "ja",
+          "name": "Japanese"
+        },
+        {
+          "code": "ko",
+          "name": "Korean"
+        },
+        {
+          "code": "mk",
+          "name": "Macedonian"
+        },
+        {
+          "code": "ms",
+          "name": "Malay"
+        },
+        {
+          "code": "fa",
+          "name": "Persian"
+        },
+        {
+          "code": "pl",
+          "name": "Polish"
+        },
+        {
+          "code": "pt",
+          "name": "Portuguese"
+        },
+        {
+          "code": "ro",
+          "name": "Romanian"
+        },
+        {
+          "code": "ru",
+          "name": "Russian"
+        },
+        {
+          "code": "es",
+          "name": "Spanish"
+        },
+        {
+          "code": "sv",
+          "name": "Swedish"
+        },
+        {
+          "code": "th",
+          "name": "Thai"
+        },
+        {
+          "code": "tr",
+          "name": "Turkish"
+        },
+        {
+          "code": "vi",
+          "name": "Vietnamese"
+        }
+      ],
+      "manual": false,
+      "source": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B",
+      "runtimeSource": "https://github.com/handy-computer/transcribe.cpp/blob/main/docs/models/qwen3-asr-0.6b.md"
+    },
+    "megaASR": {
+      "name": "Mega-ASR",
+      "coverage": "Multilingual · automatic detection",
+      "languages": [],
+      "manual": false,
+      "source": "https://huggingface.co/mlx-community/Mega-ASR-bf16"
+    },
+    "voxtralMini": {
+      "name": "Voxtral Mini 3B",
+      "coverage": "8 languages · automatic detection or a fixed language",
+      "languages": [
+        {
+          "code": "nl",
+          "name": "Dutch"
+        },
+        {
+          "code": "en",
+          "name": "English"
+        },
+        {
+          "code": "fr",
+          "name": "French"
+        },
+        {
+          "code": "de",
+          "name": "German"
+        },
+        {
+          "code": "hi",
+          "name": "Hindi"
+        },
+        {
+          "code": "it",
+          "name": "Italian"
+        },
+        {
+          "code": "pt",
+          "name": "Portuguese"
+        },
+        {
+          "code": "es",
+          "name": "Spanish"
+        }
+      ],
+      "manual": true,
+      "source": "https://huggingface.co/mistralai/Voxtral-Mini-3B-2507"
+    },
+    "whisperTurboGGML": {
+      "name": "Whisper V3 Turbo",
+      "coverage": "100 languages · automatic detection or a fixed language",
+      "languages": [
+        {
+          "code": "af",
+          "name": "Afrikaans"
+        },
+        {
+          "code": "sq",
+          "name": "Albanian"
+        },
+        {
+          "code": "am",
+          "name": "Amharic"
+        },
+        {
+          "code": "ar",
+          "name": "Arabic"
+        },
+        {
+          "code": "hy",
+          "name": "Armenian"
+        },
+        {
+          "code": "as",
+          "name": "Assamese"
+        },
+        {
+          "code": "az",
+          "name": "Azerbaijani"
+        },
+        {
+          "code": "ba",
+          "name": "Bashkir"
+        },
+        {
+          "code": "eu",
+          "name": "Basque"
+        },
+        {
+          "code": "be",
+          "name": "Belarusian"
+        },
+        {
+          "code": "bn",
+          "name": "Bengali"
+        },
+        {
+          "code": "bs",
+          "name": "Bosnian"
+        },
+        {
+          "code": "br",
+          "name": "Breton"
+        },
+        {
+          "code": "bg",
+          "name": "Bulgarian"
+        },
+        {
+          "code": "yue",
+          "name": "Cantonese"
+        },
+        {
+          "code": "ca",
+          "name": "Catalan"
+        },
+        {
+          "code": "zh",
+          "name": "Chinese"
+        },
+        {
+          "code": "hr",
+          "name": "Croatian"
+        },
+        {
+          "code": "cs",
+          "name": "Czech"
+        },
+        {
+          "code": "da",
+          "name": "Danish"
+        },
+        {
+          "code": "nl",
+          "name": "Dutch"
+        },
+        {
+          "code": "en",
+          "name": "English"
+        },
+        {
+          "code": "et",
+          "name": "Estonian"
+        },
+        {
+          "code": "fo",
+          "name": "Faroese"
+        },
+        {
+          "code": "fi",
+          "name": "Finnish"
+        },
+        {
+          "code": "fr",
+          "name": "French"
+        },
+        {
+          "code": "gl",
+          "name": "Galician"
+        },
+        {
+          "code": "ka",
+          "name": "Georgian"
+        },
+        {
+          "code": "de",
+          "name": "German"
+        },
+        {
+          "code": "el",
+          "name": "Greek"
+        },
+        {
+          "code": "gu",
+          "name": "Gujarati"
+        },
+        {
+          "code": "ht",
+          "name": "Haitian Creole"
+        },
+        {
+          "code": "ha",
+          "name": "Hausa"
+        },
+        {
+          "code": "haw",
+          "name": "Hawaiian"
+        },
+        {
+          "code": "he",
+          "name": "Hebrew"
+        },
+        {
+          "code": "hi",
+          "name": "Hindi"
+        },
+        {
+          "code": "hu",
+          "name": "Hungarian"
+        },
+        {
+          "code": "is",
+          "name": "Icelandic"
+        },
+        {
+          "code": "id",
+          "name": "Indonesian"
+        },
+        {
+          "code": "it",
+          "name": "Italian"
+        },
+        {
+          "code": "ja",
+          "name": "Japanese"
+        },
+        {
+          "code": "jw",
+          "name": "Javanese"
+        },
+        {
+          "code": "kn",
+          "name": "Kannada"
+        },
+        {
+          "code": "kk",
+          "name": "Kazakh"
+        },
+        {
+          "code": "km",
+          "name": "Khmer"
+        },
+        {
+          "code": "ko",
+          "name": "Korean"
+        },
+        {
+          "code": "lo",
+          "name": "Lao"
+        },
+        {
+          "code": "la",
+          "name": "Latin"
+        },
+        {
+          "code": "lv",
+          "name": "Latvian"
+        },
+        {
+          "code": "ln",
+          "name": "Lingala"
+        },
+        {
+          "code": "lt",
+          "name": "Lithuanian"
+        },
+        {
+          "code": "lb",
+          "name": "Luxembourgish"
+        },
+        {
+          "code": "mk",
+          "name": "Macedonian"
+        },
+        {
+          "code": "mg",
+          "name": "Malagasy"
+        },
+        {
+          "code": "ms",
+          "name": "Malay"
+        },
+        {
+          "code": "ml",
+          "name": "Malayalam"
+        },
+        {
+          "code": "mt",
+          "name": "Maltese"
+        },
+        {
+          "code": "mi",
+          "name": "Maori"
+        },
+        {
+          "code": "mr",
+          "name": "Marathi"
+        },
+        {
+          "code": "mn",
+          "name": "Mongolian"
+        },
+        {
+          "code": "my",
+          "name": "Myanmar"
+        },
+        {
+          "code": "ne",
+          "name": "Nepali"
+        },
+        {
+          "code": "no",
+          "name": "Norwegian"
+        },
+        {
+          "code": "nn",
+          "name": "Nynorsk"
+        },
+        {
+          "code": "oc",
+          "name": "Occitan"
+        },
+        {
+          "code": "ps",
+          "name": "Pashto"
+        },
+        {
+          "code": "fa",
+          "name": "Persian"
+        },
+        {
+          "code": "pl",
+          "name": "Polish"
+        },
+        {
+          "code": "pt",
+          "name": "Portuguese"
+        },
+        {
+          "code": "pa",
+          "name": "Punjabi"
+        },
+        {
+          "code": "ro",
+          "name": "Romanian"
+        },
+        {
+          "code": "ru",
+          "name": "Russian"
+        },
+        {
+          "code": "sa",
+          "name": "Sanskrit"
+        },
+        {
+          "code": "sr",
+          "name": "Serbian"
+        },
+        {
+          "code": "sn",
+          "name": "Shona"
+        },
+        {
+          "code": "sd",
+          "name": "Sindhi"
+        },
+        {
+          "code": "si",
+          "name": "Sinhala"
+        },
+        {
+          "code": "sk",
+          "name": "Slovak"
+        },
+        {
+          "code": "sl",
+          "name": "Slovenian"
+        },
+        {
+          "code": "so",
+          "name": "Somali"
+        },
+        {
+          "code": "es",
+          "name": "Spanish"
+        },
+        {
+          "code": "su",
+          "name": "Sundanese"
+        },
+        {
+          "code": "sw",
+          "name": "Swahili"
+        },
+        {
+          "code": "sv",
+          "name": "Swedish"
+        },
+        {
+          "code": "tl",
+          "name": "Tagalog"
+        },
+        {
+          "code": "tg",
+          "name": "Tajik"
+        },
+        {
+          "code": "ta",
+          "name": "Tamil"
+        },
+        {
+          "code": "tt",
+          "name": "Tatar"
+        },
+        {
+          "code": "te",
+          "name": "Telugu"
+        },
+        {
+          "code": "th",
+          "name": "Thai"
+        },
+        {
+          "code": "bo",
+          "name": "Tibetan"
+        },
+        {
+          "code": "tr",
+          "name": "Turkish"
+        },
+        {
+          "code": "tk",
+          "name": "Turkmen"
+        },
+        {
+          "code": "uk",
+          "name": "Ukrainian"
+        },
+        {
+          "code": "ur",
+          "name": "Urdu"
+        },
+        {
+          "code": "uz",
+          "name": "Uzbek"
+        },
+        {
+          "code": "vi",
+          "name": "Vietnamese"
+        },
+        {
+          "code": "cy",
+          "name": "Welsh"
+        },
+        {
+          "code": "yi",
+          "name": "Yiddish"
+        },
+        {
+          "code": "yo",
+          "name": "Yoruba"
+        }
+      ],
+      "manual": true,
+      "source": "https://github.com/openai/whisper/blob/main/whisper/tokenizer.py"
+    },
+    "qwen3ASR06": {
+      "name": "Qwen3-ASR 0.6B",
+      "coverage": "30 languages · automatic detection",
+      "languages": [
+        {
+          "code": "ar",
+          "name": "Arabic"
+        },
+        {
+          "code": "yue",
+          "name": "Cantonese"
+        },
+        {
+          "code": "zh",
+          "name": "Chinese"
+        },
+        {
+          "code": "cs",
+          "name": "Czech"
+        },
+        {
+          "code": "da",
+          "name": "Danish"
+        },
+        {
+          "code": "nl",
+          "name": "Dutch"
+        },
+        {
+          "code": "en",
+          "name": "English"
+        },
+        {
+          "code": "fil",
+          "name": "Filipino"
+        },
+        {
+          "code": "fi",
+          "name": "Finnish"
+        },
+        {
+          "code": "fr",
+          "name": "French"
+        },
+        {
+          "code": "de",
+          "name": "German"
+        },
+        {
+          "code": "el",
+          "name": "Greek"
+        },
+        {
+          "code": "hi",
+          "name": "Hindi"
+        },
+        {
+          "code": "hu",
+          "name": "Hungarian"
+        },
+        {
+          "code": "id",
+          "name": "Indonesian"
+        },
+        {
+          "code": "it",
+          "name": "Italian"
+        },
+        {
+          "code": "ja",
+          "name": "Japanese"
+        },
+        {
+          "code": "ko",
+          "name": "Korean"
+        },
+        {
+          "code": "mk",
+          "name": "Macedonian"
+        },
+        {
+          "code": "ms",
+          "name": "Malay"
+        },
+        {
+          "code": "fa",
+          "name": "Persian"
+        },
+        {
+          "code": "pl",
+          "name": "Polish"
+        },
+        {
+          "code": "pt",
+          "name": "Portuguese"
+        },
+        {
+          "code": "ro",
+          "name": "Romanian"
+        },
+        {
+          "code": "ru",
+          "name": "Russian"
+        },
+        {
+          "code": "es",
+          "name": "Spanish"
+        },
+        {
+          "code": "sv",
+          "name": "Swedish"
+        },
+        {
+          "code": "th",
+          "name": "Thai"
+        },
+        {
+          "code": "tr",
+          "name": "Turkish"
+        },
+        {
+          "code": "vi",
+          "name": "Vietnamese"
+        }
+      ],
+      "manual": false,
+      "source": "https://huggingface.co/Qwen/Qwen3-ASR-0.6B",
+      "runtimeSource": "https://github.com/handy-computer/transcribe.cpp/blob/main/docs/models/qwen3-asr-0.6b.md"
+    },
+    "funASRMLTNano": {
+      "name": "Fun-ASR MLT Nano",
+      "coverage": "31 languages · automatic detection or a fixed language",
+      "languages": [
+        {
+          "code": "ar",
+          "name": "Arabic"
+        },
+        {
+          "code": "bg",
+          "name": "Bulgarian"
+        },
+        {
+          "code": "yue",
+          "name": "Cantonese"
+        },
+        {
+          "code": "zh",
+          "name": "Chinese"
+        },
+        {
+          "code": "hr",
+          "name": "Croatian"
+        },
+        {
+          "code": "cs",
+          "name": "Czech"
+        },
+        {
+          "code": "da",
+          "name": "Danish"
+        },
+        {
+          "code": "nl",
+          "name": "Dutch"
+        },
+        {
+          "code": "en",
+          "name": "English"
+        },
+        {
+          "code": "et",
+          "name": "Estonian"
+        },
+        {
+          "code": "fil",
+          "name": "Filipino"
+        },
+        {
+          "code": "fi",
+          "name": "Finnish"
+        },
+        {
+          "code": "el",
+          "name": "Greek"
+        },
+        {
+          "code": "hi",
+          "name": "Hindi"
+        },
+        {
+          "code": "hu",
+          "name": "Hungarian"
+        },
+        {
+          "code": "id",
+          "name": "Indonesian"
+        },
+        {
+          "code": "ga",
+          "name": "Irish"
+        },
+        {
+          "code": "ja",
+          "name": "Japanese"
+        },
+        {
+          "code": "ko",
+          "name": "Korean"
+        },
+        {
+          "code": "lv",
+          "name": "Latvian"
+        },
+        {
+          "code": "lt",
+          "name": "Lithuanian"
+        },
+        {
+          "code": "ms",
+          "name": "Malay"
+        },
+        {
+          "code": "mt",
+          "name": "Maltese"
+        },
+        {
+          "code": "pl",
+          "name": "Polish"
+        },
+        {
+          "code": "pt",
+          "name": "Portuguese"
+        },
+        {
+          "code": "ro",
+          "name": "Romanian"
+        },
+        {
+          "code": "sk",
+          "name": "Slovak"
+        },
+        {
+          "code": "sl",
+          "name": "Slovenian"
+        },
+        {
+          "code": "sv",
+          "name": "Swedish"
+        },
+        {
+          "code": "th",
+          "name": "Thai"
+        },
+        {
+          "code": "vi",
+          "name": "Vietnamese"
+        }
+      ],
+      "manual": true,
+      "source": "https://huggingface.co/FunAudioLLM/Fun-ASR-MLT-Nano-2512"
+    }
+  },
+  "dictationRanking": [
+    "orukeet",
+    "moss",
+    "parakeetUltra",
+    "qwen3ASR17",
+    "megaASR"
+  ],
+  "meetingRanking": [
+    "moss",
+    "orukeet",
+    "parakeetUltra",
+    "qwen3ASR17",
+    "megaASR"
+  ],
+  "rankingSource": "Sources/PressayCore/Domain.swift + docs/benchmarks.md",
+  "cleanupRanking": {
+    "ChatGPT": [
+      "gpt-6.1-sol",
+      "gpt-6-luna"
+    ],
+    "Claude": [
+      "sonnet55",
+      "haiku55"
+    ]
+  },
+  "meetingNotesRanking": {
+    "Claude": [
+      "haiku55",
+      "sonnet55"
+    ],
+    "ChatGPT": [
+      "gpt-6.1-sol",
+      "gpt-6-luna"
+    ]
+  },
+  "languageRules": [
+    "Automatic uses the complete supported language set.",
+    "Only offer fixed languages when the selected runtime accepts language hints.",
+    "Get the complete list from model/runtime metadata; never cap the list to a subset of enum cases.",
+    "Changing the speech model resets an incompatible language to Automatic.",
+    "Automatic detection must not be followed by the current English-only/non-Latin output filter.",
+    "Keep silence/hallucination checks based on audio evidence, independent of the output script.",
+    "Unknown account LLM models appear in a separate Untested group; do not invent a ranking."
+  ]
+}

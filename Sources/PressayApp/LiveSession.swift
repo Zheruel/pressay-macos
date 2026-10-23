@@ -16,8 +16,9 @@ final class LiveSession: ObservableObject {
     let kind: Note.Kind
     /// Start on the note's timeline, so multi-sitting notes keep one clock.
     let offset: TimeInterval
-    let startedAt = Date()
+    let startedAt: Date
 
+    @Published private(set) var stoppedAt: Date?
     @Published private(set) var phase: Phase = .recording
     @Published private(set) var lines: [TranscriptLine] = []
     @Published private(set) var micLevel: Float = 0
@@ -46,8 +47,10 @@ final class LiveSession: ObservableObject {
         vocabulary: [VocabularyParser.Entry],
         inputUID: String?,
         captureSystemAudio: Bool,
-        separateVoices: Bool = false
+        separateVoices: Bool = false,
+        startedAt: Date = .now
     ) throws {
+        self.startedAt = startedAt
         self.noteID = noteID
         self.kind = kind
         self.offset = offset
@@ -70,7 +73,7 @@ final class LiveSession: ObservableObject {
                     self?.pending -= 1
                     continue
                 }
-                let cleaned = DeterministicPromptCleaner.clean(text, vocabulary: vocabulary)
+                let cleaned = DeterministicPromptCleaner.clean(text, vocabulary: vocabulary, englishRules: SpeechLanguage.usesEnglishRules(text))
                 guard let self, !Task.isCancelled else { continue }
                 pending -= 1
                 guard !cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
@@ -92,6 +95,14 @@ final class LiveSession: ObservableObject {
             }
         }
         mic.onSamples = { [pipeline] in pipeline.append($0, from: .me) }
+        #if DEBUG
+        if DesignReview.enabled {
+            lines = [.init(speaker: .me, start: 0, text: "Let’s start with the first-time experience."),
+                     .init(speaker: .others, start: 4, text: "I think we should keep the setup to a few simple steps.")]
+            micLevel = 0.7
+            return
+        }
+        #endif
         // Echo cancellation keeps speaker output out of "Me".
         do {
             try mic.start(echoCancellation: kind == .meeting, preferredInputUID: inputUID)
@@ -178,6 +189,7 @@ final class LiveSession: ObservableObject {
 
     func finish() async -> [TranscriptLine] {
         guard phase == .recording else { return lines }
+        stoppedAt = stoppedAt ?? .now
         phase = .finishing
         mic.stop()
         system?.stop()
@@ -193,6 +205,7 @@ final class LiveSession: ObservableObject {
 
     /// Stops at once and drops whatever was still being transcribed.
     func discard() {
+        stoppedAt = stoppedAt ?? .now
         phase = .finishing
         onLine = nil
         mic.stop()

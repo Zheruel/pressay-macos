@@ -68,6 +68,7 @@ let package = Package(
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ]
         ),
+        .testTarget(name: "PressayAppTests", dependencies: ["PressayApp", "PressayCore"]),
         .testTarget(
             name: "PressayCoreTests",
             dependencies: ["PressayCore"]

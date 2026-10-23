@@ -133,12 +133,16 @@ public enum DeterministicPromptCleaner {
         _ source: String,
         vocabulary: [VocabularyParser.Entry] = [],
         capitalizeFirstWord: Bool = true,
-        phoneticFallback: Bool = true
+        phoneticFallback: Bool = true,
+        englishRules: Bool = true
     ) -> String {
-        var text = SpokenFormatting.apply(to: source)
-        text = removeAbandonedClause(beforeLastScratchThat: text)
+        var text = source
+        if englishRules {
+            text = SpokenFormatting.apply(to: text)
+            text = removeAbandonedClause(beforeLastScratchThat: text)
+        }
 
-        if let regex = fillerRegex {
+        if englishRules, let regex = fillerRegex {
             text = regex.stringByReplacingMatches(
                 in: text,
                 range: NSRange(text.startIndex..., in: text),
@@ -146,10 +150,10 @@ public enum DeterministicPromptCleaner {
             )
         }
 
-        text = collapseStutters(in: text)
+        if englishRules { text = collapseStutters(in: text) }
 
         text = VocabularyParser.normalize(text, entries: vocabulary)
-        if phoneticFallback {
+        if phoneticFallback && englishRules {
             text = PhoneticVocabularyMatcher.correct(text, entries: vocabulary)
         }
         text = text.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)

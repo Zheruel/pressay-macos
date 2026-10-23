@@ -1,0 +1,58 @@
+# Graphite redesign
+
+The native SwiftUI/AppKit implementation follows the approved Graphite canvas in both appearances. The canonical reference is [`designs/pressay-macos/project`](../designs/pressay-macos/project); [`review.html`](../designs/pressay-macos/review.html) provides an offline screen browser. The canvas contains 39 dark screens and their 39 light counterparts.
+
+Shared tokens, controls and spacing live in `PressayDesign.swift`. The main window starts at 1080 × 740, with a 216-point text sidebar. Content, editors, confirmations, onboarding, menu bar and the floating meeting widget use the same palette. Real app icons come from the existing cached `NSWorkspace` lookup.
+
+The note reader, summary/transcript rendering and live note content are byte-identical to the original protected region. `OverlayPanel.swift`, including the transcription notch animation, is unchanged.
+
+## Product changes
+
+| Area | Result |
+| --- | --- |
+| Home | Weekly words/time saved, speaking pace, streak and six recent dictations with longer excerpts. |
+| Action Items | Personal tasks with circular completion controls. Other assignments remain in meeting notes. |
+| Dictionary | Preferred spelling only; background learning replaces suggestions. Manual words persist; explicit removals are respected; contradictory or stale learned rules retract. |
+| Snippets | Compact phrase → text rows and concise Add/Edit forms. |
+| General | Dictation and Notetaker tabs combine audio, language, ranked models and recording preferences. |
+| Removed features | Microphone warming, app-specific writing styles and Command Mode, including their processing paths and preferences. |
+| Copy | Removed the requested privacy claims, redundant headers, promotions and helper lines. |
+
+All speech models default to automatic detection. Fixed language choices are available only on runtimes that accept them: Whisper (100), Voxtral (8), Fun-ASR MLT (31). The installed Qwen runtime supports automatic detection across 30 languages but rejects fixed hints. Meeting transcription has its own model/language preference. English-only cleanup heuristics are gated by the selected language or on-device language recognition so foreign repetitions are preserved. Model capability references are in [`model-capabilities.json`](../designs/pressay-macos/model-capabilities.json).
+
+## Verification
+
+- `make test`: 173 tests passed (137 Core XCTest, 6 transcription XCTest, 22 Core Swift Testing, 8 app settings/learning tests).
+- `make app`: release build and bundled native ASR runtime succeeded; signed with the existing local signing identity.
+- 20 synthetic speech checks: English and German through all nine models, Japanese through Qwen 1.7B and Whisper. All completed successfully with automatic language detection. [Outputs](assets/redesign/asr-smoke.json) are smoke evidence, not an accuracy ranking.
+- Native interaction checks: navigation; history search using ⌘F; dictionary validation/save; Add/Edit snippet forms; personal task completion and undo; ranked model menu; Whisper language list and Japanese selection; switching to Qwen resets to Automatic; onboarding permission progression and completion; meeting widget Open navigation; empty state.
+- Native screenshots use isolated synthetic content. Both appearances, the menu bar, onboarding and recording widget were inspected against the canvas. System menus, scrollbars, traffic lights and focus rendering follow macOS preferences.
+- Protected note reader checked byte-for-byte; `git diff --check` and the 78-artboard design validator passed.
+
+**Live microphone/Bluetooth capture, insertion into other apps, provider-account requests and Reminders writes were not exercised during this review.** Review mode deliberately bypasses hardware, account access and system permission changes; synthetic speech checks exercised the real bundled transcription runtimes separately.
+
+## Screenshots
+
+| Dark | Light |
+| --- | --- |
+| ![Native Home, dark](assets/redesign/native-home-dark.png) | ![Native Home, light](assets/redesign/native-home-light.png) |
+| ![Personal tasks](assets/redesign/native-actions-dark.png) | ![General settings, light](assets/redesign/native-general-light.png) |
+
+| Menu bar | Recording widget | Onboarding |
+| --- | --- | --- |
+| ![Menu](assets/redesign/native-menu-dark.png) | ![Widget](assets/redesign/native-widget-dark.png) | ![Onboarding](assets/redesign/native-onboarding-dark.png) |
+
+## Reproduce the native visual review
+
+Build a debug app with `CONFIGURATION=debug scripts/build-app.sh`. Run its executable in a separate review bundle/identity to avoid colliding with an installed Pressay instance:
+
+```sh
+open -n /path/to/Pressay-Review.app \
+  --env PRESSAY_DESIGN_REVIEW=1 \
+  --env PRESSAY_REVIEW_APPEARANCE=dark \
+  --env PRESSAY_DEMO=settings \
+  --env PRESSAY_PANE=home \
+  --env PRESSAY_NO_KEYCHAIN=1
+```
+
+Review mode is compiled only in DEBUG. It uses an isolated defaults suite, in-memory history, temporary meeting notes and synthetic fixtures. It skips hotkeys, model loading, provider credentials, login registration and system permission requests. Use `PRESSAY_REVIEW_APPEARANCE=light`, `PRESSAY_REVIEW_EMPTY=1`, or `PRESSAY_REVIEW_PERMISSIONS=missing` for variants; `PRESSAY_DEMO` also accepts `menu`, `onboarding`, `notepad` and `call`.

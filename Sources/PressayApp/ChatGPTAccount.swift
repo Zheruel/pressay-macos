@@ -17,6 +17,9 @@ final class ChatGPTAccount: ObservableObject {
     private let logger = Logger(subsystem: "dev.localflow.app", category: "chatgpt")
 
     init() {
+        #if DEBUG
+        guard !DesignReview.enabled else { return }
+        #endif
         credentials = store.load()
     }
 
@@ -24,6 +27,9 @@ final class ChatGPTAccount: ObservableObject {
 
     /// Reuses this Mac's registration when there is one.
     func signIn() async {
+        #if DEBUG
+        guard !DesignReview.enabled else { return }
+        #endif
         guard !signingIn else { return }
         signingIn = true
         lastError = nil

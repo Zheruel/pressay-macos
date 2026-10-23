@@ -1,0 +1,24 @@
+Pressay · Graphite
+
+Approved design reference and native implementation.
+
+Canonical editable artboards: project/ (78 boards, 39 dark + 39 matching light).
+Offline screen browser: review.html.
+Contact sheet: contact-sheet.html.
+Visual tokens: tokens.json.
+Runtime language coverage and primary sources: model-capabilities.json.
+Native implementation, verification and screenshots: ../../docs/graphite-redesign.md.
+
+Start the canvas with:
+python3 /Users/tinzeljar/.codex/skills/design/scripts/design.py start designs/pressay-macos
+The existing local preview is http://127.0.0.1:64799/.
+
+Export a standalone full editor with:
+python3 /Users/tinzeljar/.codex/skills/design/scripts/design.py export designs/pressay-macos --output designs/Pressay-Graphite.html
+Portable edits stay in the browser tab; the local canvas saves into project/.
+
+The note reader/live note content and transcription notch are protected and unchanged. The top-right meeting widget retains its transcript and personal notes while adopting Graphite chrome. System menus, focus, scrollbars and window controls use native macOS behavior.
+
+The implementation includes the agreed feature removals, unified settings, ranked models, automatic language handling and quiet background dictionary learning. Prototype fixtures remain illustrative; production behavior lives in Sources/. Native screenshots use isolated synthetic data.
+
+Validation: all 78 artboards valid; 173 native tests passed; release app built and signed; 20 synthetic multilingual checks across nine speech models succeeded. Live hardware capture, provider requests and Reminders writes were not exercised by the visual review.

@@ -9,7 +9,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 640),
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 720),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -50,211 +50,90 @@ struct OnboardingView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var permissions: PermissionController
     @ObservedObject private var settings: AppSettings
-
+    @State private var ready = false
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         permissions = coordinator.permissions
         settings = coordinator.settings
+        _ready = State(initialValue: coordinator.permissions.allGranted)
     }
-
     var body: some View {
-        VStack(spacing: 0) {
-            header
-                .padding(.top, 40)
-            if permissions.allGranted {
-                features
-                    .padding(.top, 24)
-                    .padding(.horizontal, 44)
-            }
-            Form {
-                if permissions.allGranted {
-                    readySections
-                } else {
-                    permissionSection
-                }
-            }
-            .formStyle(.grouped)
-            .toggleStyle(.switch)
-            .scrollContentBackground(.hidden)
-            .scrollDisabled(true)
-            .padding(.horizontal, 24)
-            footer
-                .padding(.horizontal, 44)
-                .padding(.top, 8)
-                .padding(.bottom, 28)
-        }
-        .frame(width: 540)
-        .fixedSize(horizontal: false, vertical: true)
-        .animation(.snappy(duration: 0.3), value: permissions.allGranted)
-        .onAppear { permissions.startMonitoring() }
-    }
-
-    private var header: some View {
-        VStack(spacing: 0) {
-            Image(nsImage: PressayBrand.appIcon)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 88, height: 88)
-            Text("Welcome to Pressay")
-                .font(.largeTitle.weight(.bold))
-                .padding(.top, 14)
-            Text(permissions.allGranted
-                 ? "Dictation that types for you, in any app."
-                 : "Pressay needs three permissions to hear you and type for you. Audio never leaves your Mac.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 400)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 6)
-        }
-        .padding(.horizontal, 40)
-    }
-
-    private var features: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            FeatureRow(
-                systemImage: "keyboard",
-                title: "Hold \(settings.holdKey.displayName) to talk",
-                detail: "Let go, and Pressay types what you said at your cursor."
+        VStack(alignment: .leading, spacing: 0) {
+            Image(nsImage: PressayBrand.appIcon).resizable().frame(width: 64, height: 64).padding(.bottom, 26)
+            Text(ready ? "Pressay is ready" : "Set up Pressay").font(.system(size: 34, weight: .semibold)).tracking(
+                -1.1)
+            Text(
+                ready
+                    ? "Hold your talk key to dictate.\nRelease it to type."
+                    : "Allow these permissions to dictate in any app."
             )
-            FeatureRow(
-                systemImage: "lock.fill",
-                title: "Private by default",
-                detail: "Speech is transcribed on this Mac. Audio never leaves it."
-            )
-            FeatureRow(
-                systemImage: "character.book.closed.fill",
-                title: "Spells your words your way",
-                detail: "Add names and jargon to the dictionary in Settings."
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var permissionSection: some View {
-        Section {
-            ForEach(PermissionController.Kind.allCases) { kind in
-                LabeledContent {
-                    if permissions.isGranted(kind) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .font(.title3)
-                            .accessibilityLabel("Allowed")
-                    } else {
-                        Button("Allow") { permissions.request(kind) }
-                            .help("If nothing appears, Pressay opens the Privacy & Security page.")
+            .font(.system(size: 14)).foregroundStyle(PressayPalette.muted).lineSpacing(6).padding(.top, 13)
+            if ready {
+                PressayGroup {
+                    PressaySetting(title: "Hold to talk", detail: "Release to type. Esc to cancel.") {
+                        KeyCaptureButton(
+                            key: $settings.holdKey, onChange: coordinator.restartHotkey,
+                            onCaptureActive: coordinator.keyCaptureActive)
                     }
+                }.padding(.top, 27).padding(.bottom, 13)
+                PressaySetting(title: "Open at login", detail: "Ready every time you open your Mac.") {
+                    Toggle("Open at login", isOn: $settings.launchAtLogin).toggleStyle(
+                        PressaySwitchStyle(showsLabel: false)
+                    ).frame(width: 32)
+                }
+                ModelStatusView(coordinator: coordinator).padding(.top, 19).padding(.bottom, 24)
+                Button {
+                    coordinator.completeOnboarding()
                 } label: {
-                    Label {
-                        Text(kind.title)
-                        Text(kind.detail)
-                    } icon: {
-                        Image(systemName: kind.systemImage)
-                            .foregroundStyle(.tint)
-                            .frame(width: 22)
+                    Text(coordinator.modelReady ? "Start dictating" : "Preparing model…").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PressayButtonStyle(kind: .primary)).disabled(!coordinator.modelReady).keyboardShortcut(
+                    .defaultAction)
+                if let error = settings.launchAtLoginError {
+                    Text(error).font(.system(size: 11)).foregroundStyle(PressayPalette.danger).padding(.top, 12)
+                }
+            } else {
+                PressayGroup {
+                    ForEach(PermissionController.Kind.allCases) { kind in
+                        HStack(spacing: 13) {
+                            Image(systemName: kind.systemImage).font(.system(size: 20)).frame(width: 21)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(kind.title).font(.system(size: 13, weight: .medium))
+                                Text(detail(kind)).font(.system(size: 11)).foregroundStyle(PressayPalette.muted)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            if permissions.isGranted(kind) {
+                                StatusLabel(text: "Allowed", color: PressayPalette.success)
+                            } else {
+                                Button("Allow") { permissions.request(kind) }.contextMenu {
+                                    Button("Open System Settings") { permissions.openPrivacySettings(for: kind) }
+                                }
+                            }
+                        }.padding(.horizontal, 18).padding(.vertical, 16)
+                            .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
                     }
+                }.padding(.top, 27)
+                Button {
+                    ready = true
+                } label: {
+                    Text(permissions.allGranted ? "Continue" : "Allow permissions to continue").frame(
+                        maxWidth: .infinity)
                 }
-                .contextMenu {
-                    Button("Open Privacy & Security…") { permissions.openPrivacySettings(for: kind) }
-                }
+                .buttonStyle(PressayButtonStyle(kind: permissions.allGranted ? .primary : .standard))
+                .disabled(!permissions.allGranted).padding(.top, 22).keyboardShortcut(.defaultAction)
             }
-        } footer: {
-            Text("Pressay notices each approval on its own, so you can keep this window open.")
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 40).padding(.top, 62).padding(.bottom, 32)
+        .frame(width: 540, height: 720, alignment: .topLeading)
+        .background(PressayPalette.base).foregroundStyle(PressayPalette.text)
+        .toggleStyle(PressaySwitchStyle()).buttonStyle(PressayButtonStyle()).tint(PressayPalette.accent)
+        .ignoresSafeArea(.container, edges: .top).onAppear { permissions.startMonitoring() }
     }
-
-    @ViewBuilder
-    private var readySections: some View {
-        Section {
-            LabeledContent("Hold to talk") {
-                KeyCaptureButton(
-                    key: $settings.holdKey,
-                    onChange: { coordinator.restartHotkey() },
-                    onCaptureActive: coordinator.keyCaptureActive
-                )
-            }
-            Toggle("Open at login", isOn: $settings.launchAtLogin)
-            LabeledContent {
-                modelStatus
-            } label: {
-                Text("Speech model")
-                Text(settings.asrModel.displayName)
-            }
-        } footer: {
-            if let error = settings.launchAtLoginError {
-                Text(error)
-            } else {
-                Text("You can change these later in Settings.")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var modelStatus: some View {
-        if coordinator.modelPreparing {
-            if let progress = coordinator.modelDownloadProgress {
-                HStack(spacing: 8) {
-                    ProgressView(value: progress).frame(width: 90)
-                    Text("\(Int((progress * 100).rounded()))%")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                ProgressView().controlSize(.small)
-            }
-        } else if coordinator.modelReady {
-            HStack(spacing: 6) {
-                Circle().fill(.green).frame(width: 8, height: 8)
-                Text("Ready").foregroundStyle(.secondary)
-            }
-        } else {
-            Button("Retry") { Task { await coordinator.prepareModel() } }
-        }
-    }
-
-    @ViewBuilder
-    private var footer: some View {
-        if permissions.allGranted {
-            Button {
-                coordinator.completeOnboarding()
-            } label: {
-                Text(coordinator.modelReady ? "Start Dictating" : "Downloading Model…")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.glassProminent)
-            .controlSize(.extraLarge)
-            .disabled(!coordinator.modelReady)
-            .keyboardShortcut(.defaultAction)
-        } else {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Waiting for permissions…")
-                    .foregroundStyle(.secondary)
-            }
-            .frame(height: 44)
-        }
-    }
-}
-
-private struct FeatureRow: View {
-    let systemImage: String
-    let title: String
-    let detail: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: systemImage)
-                .font(.title2)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(.tint)
-                .frame(width: 32)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline)
-                Text(detail)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+    private func detail(_ kind: PermissionController.Kind) -> String {
+        switch kind {
+        case .microphone: "To hear what you say."
+        case .accessibility: "To type at your cursor."
+        case .inputMonitoring: "To recognize your talk key."
         }
     }
 }
