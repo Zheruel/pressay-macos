@@ -32,7 +32,6 @@ final class AppSettings: ObservableObject {
         static let notesUseAI = "notesUseAI"
         static let meetingSystemAudio = "meetingSystemAudio"
         static let separateVoices = "separateVoices"
-        /// Retired preferences; clearing them cannot re-enable removed features.
         static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined"]
     }
 
@@ -130,7 +129,6 @@ final class AppSettings: ObservableObject {
         meetingASRModel = meetingModel
         let storedMeetingLanguage = defaults.string(forKey: Key.meetingLanguage).flatMap(TranscriptionLanguage.init(rawValue:)) ?? .auto
         meetingLanguage = meetingModel.supportedLanguages.contains(storedMeetingLanguage) ? storedMeetingLanguage : .auto
-        // A fixed language may not be supported by the newly selected model.
         let storedLanguage =
             TranscriptionLanguage(rawValue: defaults.string(forKey: Key.language) ?? "") ?? .auto
         language = model.supportedLanguages.contains(storedLanguage)
@@ -211,7 +209,6 @@ final class AppSettings: ObservableObject {
         vocabularyEntries.map(\.preferred)
     }
 
-    /// Every dictionary term and covered heard spelling, lowercased.
     var knownVocabularyFolds: Set<String> {
         Set(vocabularyEntries.flatMap { [$0.preferred] + $0.aliases }.map { $0.lowercased() })
     }
@@ -254,7 +251,6 @@ final class AppSettings: ObservableObject {
     }
 }
 
-/// Claude with the user's API key, or OpenAI billed to the user's ChatGPT plan.
 enum CleanupProvider: String, CaseIterable, Identifiable {
     case claude
     case chatgpt

@@ -1,10 +1,7 @@
 import Foundation
 import PressayCore
 
-/// Vocabulary rules the tuner derived from transcripts, with a blocklist for
-/// deleted rules. Rules persist as long as their heard term keeps appearing
-/// in transcripts; the daily pass refreshes `lastSeenAt` and expires rules
-/// unused for `LearnedRuleRetention.unusedLifetime`.
+/// Learned spellings expire when unused; explicit removals stay blocked.
 @MainActor
 final class LearnedVocabularyStore: ObservableObject {
     struct Record: Codable, Equatable, Sendable {
@@ -58,11 +55,7 @@ final class LearnedVocabularyStore: ObservableObject {
         records.map { VocabularyParser.Entry(preferred: $0.preferred, aliases: [$0.heard]) }
     }
 
-    /// Daily-pass semantics: incoming det rules insert or refresh; every
-    /// existing rule whose heard term still occurs in the transcript window
-    /// gets `lastSeenAt` bumped; rules unused past the retention lifetime
-    /// expire. `heard` is the identity everywhere (SwiftUI row IDs, remove(),
-    /// the blocklist), so an incoming heard term takes over its record.
+    /// `heard` identifies a rule. Recurring terms refresh retention even without a new correction.
     func applyDailyPass(detRules: [LearnedRule], heardTermsInWindow: Set<String>, now: Date = .now) {
         let incoming = detRules.filter { !isBlocked(heard: $0.heard, preferred: $0.preferred) }
         let incomingByHeard = Dictionary(
@@ -98,8 +91,7 @@ final class LearnedVocabularyStore: ObservableObject {
         persist()
     }
 
-    /// Returns only genuinely new rules (not blocklisted or known). Additive, not replacing:
-    /// the K3 judge only sees unseen candidates, so replacing would wipe earlier K3 rules.
+    /// Incoming spellings replace the same heard term; unrelated rules survive.
     @discardableResult
     func mergeRules(_ rules: [LearnedRule], source: LearnedRule.Source) -> [LearnedRule] {
         let incoming = rules.filter { !isBlocked(heard: $0.heard, preferred: $0.preferred) }

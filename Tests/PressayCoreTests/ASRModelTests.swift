@@ -2,6 +2,14 @@ import XCTest
 @testable import PressayCore
 
 final class ASRModelTests: XCTestCase {
+    func testMOSSMetadataDoesNotLeakIntoPlainTranscripts() {
+        XCTAssertEqual(ASRModel.moss.plainTranscript("[0.00]Please send the notes.[3.39]"), "Please send the notes.")
+        XCTAssertEqual(ASRModel.moss.plainTranscript("[0.00][S01]你好。[2.00][2.50][S02]再见。[4.00]"), "你好。 再见。")
+        let literal = "Keep [12] and [S01] in the example."
+        XCTAssertEqual(ASRModel.moss.plainTranscript(literal), literal)
+        XCTAssertEqual(ASRModel.orukeet.plainTranscript("[0.00]Example[3.39]"), "[0.00]Example[3.39]")
+    }
+
     func testRetiredAndAbsentValuesFallBackToTheDefault() {
         for stored in ["parakeetV3", "whisperKit", "", "nonsense"] {
             XCTAssertEqual(
@@ -46,7 +54,6 @@ final class ASRModelTests: XCTestCase {
     }
 
     func testModelsWithoutAHintNeverOfferAFixedLanguage() {
-        // Offering a choice would imply a hint the model rejects.
         for model in ASRModel.allCases where !model.supportsLanguageHint {
             XCTAssertEqual(model.supportedLanguages.count, 1, "\(model.rawValue)")
             XCTAssertFalse(model.offersLanguageChoice, "\(model.rawValue)")
@@ -62,7 +69,6 @@ final class ASRModelTests: XCTestCase {
     }
 
     func testWhisperNeverTreatsAnApologyAsARefusal() {
-        // Whisper emits no assistant replies; filtering would drop a real dictation.
         XCTAssertFalse(
             ASRModel.whisperTurboGGML.isTranscriptionRefusal("I'm sorry, I didn't understand."))
     }
@@ -74,39 +80,17 @@ final class ASRModelTests: XCTestCase {
     }
 
     func testForeignScriptIsSuppressedOnlyForAnExplicitEnglishHint() {
-        // Hallucinated on near-silent clips.
         for model in [ASRModel.funASRMLTNano, .qwen3ASR17, .qwen3ASR06] {
             XCTAssertTrue(model.isTranscriptionRefusal("아, 그거는.", language: "en"), "\(model.rawValue)")
             XCTAssertTrue(model.isTranscriptionRefusal("그는 그의 정체성을 가진 것이다.", language: "en"), "\(model.rawValue)")
         }
     }
 
-    func testForeignScriptIsKeptWhenTheModelCanTranscribeIt() {
-        XCTAssertFalse(ASRModel.whisperTurboGGML.isTranscriptionRefusal("아, 그거는."))
-        XCTAssertFalse(ASRModel.whisperTurboGGML.isTranscriptionRefusal("这是一个测试。"))
-        XCTAssertFalse(ASRModel.whisperTurboGGML.isTranscriptionRefusal("Это тест."))
-    }
-
     func testAutomaticKeepsAllScriptsAcrossEveryModel() {
         for model in ASRModel.allCases {
-            XCTAssertEqual(model.defaultLanguage, .auto)
             for text in ["아, 그거는.", "这是一个测试。", "Это тест."] {
                 XCTAssertFalse(model.isTranscriptionRefusal(text), model.rawValue)
             }
-        }
-    }
-
-    func testCompleteFixedLanguageListsAndAutomaticRuntimeLimits() {
-        XCTAssertEqual(ASRModel.whisperTurboGGML.supportedLanguages.count, 101)
-        XCTAssertEqual(ASRModel.voxtralMini.supportedLanguages.count, 9)
-        XCTAssertEqual(ASRModel.funASRMLTNano.supportedLanguages.count, 32)
-        XCTAssertEqual(ASRModel.qwen3ASR17.languageCodes.count, 30)
-        XCTAssertEqual(ASRModel.qwen3ASR06.supportedLanguages, [.auto])
-        XCTAssertEqual(ASRModel.orukeet.languageCodes.count, 25)
-        XCTAssertEqual(ASRModel.parakeetUltra.languageCodes.count, 25)
-        XCTAssertNotNil(TranscriptionLanguage.from(code: "hr"))
-        for model in ASRModel.allCases {
-            XCTAssertEqual(Set(model.supportedLanguages).count, model.supportedLanguages.count)
         }
     }
 

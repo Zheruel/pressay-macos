@@ -46,7 +46,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private var activeMonitor: HotkeyMonitor?
     /// Captured at key press so a mid-session model swap can't hand the clip to an unprepared engine.
     private var sessionEngine: (any SpeechTranscriber)?
-    /// Transcribes long dictations while the key is held.
     private let dictationDetector = SpeechDetector.make()
     private var streamer: DictationStreamer?
     /// Invalidates stale prepare completions after a model swap.
@@ -59,7 +58,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private let editWatcher = EditWatcher()
     let chatGPT = ChatGPTAccount()
     #if DEBUG
-    // PRESSAY_NOTES_DIR points design reviews at sample meetings.
     let notes = ProcessInfo.processInfo.environment["PRESSAY_NOTES_DIR"]
         .map { NotesStore(directory: URL(fileURLWithPath: $0)) } ?? (DesignReview.enabled ? NotesStore(directory: DesignReview.notesDirectory) : NotesStore())
     #else
@@ -75,7 +73,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private lazy var notepad = NotepadPanelController(coordinator: self)
     private let callPrompt = CallPromptController()
     private let callDetector = CallDetector()
-    /// A main-window section to switch to, e.g. "notes" for the Notetaker.
     @Published var settingsPaneRequest: String?
     @Published var notetakerSettingsSelected = false
     /// A hand-edited note waiting for the user to confirm a rewrite.
@@ -147,7 +144,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         callDetector.onEvent = { [weak self] in self?.handleCall($0) }
         callSettingsWatch = settings.$detectCalls.sink { [weak self] in self?.applyCallDetection($0) }
         for note in notes.notes where note.needsWriteUp { writeUpNote(note.id, review: true) }
-        // Independent of TCC onboarding.
         Task { await prepareModel() }
         Task { @MainActor in tunerRunner.scheduleIfNeeded(history: history, settings: settings) }
         if !settings.onboardingComplete {
@@ -597,7 +593,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         self.streamer = nil
         do {
             let raw = try recorder.stop()
-            // Held-key duration includes microphone arming; the captured audio is processed separately.
             let held = Date().timeIntervalSince(keyPressedAt)
             guard held >= DictationProcessingPolicy.minimumClipDuration else {
                 Task { await streamer?.cancel() }
@@ -687,7 +682,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         let recordID = UUID()
         var audioURL: URL?
         do {
-            // ~5 ms per second of audio.
             let clip = try await Task.detached(priority: .userInitiated) {
                 let converted = try raw.segments.flatMap {
                     try AudioResampler.convert($0.samples, from: $0.sampleRate)
@@ -706,8 +700,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             logger.info("Transcribing \(clip.duration, privacy: .public)s clip with \(asrTimeout, privacy: .public)s budget")
             let engineName = await engine.engineName
             let transcript = try await Timeout.run(for: .seconds(asrTimeout)) {
-                // Long dictations were mostly transcribed while the key was held.
-                if let streamed = await streamer?.finish(raw) { return streamed }
+                    if let streamed = await streamer?.finish(raw) { return streamed }
                 return try await engine.transcribe(clip)
             }
             guard !Task.isCancelled else {
@@ -1158,7 +1151,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    /// Answers from one meeting, or from recent meetings when `noteID` is nil.
     func ask(_ question: String, about noteID: UUID?) async throws -> String {
         guard settings.notesUseAI else { throw NotesAIError.turnedOff }
         let source = noteID.flatMap(notes.note).map { [$0] } ?? Self.relevantMeetings(for: question, in: notes.notes)
@@ -1195,7 +1187,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         return "The AI couldn’t write this note: \(error.localizedDescription)"
     }
 
-    /// Meetings that mention the question's words first, then the newest.
     private static func relevantMeetings(for question: String, in notes: [Note], limit: Int = 30) -> [Note] {
         let words = question.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 3 }
         func hits(_ note: Note) -> Int {
@@ -1248,7 +1239,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             && notesModel != nil && liveSession?.noteID != note.id
     }
 
-    /// Learn quietly; ambiguous corrections require repeated, consistent evidence.
     private func learnFromEdits(_ corrections: [VocabularyCorrection]) {
         guard settings.learnFromEdits else { return }
         settings.learnedVocabulary.observe(corrections)

@@ -1,13 +1,11 @@
 import Foundation
 import PressayCore
 
-/// On-device vocabulary tuning: a daily matcher pass over recent transcripts plus an instant pass per dictation.
 @MainActor
 final class VocabularyTunerRunner: ObservableObject {
     private var passRunning = false
     private static let detInterval: TimeInterval = 24 * 3_600
 
-    /// Cheap to call often; the date gate decides whether work happens.
     func scheduleIfNeeded(history: HistoryStore, settings: AppSettings) {
         guard settings.learnFromEdits, !passRunning else { return }
         let store = settings.learnedVocabulary
@@ -54,7 +52,6 @@ final class VocabularyTunerRunner: ObservableObject {
         }
     }
 
-    /// Runs on the dictation path so the transcript that introduced a mishearing is already corrected.
     @discardableResult
     func learnImmediately(from transcript: String, settings: AppSettings) -> [LearnedRule] {
         guard settings.learnFromEdits else { return [] }

@@ -14,7 +14,6 @@ public struct Snippet: Codable, Hashable, Identifiable, Sendable {
 }
 
 public enum SnippetExpander {
-    /// The snippet when the whole dictation is just its trigger.
     public static func exactMatch(_ text: String, snippets: [Snippet]) -> Snippet? {
         let spoken = normalized(text)
         guard !spoken.isEmpty else { return nil }

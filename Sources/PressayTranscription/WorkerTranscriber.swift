@@ -70,7 +70,7 @@ public actor WorkerTranscriber: SpeechTranscriber {
             }
             throw PressayError.modelUnavailable("\(model.displayName) could not finish this audio. Try another model.")
         }
-        let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = model.plainTranscript(result.text)
         return model.isTranscriptionRefusal(text) ? "" : text
     }
 

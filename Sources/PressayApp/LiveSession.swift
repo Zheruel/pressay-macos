@@ -172,16 +172,25 @@ final class LiveSession: ObservableObject {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
             guard let self, phase == .recording else { return }
-            if pipeline.received(from: .others) == 0 { return showMissingSystemAudio() }
-            try? await Task.sleep(for: .seconds(86))
-            guard phase == .recording, pipeline.peak(of: .others) == 0 else { return }
+            if pipeline.received(from: .others) == 0 { showMissingSystemAudio() }
+            for _ in 0..<43 {
+                guard phase == .recording, !Task.isCancelled else { return }
+                if pipeline.peak(of: .others) > 0 {
+                    if notice == Self.missingSystemAudioNotice { notice = nil }
+                    return
+                }
+                try? await Task.sleep(for: .seconds(2))
+            }
+            guard phase == .recording, !Task.isCancelled else { return }
             logger.error("System audio has been digital silence for 90 s")
             showMissingSystemAudio()
         }
     }
 
+    private static let missingSystemAudioNotice = "Only your microphone is being transcribed. To include the other people, allow Pressay in System Settings › Privacy & Security › Screen & System Audio Recording, under System Audio Recording Only."
+
     private func showMissingSystemAudio() {
-        notice = "Only your microphone is being transcribed. To include the other people, allow Pressay in System Settings › Privacy & Security › Screen & System Audio Recording, under System Audio Recording Only."
+        notice = Self.missingSystemAudioNotice
     }
 
     private func injectFile(_ path: String) {

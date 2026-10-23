@@ -258,6 +258,17 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
+    public func plainTranscript(_ text: String) -> String {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // MOSS can emit diarization markers even when timestamps are disabled.
+        guard self == .moss,
+              text.range(of: #"^\[\d+(?:\.\d+)?\]"#, options: .regularExpression) != nil,
+              text.range(of: #"\[\d+(?:\.\d+)?\]$"#, options: .regularExpression) != nil else { return text }
+        return text.replacingOccurrences(of: #"\[(?:\d+(?:\.\d+)?|S\d{1,3})\]"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Only short output is judged, so a real dictation that merely *starts* with an apology survives.
     public func isTranscriptionRefusal(_ text: String, language: String = "auto") -> Bool {
         guard text.count <= 64 else { return false }

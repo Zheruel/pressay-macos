@@ -25,7 +25,6 @@ final class ChatGPTAccount: ObservableObject {
 
     var isSignedIn: Bool { credentials?.planUsageGranted == true }
 
-    /// Reuses this Mac's registration when there is one.
     func signIn() async {
         #if DEBUG
         guard !DesignReview.enabled else { return }
@@ -50,7 +49,7 @@ final class ChatGPTAccount: ObservableObject {
             )
             NSWorkspace.shared.open(url)
             let callback = try await listener.callback()
-            let signedIn = try await auth.complete(attempt: attempt, callback: callback)
+            let signedIn = try await auth.complete(attempt: attempt, callback: callback, expectedSubject: previous?.subject)
             try store.save(signedIn)
             credentials = signedIn
             NSApplication.shared.activate(ignoringOtherApps: true)

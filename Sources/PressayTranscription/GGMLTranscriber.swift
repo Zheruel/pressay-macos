@@ -170,7 +170,7 @@ public actor GGMLTranscriber: SpeechTranscriber {
         do {
             // Task cancellation (our Timeout wrapper) bridges to the native abort.
             let transcript = try await activeSession.run(samples, options: options)
-            let text = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = asrModel.plainTranscript(transcript.text)
             // LLM-style engines answer near-silence with a refusal or invented foreign-script text.
             return asrModel.isTranscriptionRefusal(text, language: language) ? "" : text
         } catch TranscribeError.outputTruncated(_, let partial) {
@@ -180,8 +180,7 @@ public actor GGMLTranscriber: SpeechTranscriber {
                     samples, sampleRate: sampleRate, session: session, depth: depth)
             }
             // Can't divide further: keep the partial decode rather than drop it.
-            let salvaged = (partial?.text ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let salvaged = asrModel.plainTranscript(partial?.text ?? "")
             return asrModel.isTranscriptionRefusal(salvaged, language: language) ? "" : salvaged
         }
     }

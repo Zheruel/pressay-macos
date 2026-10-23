@@ -19,8 +19,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
-        // Onboarding is a normal app window. Only the tiny recording overlay
-        // should float above whichever app the user is dictating into.
         window.level = .normal
         window.isReleasedWhenClosed = false
         window.center()

@@ -31,7 +31,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.center()
         window.setFrameAutosaveName("PressayMainWindow")
         let hosting = NSHostingController(rootView: SettingsRootView(coordinator: coordinator))
-        // The custom sidebar and content share the full window; note readers may add their native toolbar.
         hosting.sceneBridgingOptions = [.toolbars, .title]
         hosting.sizingOptions = []
         window.contentViewController = hosting

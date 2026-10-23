@@ -1,7 +1,6 @@
 import PressayCore
 import SwiftUI
 
-/// The live workspace shares Graphite's page rhythm; saved meeting notes keep their existing reader.
 struct LiveMeetingView: View {
     @ObservedObject var session: LiveSession
     let title: String

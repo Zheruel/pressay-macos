@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The approved Graphite canvas tokens, resolved against the window's appearance.
 enum PressayPalette {
     static let base = adaptive(0x202125, 0xf6f6f8)
     static let surface = adaptive(0x27282d, 0xffffff)

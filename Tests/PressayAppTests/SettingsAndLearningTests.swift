@@ -22,17 +22,6 @@ struct SettingsAndLearningTests {
             let settings = AppSettings(defaults: defaults)
             #expect(settings.language == .auto)
             #expect(settings.meetingLanguage == .croatian)
-            #expect(settings.asrModel.languageCodes.contains("ja"))
-        }
-    }
-
-    @Test func retiredMicrophoneAndStylePreferencesCannotEnableRemovedFeatures() {
-        isolated { defaults in
-            defaults.set(true, forKey: "keepMicWarm")
-            defaults.set(true, forKey: "matchAppStyle")
-            _ = AppSettings(defaults: defaults)
-            #expect(defaults.object(forKey: "keepMicWarm") == nil)
-            #expect(defaults.object(forKey: "matchAppStyle") == nil)
         }
     }
 

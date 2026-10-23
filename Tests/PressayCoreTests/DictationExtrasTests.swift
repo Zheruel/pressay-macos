@@ -19,7 +19,6 @@ struct SnippetTests {
             == "Book a slot here: https://cal.com/tin.")
         #expect(SnippetExpander.expand("Reach me at my work email, thanks.", snippets: snippets)
             == "Reach me at tin@work.com, thanks.")
-        // Whole words only.
         #expect(SnippetExpander.expand("Check my emails", snippets: snippets) == "Check my emails")
     }
 

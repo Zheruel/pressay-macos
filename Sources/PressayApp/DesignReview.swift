@@ -4,7 +4,6 @@
     import PressayCore
 
     /// Isolated, synthetic data for repeatable native screenshot comparisons.
-    /// Release builds contain neither this mode nor its fixtures.
     @MainActor
     enum DesignReview {
         static var enabled: Bool { ProcessInfo.processInfo.environment["PRESSAY_DESIGN_REVIEW"] == "1" }

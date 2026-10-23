@@ -22,14 +22,24 @@ All speech models default to automatic detection. Fixed language choices are ava
 
 ## Verification
 
-- `make test`: 173 tests passed (137 Core XCTest, 6 transcription XCTest, 22 Core Swift Testing, 8 app settings/learning tests).
+- `make test`: 172 tests passed (137 Core XCTest, 6 transcription XCTest, 22 Core Swift Testing, 7 app settings/learning tests).
 - `make app`: release build and bundled native ASR runtime succeeded; signed with the existing local signing identity.
 - 20 synthetic speech checks: English and German through all nine models, Japanese through Qwen 1.7B and Whisper. All completed successfully with automatic language detection. [Outputs](assets/redesign/asr-smoke.json) are smoke evidence, not an accuracy ranking.
 - Native interaction checks: navigation; history search using ⌘F; dictionary validation/save; Add/Edit snippet forms; personal task completion and undo; ranked model menu; Whisper language list and Japanese selection; switching to Qwen resets to Automatic; onboarding permission progression and completion; meeting widget Open navigation; empty state.
 - Native screenshots use isolated synthetic content. Both appearances, the menu bar, onboarding, live meeting workspace and recording widget were inspected against the canvas. System menus, scrollbars, traffic lights and focus rendering follow macOS preferences.
 - Saved note reader checked byte-for-byte; `git diff --check` and the 84-artboard design validator passed.
 
-**Live microphone/Bluetooth capture, insertion into other apps, provider-account requests and Reminders writes were not exercised during this review.** Review mode deliberately bypasses hardware, account access and system permission changes; synthetic speech checks exercised the real bundled transcription runtimes separately.
+Final hardware QA used the installed profile with synthetic speech: webcam microphone → Orukeet → automatic insertion into TextEdit and Stickies; MOSS meeting capture from system audio; live transcript, personal notes and Stop/save. The existing Claude connection verified successfully. Temporary QA dictations/meetings were removed and original preferences restored. The MacBook was in clamshell mode, so its built-in microphone returned silence; dictation used the webcam input.
+
+**Bluetooth capture, physical modifier-only hotkey dispatch, ChatGPT browser sign-in and Reminders writes were not exercised.** Automation sends key events directly to apps and cannot reproduce a physical modifier-only global hotkey. The microphone/transcription/insertion pipeline was invoked with a temporary debug trigger that is absent from release source and binaries.
+
+Live hardware QA also caught delayed system-audio startup leaving a stale permissions warning, and MOSS returning raw timing markers despite timestamps being disabled. The warning now clears when audio arrives. MOSS metadata is removed before text enters either dictation or meeting transcripts; literal bracketed text and other models are preserved. The [model’s documented segment format](https://huggingface.co/docs/transformers/en/model_doc/moss_transcribe_diarize) explains those markers.
+
+## Audit and OpenAI Docs
+
+Removed redundant catalog/count assertions, the retired-preference deletion test, and comments that restated names or control flow. Migration, multilingual text preservation, correction evidence, explicit removals and credential storage remain covered.
+
+The [official Sign in with ChatGPT guide](https://developers.openai.com/siwc/token-sharing-open-source/sign-in#4-validate-the-id-token-and-chatgpt-plan-permission) requires a returning account’s verified identity to match before credentials are replaced. Returning sign-in now checks the saved subject in addition to signature, issuer, audience, nonce and expiry. A filesystem integration check verifies first-use credential creation, rotation, owner-only permissions and stable host identity. Request fields match the [documented ChatGPT-plan Responses API requirements](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations#responses-api-requirements).
 
 ## Screenshots
 

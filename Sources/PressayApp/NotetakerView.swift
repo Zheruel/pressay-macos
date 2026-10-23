@@ -19,7 +19,6 @@ enum NotetakerRoute: Hashable {
     case actionItems
 }
 
-/// The Notetaker page of the main window: past meetings, then a note page pushed on top.
 struct NotetakerPage: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var store: NotesStore
@@ -214,7 +213,6 @@ func copyToPasteboard(_ text: String) {
     NSPasteboard.general.setString(text, forType: .string)
 }
 
-/// Shared entry point from Home and the meeting library.
 struct StartNotetakerButton: View {
     @ObservedObject var coordinator: AppCoordinator
     var prominent = false
@@ -1295,7 +1293,6 @@ private struct ActionItemToggleStyle: ToggleStyle {
     }
 }
 
-/// A soft rounded wash under the pointer, for rows that open or act on click.
 struct HoverHighlight: ViewModifier {
     @State private var hovering = false
 
