@@ -13,3 +13,6 @@ LocalFlow.app/
 .env
 .env.*
 .claude/settings.local.json
+
+# Generated portable design editor; canonical artboards are committed.
+designs/Pressay-Graphite.html

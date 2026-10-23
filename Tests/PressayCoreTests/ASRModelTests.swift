@@ -2,6 +2,14 @@ import XCTest
 @testable import PressayCore
 
 final class ASRModelTests: XCTestCase {
+    func testMOSSMetadataDoesNotLeakIntoPlainTranscripts() {
+        XCTAssertEqual(ASRModel.moss.plainTranscript("[0.00]Please send the notes.[3.39]"), "Please send the notes.")
+        XCTAssertEqual(ASRModel.moss.plainTranscript("[0.00][S01]你好。[2.00][2.50][S02]再见。[4.00]"), "你好。 再见。")
+        let literal = "Keep [12] and [S01] in the example."
+        XCTAssertEqual(ASRModel.moss.plainTranscript(literal), literal)
+        XCTAssertEqual(ASRModel.orukeet.plainTranscript("[0.00]Example[3.39]"), "[0.00]Example[3.39]")
+    }
+
     func testRetiredAndAbsentValuesFallBackToTheDefault() {
         for stored in ["parakeetV3", "whisperKit", "", "nonsense"] {
             XCTAssertEqual(
@@ -46,7 +54,6 @@ final class ASRModelTests: XCTestCase {
     }
 
     func testModelsWithoutAHintNeverOfferAFixedLanguage() {
-        // Offering a choice would imply a hint the model rejects.
         for model in ASRModel.allCases where !model.supportsLanguageHint {
             XCTAssertEqual(model.supportedLanguages.count, 1, "\(model.rawValue)")
             XCTAssertFalse(model.offersLanguageChoice, "\(model.rawValue)")
@@ -62,7 +69,6 @@ final class ASRModelTests: XCTestCase {
     }
 
     func testWhisperNeverTreatsAnApologyAsARefusal() {
-        // Whisper emits no assistant replies; filtering would drop a real dictation.
         XCTAssertFalse(
             ASRModel.whisperTurboGGML.isTranscriptionRefusal("I'm sorry, I didn't understand."))
     }
@@ -73,18 +79,19 @@ final class ASRModelTests: XCTestCase {
         XCTAssertFalse(ASRModel.funASRMLTNano.isTranscriptionRefusal("Let's ship the release today."))
     }
 
-    func testForeignScriptOnAnEnglishOnlyModelIsSuppressed() {
-        // Hallucinated on near-silent clips.
+    func testForeignScriptIsSuppressedOnlyForAnExplicitEnglishHint() {
         for model in [ASRModel.funASRMLTNano, .qwen3ASR17, .qwen3ASR06] {
-            XCTAssertTrue(model.isTranscriptionRefusal("아, 그거는."), "\(model.rawValue)")
-            XCTAssertTrue(model.isTranscriptionRefusal("그는 그의 정체성을 가진 것이다."), "\(model.rawValue)")
+            XCTAssertTrue(model.isTranscriptionRefusal("아, 그거는.", language: "en"), "\(model.rawValue)")
+            XCTAssertTrue(model.isTranscriptionRefusal("그는 그의 정체성을 가진 것이다.", language: "en"), "\(model.rawValue)")
         }
     }
 
-    func testForeignScriptIsKeptWhenTheModelCanTranscribeIt() {
-        XCTAssertFalse(ASRModel.whisperTurboGGML.isTranscriptionRefusal("아, 그거는."))
-        XCTAssertFalse(ASRModel.whisperTurboGGML.isTranscriptionRefusal("这是一个测试。"))
-        XCTAssertFalse(ASRModel.whisperTurboGGML.isTranscriptionRefusal("Это тест."))
+    func testAutomaticKeepsAllScriptsAcrossEveryModel() {
+        for model in ASRModel.allCases {
+            for text in ["아, 그거는.", "这是一个测试。", "Это тест."] {
+                XCTAssertFalse(model.isTranscriptionRefusal(text), model.rawValue)
+            }
+        }
     }
 
     func testEnglishWithPunctuationAndAccentsIsNotForeign() {

@@ -2,247 +2,372 @@ import AppKit
 import PressayCore
 import SwiftUI
 
-// MARK: - Menu bar
-
 struct MenuContentView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings
     @ObservedObject private var history: HistoryStore
-
+    @ObservedObject private var permissions: PermissionController
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         settings = coordinator.settings
         history = coordinator.history
+        permissions = coordinator.permissions
     }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(nsImage: PressayBrand.appIcon).resizable().frame(width: 34, height: 34)
+                Text("Pressay").font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Circle().fill(
+                    coordinator.modelReady && coordinator.permissions.allGranted
+                        ? PressayPalette.success : PressayPalette.warning
+                ).frame(width: 6, height: 6)
+            }.padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 18)
             if !settings.onboardingComplete {
-                setupRequired
+                Text("Three permissions, then you’re ready.").font(.system(size: 12)).foregroundStyle(
+                    PressayPalette.muted
+                ).padding(.horizontal, 10).padding(.bottom, 16)
+                Button("Continue setup") { coordinator.showOnboarding() }.buttonStyle(
+                    PressayButtonStyle(kind: .primary)
+                ).padding(.horizontal, 10)
             } else {
-                header
-                if !coordinator.permissions.allGranted || !coordinator.modelReady {
-                    attentionBanner.padding(.horizontal, 6).padding(.bottom, 6)
+                if !coordinator.modelReady || !coordinator.permissions.allGranted {
+                    Button {
+                        if permissions.allGranted {
+                            coordinator.settingsPaneRequest = "general"
+                            coordinator.showSettings()
+                        } else {
+                            coordinator.showOnboarding()
+                        }
+                    } label: {
+                        Label(
+                            permissions.allGranted ? "Speech model needs attention" : "A permission needs attention",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .font(.system(size: 11)).foregroundStyle(PressayPalette.warning)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(11)
+                        .background(PressayPalette.warningSurface, in: .rect(cornerRadius: 9))
+                    }.buttonStyle(.plain).padding(.bottom, 12)
                 }
-                if coordinator.cleanupConfigured {
-                    Toggle(isOn: $settings.claudeCleanup) {
-                        Text("AI Cleanup")
-                    }
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .padding(.horizontal, 10)
-                    .frame(height: 28)
-                    MenuSeparator()
+                HStack {
+                    Text("Hold to talk").font(.system(size: 12))
+                    Spacer()
+                    Text(settings.holdKey.shortcutLabel).font(.system(size: 10)).padding(.horizontal, 9).padding(
+                        .vertical, 5
+                    )
+                    .background(PressayPalette.button, in: .rect(cornerRadius: 5))
+                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(PressayPalette.strongLine))
+                }.padding(.horizontal, 12).padding(.vertical, 13)
+                    .background(PressayPalette.surface, in: .rect(cornerRadius: 9))
+                    .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(PressayPalette.line))
+                Toggle(isOn: $settings.claudeCleanup) {
+                    Label("AI Cleanup", systemImage: "sparkles").font(.system(size: 12))
                 }
-                recent
-                MenuSeparator()
+                .toggleStyle(PressaySwitchStyle()).padding(.horizontal, 11).padding(.vertical, 17)
+                menuDivider
+                Text("RECENT DICTATIONS").font(.system(size: 10, weight: .semibold)).foregroundStyle(
+                    PressayPalette.muted
+                ).padding(.horizontal, 11).padding(.top, 14).padding(.bottom, 5)
+                if history.records.isEmpty {
+                    Text("Your dictations appear here.").font(.system(size: 12)).foregroundStyle(PressayPalette.muted)
+                        .padding(18)
+                }
+                ForEach(Array(history.records.prefix(2).enumerated()), id: \.element.id) { index, record in
+                    if index > 0 { menuDivider }
+                    CompactHistoryRow(record: record, coordinator: coordinator)
+                }
+                menuDivider.padding(.top, 8).padding(.bottom, 10)
                 if coordinator.liveSession != nil {
-                    MenuRow(title: "Stop Notetaker") { coordinator.stopRecording() }
-                    MenuRow(title: "Show Notepad") { coordinator.showNotepadIfRecording() }
+                    MenuRow(title: "Stop Notetaker", icon: "stop.fill") { coordinator.stopRecording() }
+                    MenuRow(title: "Show notepad", icon: "rectangle.on.rectangle") {
+                        coordinator.showNotepadIfRecording()
+                    }
                 } else {
-                    if coordinator.meetingStarting {
-                        MenuRow(title: "Cancel Notetaker Setup") { coordinator.cancelMeetingStart() }
-                    } else {
-                        MenuRow(title: "Start Notetaker") { coordinator.startMeeting() }
+                    MenuRow(
+                        title: coordinator.meetingStarting ? "Cancel Notetaker setup" : "Start Notetaker", icon: "plus"
+                    ) {
+                        if coordinator.meetingStarting {
+                            coordinator.cancelMeetingStart()
+                        } else {
+                            coordinator.startMeeting()
+                        }
                     }
                 }
-                MenuRow(title: "Notetaker") { coordinator.showNotes() }
-                MenuRow(title: "Settings…", shortcut: "⌘,") { coordinator.showSettings() }
-                    .keyboardShortcut(",", modifiers: .command)
-                MenuSeparator()
-                MenuRow(title: "Quit Pressay", shortcut: "⌘Q") { NSApplication.shared.terminate(nil) }
-                    .keyboardShortcut("q", modifiers: .command)
+                MenuRow(title: "Open Pressay", icon: "rectangle.on.rectangle") { coordinator.showSettings() }
+                MenuRow(title: "Settings…", icon: "gearshape", shortcut: "⌘,") {
+                    coordinator.settingsPaneRequest = "general"
+                    coordinator.showSettings()
+                }.keyboardShortcut(",", modifiers: .command)
             }
+            menuDivider.padding(.top, 10).padding(.bottom, 5)
+            MenuRow(title: "Quit Pressay", shortcut: "⌘Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut(
+                "q", modifiers: .command)
         }
-        .padding(6)
-        .frame(width: 320)
+        .padding(12).frame(width: 348)
+        .font(.system(size: 13)).foregroundStyle(PressayPalette.text)
+        .background(PressayPalette.base).tint(PressayPalette.accent)
     }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            Image(nsImage: PressayBrand.appIcon)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 28, height: 28)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Pressay").font(.headline)
-                HStack(spacing: 5) {
-                    Circle().fill(statusColor).frame(width: 6, height: 6)
-                    Text(statusLine).font(.subheadline).foregroundStyle(.secondary)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-    }
-
-    private var statusColor: Color {
-        coordinator.modelReady && coordinator.permissions.allGranted ? .green : .orange
-    }
-
-    private var statusLine: String {
-        guard coordinator.modelReady else { return coordinator.modelPreparing ? "Loading model…" : "Model not loaded" }
-        let model = settings.asrModel.displayName.components(separatedBy: " ").first ?? settings.asrModel.displayName
-        let key = settings.holdKey.displayName
-        guard settings.claudeCleanup, coordinator.cleanupConfigured else { return "Hold \(key) to talk · \(model)" }
-        let cleanup = switch settings.cleanupProvider {
-        case .claude: settings.claudeCleanupModel == .haiku55 ? "Haiku" : "Sonnet"
-        case .chatgpt: "ChatGPT"
-        }
-        return "Hold \(key) to talk · \(model) + \(cleanup)"
-    }
-
-    @ViewBuilder
-    private var recent: some View {
-        if history.records.isEmpty {
-            Text("Your dictations will show up here.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-        } else {
-            Text("Recent")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                .padding(.bottom, 2)
-            ForEach(history.records.prefix(3)) { record in
-                CompactHistoryRow(record: record, coordinator: coordinator)
-            }
-        }
-    }
-
-    private var setupRequired: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                Image(nsImage: PressayBrand.appIcon)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 48, height: 48)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Welcome to Pressay").font(.headline)
-                    Text("Three quick permissions, then hold a key and speak.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Button("Continue Setup") { coordinator.showOnboarding() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
-            MenuSeparator()
-            MenuRow(title: "Quit Pressay", shortcut: "⌘Q") { NSApplication.shared.terminate(nil) }
-        }
-        .padding(10)
-    }
-
-    private var attentionBanner: some View {
-        Button {
-            if !coordinator.permissions.allGranted {
-                coordinator.showOnboarding()
-            } else {
-                coordinator.showSettings()
-            }
-        } label: {
-            Label(
-                coordinator.permissions.allGranted ? "Speech model needs attention" : "A permission needs attention",
-                systemImage: "exclamationmark.triangle.fill"
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.bordered)
-        .tint(.orange)
-    }
+    private var menuDivider: some View { Rectangle().fill(PressayPalette.line).frame(height: 1) }
 }
 
 private struct MenuRow: View {
     let title: String
-    var shortcut: String?
+    var icon: String? = nil
+    var shortcut: String? = nil
     let action: () -> Void
     @State private var hovering = false
-
     var body: some View {
         Button(action: action) {
-            HStack {
+            HStack(spacing: 10) {
+                if let icon { Image(systemName: icon).font(.system(size: 14)).frame(width: 16) }
                 Text(title)
                 Spacer()
-                if let shortcut {
-                    Text(shortcut).foregroundStyle(hovering ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
-                }
-            }
-            .font(.system(size: 13))
-            .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(hovering ? Color.accentColor : .clear)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-    }
-}
-
-private struct MenuSeparator: View {
-    var body: some View {
-        Divider().padding(.horizontal, 10).padding(.vertical, 5)
+                if let shortcut { Text(shortcut).font(.system(size: 10)).foregroundStyle(PressayPalette.muted) }
+            }.font(.system(size: 12)).padding(.horizontal, 11).frame(height: 38)
+                .background(hovering ? PressayPalette.hover : .clear, in: .rect(cornerRadius: 7)).contentShape(.rect)
+        }.buttonStyle(.plain).onHover { hovering = $0 }
     }
 }
 
 private struct CompactHistoryRow: View {
     let record: DictationRecord
     let coordinator: AppCoordinator
-    @State private var hovering = false
     @State private var copied = false
-
     var body: some View {
-        Button {
-            coordinator.copy(record)
-            withAnimation(.snappy) { copied = true }
-            Task {
-                try? await Task.sleep(for: .seconds(1.2))
-                withAnimation(.snappy) { copied = false }
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(record.referenceText).font(.system(size: 11)).lineSpacing(3).lineLimit(2)
+                HStack(spacing: 5) {
+                    AppIcon(bundleID: record.targetBundleID, size: 16)
+                    Text(
+                        copied
+                            ? "Copied"
+                            : [
+                                AppInfo.name(for: record.targetBundleID),
+                                record.createdAt.formatted(date: .omitted, time: .shortened),
+                            ].compactMap { $0 }.joined(separator: " · ")
+                    )
+                    .font(.system(size: 10)).foregroundStyle(PressayPalette.muted)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                coordinator.copy(record)
+                copied = true
+            } label: {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12)).frame(
+                    width: 24, height: 28)
             }
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(record.referenceText)
-                    .font(.system(size: 13))
-                    .lineLimit(1)
-                    .foregroundStyle(hovering ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-                Text(copied ? "Copied" : meta)
-                    .font(.system(size: 11))
-                    .foregroundStyle(hovering ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
-                    .contentTransition(.opacity)
+            .buttonStyle(.plain).foregroundStyle(PressayPalette.muted).help("Copy dictation").accessibilityLabel(
+                "Copy dictation")
+        }.padding(.vertical, 12).padding(.horizontal, 11)
+            .contextMenu {
+                Button("Copy") { coordinator.copy(record) }
+                Button("Paste again") { coordinator.retry(record) }
+                Button("Delete", role: .destructive) { try? coordinator.history.delete(record) }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(hovering ? Color.accentColor : .clear)
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help("Click to copy")
-        .contextMenu {
-            Button("Copy") { coordinator.copy(record) }
-            Button("Paste Again") { coordinator.retry(record) }
-            Divider()
-            Button("Delete", role: .destructive) { try? coordinator.history.delete(record) }
+    }
+}
+
+enum SettingsSection: String {
+    case home, notes, history, dictionary, snippets, general, claude
+    var title: String {
+        switch self {
+        case .home: "Home"
+        case .notes: "Notetaker"
+        case .history: "History"
+        case .dictionary: "Dictionary"
+        case .snippets: "Snippets"
+        case .general: "General"
+        case .claude: "AI Cleanup"
         }
     }
+}
 
-    private var meta: String {
-        var parts: [String] = []
-        if let app = AppInfo.name(for: record.targetBundleID) { parts.append(app) }
-        parts.append(record.createdAt.formatted(.relative(presentation: .named)))
-        return parts.joined(separator: " · ")
+struct SettingsRootView: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject private var settings: AppSettings
+    @ObservedObject private var permissions: PermissionController
+    @State private var selection =
+        ProcessInfo.processInfo.environment["PRESSAY_PANE"].flatMap(SettingsSection.init(rawValue:)) ?? .home
+    init(coordinator: AppCoordinator) {
+        self.coordinator = coordinator
+        settings = coordinator.settings
+        permissions = coordinator.permissions
+    }
+    var body: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(nsImage: PressayBrand.appIcon).resizable().frame(width: 31, height: 31)
+                    Text("Pressay").font(.system(size: 17, weight: .semibold)).tracking(-0.45)
+                }.padding(.horizontal, 11).padding(.top, 68).padding(.bottom, 26)
+                navGroup([.home, .notes, .history])
+                Spacer().frame(height: 20)
+                navGroup([.dictionary, .snippets])
+                Spacer().frame(height: 20)
+                navGroup([.general, .claude])
+                Spacer(minLength: 20)
+                VStack(alignment: .leading, spacing: 6) {
+                    Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.bottom, 9)
+                    if let session = coordinator.liveSession {
+                        MeetingRecordingStatus(session: session)
+                    } else {
+                        HStack(spacing: 7) {
+                            Circle().fill(
+                                coordinator.modelReady && permissions.allGranted
+                                    ? PressayPalette.success : PressayPalette.warning
+                            ).frame(width: 5, height: 5)
+                            Text(
+                                !permissions.allGranted
+                                    ? "Needs permission"
+                                    : coordinator.modelReady
+                                        ? "Ready to dictate"
+                                        : coordinator.modelPreparing ? "Preparing model…" : "Needs attention"
+                            )
+                            .font(.system(size: 11))
+                        }
+                    }
+                    Text("On-device · \(coordinator.activeSpeechModelName)").font(.system(size: 10)).foregroundStyle(
+                        PressayPalette.muted)
+                }.padding(.horizontal, 11).padding(.bottom, 14)
+            }.padding(.horizontal, 12).frame(width: 216).background(PressayPalette.sidebar)
+                .overlay(alignment: .trailing) { Rectangle().fill(PressayPalette.line).frame(width: 1) }
+            Group {
+                switch selection {
+                case .home: HomeView(coordinator: coordinator) { selection = $0 }
+                case .notes: NotetakerPage(coordinator: coordinator)
+                case .history: HistoryView(coordinator: coordinator)
+                case .dictionary: DictionarySettingsView(coordinator: coordinator)
+                case .snippets: SnippetsSettingsView(coordinator: coordinator)
+                case .general: GeneralSettingsView(coordinator: coordinator)
+                case .claude: ClaudeCleanupSettingsView(coordinator: coordinator)
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity).background(PressayPalette.base)
+        }
+        .font(.system(size: 13)).foregroundStyle(PressayPalette.text)
+        .buttonStyle(PressayButtonStyle()).toggleStyle(PressaySwitchStyle()).tint(PressayPalette.accent)
+        .ignoresSafeArea(.container, edges: .top)
+        .onReceive(coordinator.$settingsPaneRequest.compactMap { $0 }) { pane in
+            selection = SettingsSection(rawValue: pane) ?? selection
+            coordinator.settingsPaneRequest = nil
+        }
+        .frame(minWidth: 900, minHeight: 620)
+    }
+    private func navGroup(_ sections: [SettingsSection]) -> some View {
+        ForEach(sections, id: \.rawValue) { section in
+            Button {
+                selection = section
+            } label: {
+                HStack {
+                    Text(section.title).font(.system(size: 13, weight: selection == section ? .semibold : .regular))
+                    Spacer()
+                    if section == .notes, coordinator.liveSession != nil {
+                        Circle().fill(PressayPalette.danger).frame(width: 6, height: 6)
+                    }
+                }
+                .foregroundStyle(selection == section ? PressayPalette.text : PressayPalette.navigation)
+                .padding(.horizontal, 12).frame(height: 38)
+                .background(selection == section ? PressayPalette.selected : .clear, in: .rect(cornerRadius: 7))
+                .contentShape(.rect)
+            }.buttonStyle(.plain).accessibilityAddTraits(selection == section ? .isSelected : [])
+        }
+    }
+}
+
+struct StatusLabel: View {
+    let text: String
+    let color: Color
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: text == "Ready" || text == "Allowed" ? "checkmark" : "circle.fill").font(
+                .system(size: 9, weight: .semibold))
+            Text(text)
+        }
+        .font(.system(size: 10, weight: .medium)).foregroundStyle(color)
+        .padding(.horizontal, 9).padding(.vertical, 4)
+        .background(
+            text == "Ready" || text == "Allowed" ? PressayPalette.successSurface : PressayPalette.warningSurface,
+            in: .capsule)
+    }
+}
+
+private struct HomeView: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject private var history: HistoryStore
+    @ObservedObject private var settings: AppSettings
+    let open: (SettingsSection) -> Void
+    init(coordinator: AppCoordinator, open: @escaping (SettingsSection) -> Void) {
+        self.coordinator = coordinator
+        history = coordinator.history
+        settings = coordinator.settings
+        self.open = open
+    }
+    private var stats: DictationStats {
+        DictationStats(
+            entries: history.records.map {
+                .init(date: $0.createdAt, words: DictationStats.wordCount($0.referenceText), duration: $0.duration)
+            })
+    }
+    var body: some View {
+        PressayPage {
+            HStack(alignment: .top, spacing: 24) {
+                HStack(alignment: .top, spacing: 0) {
+                    metric("Words this week", stats.wordsThisWeek.formatted())
+                    metricDivider
+                    metric("Time saved this week", "\(stats.minutesSavedThisWeek) min", inset: 17)
+                    metricDivider
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Speaking pace").font(.system(size: 12)).foregroundStyle(PressayPalette.muted).frame(
+                            height: 18)
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Text(stats.wordsPerMinute.map(String.init) ?? "—").font(.system(size: 28, weight: .medium))
+                                .tracking(-0.8).frame(height: 41)
+                            if stats.wordsPerMinute != nil {
+                                Text("wpm").font(.system(size: 12)).foregroundStyle(PressayPalette.muted)
+                            }
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 17)
+                    metricDivider
+                    metric("Streak", "\(stats.streakDays) \(stats.streakDays == 1 ? "day" : "days")", inset: 17)
+                }
+                StartNotetakerButton(coordinator: coordinator)
+            }.padding(.bottom, 28)
+            Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.bottom, 28)
+            HStack {
+                Text("Recent dictations").font(.system(size: 15, weight: .semibold)).frame(height: 22)
+                Spacer()
+                if !history.records.isEmpty {
+                    Button("View history") { open(.history) }.buttonStyle(.plain).foregroundStyle(PressayPalette.accent)
+                        .font(.system(size: 12))
+                }
+            }.padding(.bottom, 12)
+            if history.records.isEmpty {
+                PressayGroup {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("No dictations yet").font(.system(size: 13, weight: .medium))
+                        Text("Hold \(settings.holdKey.displayName) in any text field to dictate.").font(
+                            .system(size: 12)
+                        ).foregroundStyle(PressayPalette.muted)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.vertical, 30)
+                }
+            } else {
+                PressayGroup {
+                    ForEach(history.records.prefix(6)) { record in
+                        HistoryRow(record: record, coordinator: coordinator, showsDay: true)
+                    }
+                }
+            }
+        }
+    }
+    private var metricDivider: some View { Rectangle().fill(PressayPalette.line).frame(width: 1, height: 67) }
+    private func metric(_ title: String, _ value: String, inset: CGFloat = 0) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.system(size: 12)).foregroundStyle(PressayPalette.muted).frame(height: 18).lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(value).font(.system(size: 28, weight: .medium)).tracking(-0.8).frame(height: 41).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.8)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, inset)
     }
 }
 
@@ -256,7 +381,9 @@ enum AppInfo {
         guard let bundleID else { return nil }
         if let cached = names[bundleID] { return cached }
         let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
-        let name = url.map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") }
+        let name = url.map {
+            FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "")
+        }
         names[bundleID] = name
         return name
     }
@@ -271,480 +398,29 @@ enum AppInfo {
     }
 }
 
-// MARK: - Settings shell
-
-struct SettingsRootView: View {
-    @ObservedObject var coordinator: AppCoordinator
-    // PRESSAY_PANE opens a given pane, for design review.
-    @State private var selection: SettingsSection? = ProcessInfo.processInfo.environment["PRESSAY_PANE"]
-        .flatMap(SettingsSection.init(rawValue:)) ?? .home
-
-    var body: some View {
-        NavigationSplitView {
-            List(SettingsSection.allCases, selection: $selection) { section in
-                Label {
-                    Text(section.title)
-                } icon: {
-                    SettingsIconTile(systemImage: section.systemImage, color: section.tint)
-                }
-                // A badge, not a Spacer in the label: that widened the row and shifted the sidebar.
-                .badge(section == .notes && coordinator.liveSession != nil ? Text(Image(systemName: "record.circle.fill")).foregroundColor(.red) : nil)
-                .accessibilityValue(section == .notes && coordinator.liveSession != nil ? "Recording" : "")
-                .tag(section)
-            }
-            .frame(minWidth: 215, idealWidth: 215)
-            .navigationSplitViewColumnWidth(215)
-            .toolbar(removing: .sidebarToggle)
-        } detail: {
-            switch selection ?? .home {
-            case .notes:
-                NotetakerPage(coordinator: coordinator)
-            case let section:
-                Group {
-                    switch section {
-                    case .home: HomeView(coordinator: coordinator) { selection = $0 }
-                    case .general: GeneralSettingsView(coordinator: coordinator)
-                    case .claude: ClaudeCleanupSettingsView(coordinator: coordinator)
-                    case .dictionary: DictionarySettingsView(coordinator: coordinator)
-                    case .snippets: SnippetsSettingsView(coordinator: coordinator)
-                    default: HistoryView(coordinator: coordinator)
-                    }
-                }
-                // Grouped forms read badly when stretched across a wide window.
-                .frame(maxWidth: 760)
-                .frame(maxWidth: .infinity)
-                .navigationTitle(section.title)
-                .toolbar {
-                    // Panes without toolbar items get a shorter, hard-edged toolbar that shifts the sidebar.
-                    ToolbarItem(placement: .primaryAction) {
-                        Color.clear.frame(width: 1, height: 28).accessibilityHidden(true)
-                    }
-                    .sharedBackgroundVisibility(.hidden)
-                }
-            }
-        }
-        .onReceive(coordinator.$settingsPaneRequest.compactMap { $0 }) { pane in
-            selection = SettingsSection(rawValue: pane) ?? selection
-            coordinator.settingsPaneRequest = nil
-        }
-        .frame(minWidth: 760, minHeight: 520)
-    }
-}
-
-private struct PaneHero: View {
-    let section: SettingsSection
-    var title: String?
-    let blurb: String
-
-    var body: some View {
-        Section {
-            VStack(spacing: 0) {
-                SettingsIconTile(systemImage: section.systemImage, color: section.tint, size: 56)
-                Text(title ?? section.title)
-                    .font(.title2.weight(.bold))
-                    .padding(.top, 8)
-                Text(blurb)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .frame(maxWidth: 400)
-                    .padding(.top, 2)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-        }
-    }
-}
-
-private struct SettingsIconTile: View {
-    let systemImage: String
-    let color: Color
-    var size: CGFloat = 20
-
-    var body: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: size * 0.55, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(
-                RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
-                    .fill(color.gradient)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
-                    .strokeBorder(.white.opacity(0.18), lineWidth: 0.5)
-            )
-    }
-}
-
-private enum SettingsSection: String, CaseIterable, Identifiable {
-    case home
-    case general
-    case claude
-    case dictionary
-    case snippets
-    case notes
-    case history
-
-    var id: Self { self }
-    var title: String {
-        switch self {
-        case .home: "Home"
-        case .general: "General"
-        case .claude: "AI Cleanup"
-        case .dictionary: "Dictionary"
-        case .snippets: "Snippets"
-        case .notes: "Notetaker"
-        case .history: "History"
-        }
-    }
-    var systemImage: String {
-        switch self {
-        case .home: "house.fill"
-        case .general: "gearshape.fill"
-        case .claude: "sparkles"
-        case .dictionary: "character.book.closed.fill"
-        case .snippets: "text.quote"
-        case .notes: "person.2.wave.2.fill"
-        case .history: "clock.fill"
-        }
-    }
-    var tint: Color {
-        switch self {
-        case .home: .indigo
-        case .general: Color(nsColor: .systemGray)
-        case .claude: Color(red: 0.91, green: 0.47, blue: 0.31)
-        case .dictionary: .blue
-        case .snippets: .teal
-        case .notes: .orange
-        case .history: .purple
-        }
-    }
-}
-
-/// Neutral status: only the dot carries color, as in System Settings.
-private struct StatusLabel: View {
-    let text: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            Text(text).foregroundStyle(.secondary)
-        }
-    }
-}
-
-// MARK: - Home
-
-/// The landing page: how much Pressay saved this week, and the latest dictations.
-private struct HomeView: View {
-    @ObservedObject var coordinator: AppCoordinator
-    @ObservedObject private var history: HistoryStore
-    @ObservedObject private var settings: AppSettings
-    @ObservedObject private var permissions: PermissionController
-    let open: (SettingsSection) -> Void
-
-    init(coordinator: AppCoordinator, open: @escaping (SettingsSection) -> Void) {
-        self.coordinator = coordinator
-        history = coordinator.history
-        settings = coordinator.settings
-        permissions = coordinator.permissions
-        self.open = open
-    }
-
-    var body: some View {
-        let stats = stats
-        ScrollView {
-            VStack(alignment: .leading, spacing: 26) {
-                greeting
-                if !permissions.allGranted || !coordinator.modelReady { attention }
-                GlassEffectContainer(spacing: 12) {
-                    Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                        GridRow {
-                            StatTile(title: "Words", value: stats.wordsThisWeek.formatted(), caption: "this week", systemImage: "text.word.spacing", tint: .indigo)
-                            StatTile(title: "Time saved", value: Self.minutes(stats.minutesSavedThisWeek), caption: "vs. typing", systemImage: "hourglass", tint: .teal)
-                        }
-                        GridRow {
-                            StatTile(title: "Pace", value: stats.wordsPerMinute.map { "\($0)" } ?? "–", caption: "words per minute", systemImage: "speedometer", tint: .orange)
-                            StatTile(title: "Streak", value: "\(stats.streakDays)", caption: stats.streakDays == 1 ? "day" : "days in a row", systemImage: "flame.fill", tint: .pink)
-                        }
-                    }
-                }
-                recent
-            }
-            .padding(.horizontal, 28)
-            .padding(.top, 20)
-            .padding(.bottom, 28)
-        }
-    }
-
-    private var stats: DictationStats {
-        DictationStats(entries: history.records.map {
-            .init(date: $0.createdAt, words: DictationStats.wordCount($0.referenceText), duration: $0.duration)
-        })
-    }
-
-    static func minutes(_ minutes: Int) -> String {
-        minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h \(minutes % 60) min"
-    }
-
-    private var greeting: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(Self.salutation())
-                .font(.system(size: 30, weight: .bold))
-            Text(coordinator.commandModeAvailable
-                 ? "Hold \(settings.holdKey.displayName) to dictate in any app. Add Shift to give a command."
-                 : "Hold \(settings.holdKey.displayName) to dictate in any app.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                StartNotetakerButton(coordinator: coordinator)
-                Button { open(.dictionary) } label: {
-                    Label("Dictionary", systemImage: "character.book.closed")
-                }
-                Button { open(.snippets) } label: {
-                    Label("Snippets", systemImage: "text.quote")
-                }
-            }
-            .buttonStyle(.glass)
-            .controlSize(.large)
-            .padding(.top, 10)
-        }
-    }
-
-    static func salutation(at date: Date = .now) -> String {
-        switch Calendar.current.component(.hour, from: date) {
-        case 5..<12: "Good morning"
-        case 12..<18: "Good afternoon"
-        default: "Good evening"
-        }
-    }
-
-    private var attention: some View {
-        Button {
-            if permissions.allGranted { open(.general) } else { coordinator.showOnboarding() }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .symbolRenderingMode(.multicolor)
-                    .font(.title3)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(permissions.allGranted ? "The speech model isn’t ready" : "A permission needs attention")
-                        .font(.headline)
-                    Text(permissions.allGranted ? coordinator.modelStatus : "Pressay can’t hear you or type until it’s allowed.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-            }
-            .padding(14)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.tint(.orange.opacity(0.15)).interactive(), in: .rect(cornerRadius: 18))
-    }
-
-    @ViewBuilder
-    private var recent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Recent").font(.title3.weight(.semibold))
-                Spacer()
-                if !history.records.isEmpty {
-                    Button("See All") { open(.history) }
-                        .buttonStyle(.link)
-                }
-            }
-            if history.records.isEmpty {
-                Text("Your dictations show up here. Hold \(settings.holdKey.displayName) in any text field and start talking.")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .background(.fill.quinary, in: .rect(cornerRadius: 18))
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(history.records.prefix(6).enumerated()), id: \.element.id) { index, record in
-                        if index > 0 { Divider().padding(.leading, 48) }
-                        HistoryRow(record: record, coordinator: coordinator, showsDay: true)
-                            .hoverHighlight()
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                    }
-                }
-                .background(.fill.quinary, in: .rect(cornerRadius: 18))
-            }
-        }
-    }
-}
-
-private struct StatTile: View {
-    let title: String
-    let value: String
-    let caption: String
-    let systemImage: String
-    let tint: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(title, systemImage: systemImage)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(.secondary)
-                .labelIconToTitleSpacing(6)
-                .symbolRenderingMode(.hierarchical)
-                .tint(tint)
-            Text(value)
-                .font(.system(size: 30, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(caption)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .glassEffect(.regular.tint(tint.opacity(0.1)), in: .rect(cornerRadius: 22))
-    }
-}
-
-// MARK: - General
-
 private struct GeneralSettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings
     @ObservedObject private var permissions: PermissionController
-    /// Enumerated once per appearance; the HAL query is too costly for `body`.
     @State private var inputDevices: [AudioDeviceMonitor.Device] = []
     @State private var defaultInputName: String?
-
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         settings = coordinator.settings
         permissions = coordinator.permissions
     }
-
     var body: some View {
-        Form {
-            PaneHero(section: .general, blurb: "Choose your talk key, microphone, and speech model.")
-
-            Section {
-                LabeledContent {
-                    KeyCaptureButton(
-                        key: $settings.holdKey,
-                        onChange: { coordinator.restartHotkey() },
-                        onCaptureActive: coordinator.keyCaptureActive
-                    )
-                } label: {
-                    Text("Hold to talk")
-                    Text(coordinator.commandModeAvailable
-                         ? "Hold to dictate. Add Shift for Command Mode. Press Esc to cancel."
-                         : "Hold to dictate. Press Esc to cancel.")
+        PressayPage {
+            PressayHeading(title: "General") {
+                HStack(spacing: 2) {
+                    tab("Dictation", meetings: false)
+                    tab("Notetaker", meetings: true)
                 }
+                .padding(3).background(PressayPalette.base, in: .rect(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(PressayPalette.line))
             }
-
-            Section {
-                Picker("Microphone", selection: $settings.inputDeviceUID) {
-                    Text(defaultInputName.map { "System Default (\($0))" } ?? "System Default").tag(String?.none)
-                    if !inputDevices.isEmpty { Divider() }
-                    ForEach(inputDevices) { device in
-                        Text(device.name).tag(String?.some(device.uid))
-                    }
-                }
-                .onChange(of: settings.inputDeviceUID) { _, _ in coordinator.applyMicWarmth() }
-
-                Toggle(isOn: $settings.keepMicWarm) {
-                    Text("Keep microphone ready")
-                    Text("Keeps the mic on for \(Int(DictationProcessingPolicy.micWarmWindow)) seconds after you dictate, so the next one starts instantly. Never with Bluetooth headphones: an open mic switches them to call audio.")
-                }
-                .onChange(of: settings.keepMicWarm) { _, _ in coordinator.applyMicWarmth() }
-            }
-
-            Section("Transcription") {
-                Picker(selection: $settings.asrModel) {
-                    ForEach(Array(ASRModel.recommended.enumerated()), id: \.element.id) { rank, model in
-                        Text("\(rank + 1). \(model.displayName)\(model == .defaultDictation ? " (Recommended)" : "")").tag(model)
-                    }
-                    Section("More languages and smaller models") {
-                        ForEach(ASRModel.otherModels) { Text($0.displayName).tag($0) }
-                    }
-                } label: {
-                    Text("Dictation model")
-                    Text(settings.asrModel.caption)
-                }
-                .disabled(coordinator.liveSession != nil || coordinator.meetingStarting || coordinator.modelPreparing)
-                .onChange(of: settings.asrModel) { _, _ in coordinator.applyASRModel() }
-
-                Text("Ranked for everyday dictation. Meeting transcription has its own recommended model in Notetaker Settings. Models download when selected and run entirely on this Mac.")
-                    .font(.caption).foregroundStyle(.secondary)
-                if settings.asrModel != .defaultDictation || settings.meetingASRModel != .defaultMeeting {
-                    Button("Use recommended models") {
-                        settings.asrModel = .defaultDictation
-                        settings.meetingASRModel = .defaultMeeting
-                    }
-                    .disabled(coordinator.liveSession != nil || coordinator.meetingStarting || coordinator.modelPreparing)
-                }
-
-                if settings.asrModel.offersLanguageChoice {
-                    Picker("Language", selection: $settings.language) {
-                        ForEach(settings.asrModel.supportedLanguages) { Text($0.rawValue).tag($0) }
-                    }
-                    .onChange(of: settings.language) { _, _ in coordinator.applyTranscriptionLanguage() }
-                } else {
-                    LabeledContent("Language", value: settings.language.rawValue)
-                }
-
-                LabeledContent("Status") { modelStatus }
-
-                Toggle(isOn: $settings.structuredDictation) {
-                    Text("On-device formatting")
-                    Text("Adds punctuation and paragraphs when AI Cleanup is off.")
-                }
-            }
-
-            Section("Permissions") {
-                if permissions.allGranted {
-                    LabeledContent("Microphone, Accessibility, and Input Monitoring") {
-                        StatusLabel(text: "Allowed", color: .green)
-                    }
-                } else {
-                    ForEach(PermissionController.Kind.allCases) { kind in
-                        PermissionSettingsRow(
-                            kind: kind,
-                            granted: permissions.isGranted(kind),
-                            allow: { permissions.request(kind) },
-                            openSettings: { permissions.openPrivacySettings(for: kind) }
-                        )
-                    }
-                }
-            }
-
-            Section {
-                Toggle("Open at login", isOn: $settings.launchAtLogin)
-                if let error = settings.launchAtLoginError {
-                    LabeledContent {
-                        Button("Login Items…") { settings.openLoginItemsSettings() }
-                    } label: {
-                        Text("Couldn’t update login items")
-                        Text(error)
-                    }
-                }
-            }
-
-            if let error = coordinator.lastError {
-                Section("Last Issue") {
-                    Text(error)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-            }
+            if coordinator.notetakerSettingsSelected { meetingSettings } else { dictationSettings }
         }
-        .formStyle(.grouped)
-        .toggleStyle(.switch)
         .onAppear {
             permissions.startMonitoring()
             settings.refreshLaunchAtLogin()
@@ -752,61 +428,247 @@ private struct GeneralSettingsView: View {
             defaultInputName = AudioDeviceMonitor.defaultInputName
         }
     }
+    private func tab(_ title: String, meetings: Bool) -> some View {
+        Button {
+            coordinator.notetakerSettingsSelected = meetings
+        } label: {
+            Text(title).font(.system(size: 12, weight: .medium)).padding(.horizontal, 13).frame(height: 25)
+                .background(
+                    coordinator.notetakerSettingsSelected == meetings ? PressayPalette.selected : .clear,
+                    in: .rect(cornerRadius: 5))
+        }.buttonStyle(.plain).accessibilityAddTraits(
+            coordinator.notetakerSettingsSelected == meetings ? .isSelected : [])
+    }
+    private var dictationSettings: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PressaySection(title: "Talk key") {
+                PressayGroup {
+                    PressaySetting(title: "Hold to talk", detail: "Press Esc to cancel.") {
+                        KeyCaptureButton(
+                            key: $settings.holdKey, onChange: coordinator.restartHotkey,
+                            onCaptureActive: coordinator.keyCaptureActive)
+                    }
+                }
+            }
+            PressaySection(title: "Audio") {
+                PressayGroup {
+                    PressaySetting(title: "Microphone") {
+                        PressayPicker(
+                            label: "Microphone",
+                            value: settings.inputDeviceUID.flatMap { uid in inputDevices.first { $0.uid == uid }?.name }
+                                ?? "System Default", selection: $settings.inputDeviceUID,
+                            items: [
+                                PressayPickerItem<String?>.choice(
+                                    defaultInputName.map { "System default (\($0))" } ?? "System default", nil)
+                            ] + inputDevices.map { .choice($0.name, Optional($0.uid)) }
+                        ).labelsHidden().frame(maxWidth: 260)
+                    }
+                }
+            }
+            PressaySection(title: "Transcription") {
+                PressayGroup {
+                    PressaySetting(title: "Speech model") {
+                        SpeechModelPicker(selection: $settings.asrModel, meetings: false)
+                            .disabled(
+                                coordinator.liveSession != nil || coordinator.meetingStarting
+                                    || coordinator.modelPreparing
+                            )
+                            .onChange(of: settings.asrModel) { _, _ in coordinator.applyASRModel() }
+                    }
+                    PressaySetting(title: "Language", detail: settings.asrModel.languageCaption) {
+                        languagePicker(model: settings.asrModel, selection: $settings.language)
+                            .onChange(of: settings.language) { _, _ in coordinator.applyTranscriptionLanguage() }
+                    }
+                    PressaySetting(title: "Status") { ModelStatusView(coordinator: coordinator) }
+                    PressaySetting(
+                        title: "On-device formatting", detail: "Adds punctuation and paragraphs when AI Cleanup is off."
+                    ) {
+                        Toggle("On-device formatting", isOn: $settings.structuredDictation).toggleStyle(
+                            PressaySwitchStyle(showsLabel: false)
+                        ).frame(width: 32)
+                    }
+                }
+            }
+            PressaySection(title: "Permissions") {
+                PressayGroup {
+                    if permissions.allGranted {
+                        PressaySetting(title: "Microphone, Accessibility & Input Monitoring") {
+                            StatusLabel(text: "Allowed", color: PressayPalette.success)
+                        }
+                    } else {
+                        ForEach(PermissionController.Kind.allCases) { kind in
+                            PressaySetting(title: kind.title) {
+                                if permissions.isGranted(kind) {
+                                    StatusLabel(text: "Allowed", color: PressayPalette.success)
+                                } else {
+                                    Button("Allow") { permissions.request(kind) }.contextMenu {
+                                        Button("Open System Settings") { permissions.openPrivacySettings(for: kind) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            PressaySection(title: "Startup") {
+                PressayGroup {
+                    PressaySetting(title: "Open at login") {
+                        Toggle("Open at login", isOn: $settings.launchAtLogin).toggleStyle(
+                            PressaySwitchStyle(showsLabel: false)
+                        ).frame(width: 32)
+                    }
+                    if let error = settings.launchAtLoginError {
+                        PressaySetting(title: "Login items", detail: error) {
+                            Button("Open settings") { settings.openLoginItemsSettings() }
+                        }
+                    }
+                }
+            }
+            if let error = coordinator.lastError {
+                Text(error).font(.system(size: 12)).foregroundStyle(PressayPalette.danger).padding(.top, 18)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+    private var meetingSettings: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PressaySection(title: "Transcription") {
+                PressayGroup {
+                    PressaySetting(title: "Meeting speech model") {
+                        SpeechModelPicker(selection: $settings.meetingASRModel, meetings: true)
+                            .disabled(coordinator.liveSession != nil || coordinator.meetingStarting)
+                            .onChange(of: settings.meetingASRModel) { _, model in
+                                if !model.supportedLanguages.contains(settings.meetingLanguage) {
+                                    settings.meetingLanguage = .auto
+                                }
+                            }
+                    }
+                    PressaySetting(title: "Language", detail: settings.meetingASRModel.languageCaption) {
+                        languagePicker(model: settings.meetingASRModel, selection: $settings.meetingLanguage)
+                            .disabled(coordinator.liveSession != nil || coordinator.meetingStarting)
+                    }
+                }
+            }
+            PressaySection(title: "Meeting notes") {
+                PressayGroup {
+                    PressaySetting(title: "Write up notes with AI", detail: "Summaries, decisions, and action items.") {
+                        Toggle("Write notes with AI", isOn: $settings.notesUseAI).toggleStyle(
+                            PressaySwitchStyle(showsLabel: false)
+                        ).frame(width: 32).disabled(coordinator.notesModelOptions.isEmpty)
+                    }
+                    if coordinator.notesModelOptions.isEmpty {
+                        PressaySetting(title: "Connect a provider") {
+                            Button("Set up AI Cleanup") { coordinator.settingsPaneRequest = "claude" }
+                        }
+                    } else {
+                        PressaySetting(title: "AI model", detail: "Uses an account connected in AI Cleanup.") {
+                            PressayPicker(
+                                label: "Notes model", value: coordinator.notesModel.map(notesTitle) ?? "Choose model",
+                                selection: Binding(
+                                    get: { coordinator.notesModel?.id ?? "" }, set: { settings.notesModel = $0 }),
+                                items: coordinator.notesModelOptions.map { .choice(notesTitle($0), $0.id) }
+                            ).labelsHidden().frame(width: 240).disabled(!settings.notesUseAI)
+                        }
+                    }
+                }
+            }
+            PressaySection(title: "Calls") {
+                PressayGroup {
+                    switchRow("Offer to take notes when a call starts", nil, $settings.detectCalls)
+                    switchRow("Stop when the call ends", nil, $settings.stopWhenCallEnds).disabled(
+                        !settings.detectCalls)
+                    switchRow(
+                        "Transcribe other people", "Include your Mac’s audio with your microphone.",
+                        $settings.meetingSystemAudio)
+                    switchRow("Tell speakers apart", nil, $settings.separateVoices).disabled(
+                        !settings.meetingSystemAudio)
+                }
+            }
+            PressaySection(title: "While recording") {
+                PressayGroup {
+                    PressaySetting(title: "Stop after") {
+                        PressayPicker(
+                            label: "Stop after", value: "\(settings.maxMeetingHours) hours",
+                            selection: $settings.maxMeetingHours,
+                            items: [1, 2, 3, 4, 6, 8].map { .choice("\($0) \($0 == 1 ? "hour" : "hours")", $0) }
+                        ).labelsHidden().frame(width: 130)
+                    }
+                    switchRow("Show the notepad", nil, $settings.openNotepad)
+                    switchRow("Show the live transcript", nil, $settings.showLiveTranscript).disabled(
+                        !settings.openNotepad)
+                }
+            }
+        }
+    }
+    private func notesTitle(_ model: NotesModel) -> String {
+        let rank = model.isRecommended ? "1. " : "2. "
+        return rank + model.title + (model.isRecommended ? " · Recommended" : "")
+    }
+    private func switchRow(_ title: String, _ detail: String?, _ binding: Binding<Bool>) -> some View {
+        PressaySetting(title: title, detail: detail) {
+            Toggle(title, isOn: binding).toggleStyle(PressaySwitchStyle(showsLabel: false)).frame(width: 32)
+        }
+    }
+    @ViewBuilder private func languagePicker(model: ASRModel, selection: Binding<TranscriptionLanguage>) -> some View {
+        if model.offersLanguageChoice {
+            PressayPicker(
+                label: "Language", value: selection.wrappedValue.displayName, selection: selection,
+                items: model.supportedLanguages.map { .choice($0.displayName, $0) }
+            ).labelsHidden().frame(width: 200)
+        } else {
+            Text("Automatic").font(.system(size: 12)).foregroundStyle(PressayPalette.muted)
+        }
+    }
+}
 
-    @ViewBuilder
-    private var modelStatus: some View {
+struct SpeechModelPicker: View {
+    @Binding var selection: ASRModel
+    var meetings = false
+    private var modelItems: [PressayPickerItem<ASRModel>] {
+        let ranked = (meetings ? ASRModel.meetingRecommendations : ASRModel.recommended)
+        return ranked.enumerated().map { rank, model in
+            .choice(
+                "\(rank + 1). \(model.displayName)\(model == (meetings ? .defaultMeeting : .defaultDictation) ? " · Recommended" : "")",
+                model)
+        } + [.heading("Other models · not ranked")] + ASRModel.otherModels.map { .choice($0.displayName, $0) }
+    }
+    var body: some View {
+        PressayPicker(
+            label: "Speech model",
+            value: (meetings ? ASRModel.meetingRecommendations : ASRModel.recommended).firstIndex(of: selection).map {
+                "\($0 + 1). "
+            }.map {
+                $0 + selection.displayName
+                    + (selection == (meetings ? .defaultMeeting : .defaultDictation) ? " · Recommended" : "")
+            } ?? selection.displayName, selection: $selection, items: modelItems
+        ).labelsHidden().frame(width: 240)
+    }
+}
+
+struct ModelStatusView: View {
+    @ObservedObject var coordinator: AppCoordinator
+    var body: some View {
         if coordinator.modelPreparing {
             HStack(spacing: 8) {
-                if let progress = coordinator.modelDownloadProgress {
-                    ProgressView(value: progress).frame(width: 110)
-                    Text("Downloading \(Int((progress * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary)
+                if let value = coordinator.modelDownloadProgress {
+                    ProgressView(value: value).frame(width: 90)
+                    Text("\(Int(value * 100))%").monospacedDigit()
                 } else {
                     ProgressView().controlSize(.small)
-                    Text("Loading…").foregroundStyle(.secondary)
+                    Text("Loading…")
                 }
-            }
+            }.font(.system(size: 11)).foregroundStyle(PressayPalette.muted)
         } else if coordinator.modelReady {
-            StatusLabel(text: "Ready", color: .green)
+            StatusLabel(text: "Ready", color: PressayPalette.success)
         } else {
             HStack(spacing: 8) {
-                StatusLabel(text: "Not loaded", color: .orange)
+                StatusLabel(text: "Not loaded", color: PressayPalette.warning)
                 Button("Retry") { Task { await coordinator.prepareModel() } }
-            }
-            .help(coordinator.modelStatus)
+            }.help(coordinator.modelStatus)
         }
     }
 }
 
-private struct PermissionSettingsRow: View {
-    let kind: PermissionController.Kind
-    let granted: Bool
-    let allow: () -> Void
-    let openSettings: () -> Void
-
-    var body: some View {
-        LabeledContent {
-            if granted {
-                StatusLabel(text: "Allowed", color: .green)
-            } else {
-                HStack(spacing: 6) {
-                    Button("Allow") { allow() }
-                    Button("Open Settings…") { openSettings() }
-                }
-            }
-        } label: {
-            Label {
-                Text(kind.title)
-                Text(kind.detail)
-            } icon: {
-                Image(systemName: kind.systemImage)
-            }
-        }
-    }
-}
-
-// MARK: - Claude Cleanup
-
-/// Saving a key is the opt-in; the switch pauses it without discarding the key.
 private struct ClaudeCleanupSettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings
@@ -817,147 +679,182 @@ private struct ClaudeCleanupSettingsView: View {
     @State private var confirmingRemove = false
     @State private var confirmingSignOut = false
     @State private var showingPlanWelcome = false
-
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         settings = coordinator.settings
     }
-
-    private var keyConfigured: Bool { coordinator.claudeAPIKey != nil }
     private var account: ChatGPTAccount { coordinator.chatGPT }
-
+    private var keyConfigured: Bool { coordinator.claudeAPIKey != nil }
     var body: some View {
-        Form {
-            PaneHero(section: .claude, blurb: "AI fixes misheard names, filler words, and punctuation before your text is typed. Audio never leaves your Mac.")
-
-            Section {
-                if coordinator.cleanupConfigured {
-                    Toggle(isOn: $settings.claudeCleanup) {
-                        Text("Clean up with AI")
-                        Text("Skipped in Terminal and for very short dictations.")
+        PressayPage {
+            PressayHeading(title: "AI Cleanup", subtitle: "Correct dictations before they’re typed.") { EmptyView() }
+            PressaySection(title: "Cleanup") {
+                PressayGroup {
+                    PressaySetting(
+                        title: "Clean up with AI", detail: "Fix filler words, punctuation, and misheard names."
+                    ) {
+                        Toggle("Clean up with AI", isOn: $settings.claudeCleanup).toggleStyle(
+                            PressaySwitchStyle(showsLabel: false)
+                        ).frame(width: 32)
+                    }
+                    PressaySetting(title: "Provider", detail: "Choose how Pressay polishes your words.") {
+                        HStack(spacing: 2) {
+                            provider("Claude", .claude)
+                            provider("ChatGPT", .chatgpt)
+                        }.padding(3).background(PressayPalette.base, in: .rect(cornerRadius: 7))
+                            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(PressayPalette.line))
+                    }
+                    if settings.cleanupProvider == .claude {
+                        PressaySetting(title: "Model", detail: "A fast finish for everyday dictation.") {
+                            PressayPicker(
+                                label: "Cleanup model",
+                                value: settings.claudeCleanupModel == .sonnet55
+                                    ? "1. Sonnet 5.5 · Best quality" : "2. Haiku 5.5 · Faster",
+                                selection: $settings.claudeCleanupModel,
+                                items: [
+                                    .choice("1. Sonnet 5.5 · Best quality", .sonnet55),
+                                    .choice("2. Haiku 5.5 · Faster", .haiku55),
+                                ]
+                            ).labelsHidden().frame(width: 230)
+                        }
+                        PressaySetting(
+                            title: "API key",
+                            detail: keyConfigured
+                                ? "•••• •••• \(coordinator.claudeAPIKey.map { String($0.suffix(4)) } ?? "") · Connected"
+                                : "Connect your Anthropic account."
+                        ) {
+                            if keyConfigured {
+                                HStack(spacing: 8) {
+                                    Button(testing ? "Verifying…" : "Verify", action: testConnection).disabled(testing)
+                                    Button("Remove") { confirmingRemove = true }.buttonStyle(
+                                        PressayButtonStyle(kind: .quiet))
+                                }
+                            } else {
+                                HStack(spacing: 8) {
+                                    SecureField("sk-ant-…", text: $keyDraft).textFieldStyle(.roundedBorder).frame(
+                                        width: 170
+                                    ).onSubmit(saveKey).accessibilityLabel("API key")
+                                    Button("Save", action: saveKey).disabled(
+                                        keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                }
+                            }
+                        }
+                    } else {
+                        Group {
+                            PressaySetting(title: "Model") {
+                                PressayPicker(
+                                    label: "Cleanup model",
+                                    value: ChatGPTModelOption(
+                                        slug: settings.chatGPTModel,
+                                        name: ChatGPTCleanupModel.displayName(for: settings.chatGPTModel)
+                                    ).title, selection: $settings.chatGPTModel, items: chatGPTPickerItems
+                                ).labelsHidden().frame(width: 230)
+                            }
+                        }
+                        PressaySetting(
+                            title: "Account",
+                            detail: account.isSignedIn
+                                ? account.credentials?.email : "Use the ChatGPT plan you already have."
+                        ) {
+                            if account.isSignedIn {
+                                Button("Sign out") { confirmingSignOut = true }
+                            } else if account.signingIn {
+                                HStack {
+                                    ProgressView().controlSize(.small)
+                                    Button("Cancel") { account.cancelSignIn() }
+                                }
+                            } else {
+                                Button("Continue with ChatGPT", action: signIn).buttonStyle(
+                                    PressayButtonStyle(kind: .primary))
+                            }
+                        }
                     }
                 }
-                Picker(selection: $settings.cleanupProvider) {
-                    ForEach(CleanupProvider.allCases) { provider in
-                        Text(provider.title).tag(provider)
-                    }
-                } label: {
-                    Text("Provider")
-                    Text(settings.cleanupProvider.subtitle)
+                if let keyStatus {
+                    Text(keyStatus).font(.system(size: 11)).foregroundStyle(
+                        keyStatusIsError ? PressayPalette.danger : PressayPalette.success)
                 }
-                switch settings.cleanupProvider {
-                case .claude: claudeModelPicker
-                case .chatgpt: if account.isSignedIn { chatGPTModelPicker }
+                if let error = account.lastError, settings.cleanupProvider == .chatgpt {
+                    Text(error).font(.system(size: 11)).foregroundStyle(PressayPalette.danger)
                 }
             }
-
-            switch settings.cleanupProvider {
-            case .claude: keySection
-            case .chatgpt: chatGPTAccountSection
-            }
-
-            Section {
-                Toggle(isOn: $settings.matchAppStyle) {
-                    Text("Match each app’s style")
-                    Text("Casual in chats, complete sentences in email, tidy paragraphs in documents.")
+            PressaySection(title: "Example") {
+                PressayGroup {
+                    HStack(alignment: .top, spacing: 0) {
+                        example(
+                            "YOU SAY", "“um can you send the figma file\nwhen you get a chance thanks”", accent: false)
+                        Rectangle().fill(PressayPalette.line).frame(width: 1)
+                        example(
+                            "PRESSAY TYPES", "Can you send the Figma file when\nyou get a chance? Thanks!", accent: true
+                        )
+                    }.fixedSize(horizontal: false, vertical: true)
                 }
-                LabeledContent {
-                    Text(coordinator.commandModeAvailable ? "Shift + \(settings.holdKey.displayName)" : "Needs a talk key other than Shift")
-                        .foregroundStyle(.secondary)
-                } label: {
-                    Text("Command Mode")
-                    Text("Hold Shift with your talk key and say what to do: “make this shorter”, “translate to German”, or “write a reply saying I’m running late”. Select text first to change it.")
-                }
-            } header: {
-                Text("Writing")
             }
-            .disabled(!coordinator.cleanupConfigured)
         }
-        .formStyle(.grouped)
-        .toggleStyle(.switch)
+        .sheet(isPresented: $confirmingRemove) {
+            PressayConfirmation(
+                title: "Remove API key?", detail: "AI Cleanup will stop working until you add another key.",
+                action: "Remove key", destructive: true
+            ) {
+                removeKey()
+                confirmingRemove = false
+            }
+        }
         .confirmationDialog("Sign out of ChatGPT?", isPresented: $confirmingSignOut) {
-            Button("Sign Out", role: .destructive) { Task { await account.signOut() } }
-        } message: {
-            Text("AI Cleanup turns off until you sign in again.")
+            Button("Sign out", role: .destructive) { Task { await account.signOut() } }
         }
         .alert("You’re using your ChatGPT plan", isPresented: $showingPlanWelcome) {
             Button("Got it") { settings.chatGPTWelcomeShown = true }
         } message: {
-            Text("Cleanup counts toward your ChatGPT plan’s usage limits, which are shared with other apps. Pressay never sees your password.")
-        }
-        .confirmationDialog("Remove your API key?", isPresented: $confirmingRemove) {
-            Button("Remove", role: .destructive) {
-                ClaudeAPIKeyStore.clear()
-                setStatus(nil, error: false)
-                coordinator.reloadClaudeKey()
-            }
-        } message: {
-            Text("AI Cleanup turns off until you add a key.")
+            Text(
+                "Cleanup counts toward your ChatGPT plan’s usage limits, which are shared with other apps. Pressay never sees your password."
+            )
         }
     }
-
-    @ViewBuilder
-    private var chatGPTAccountSection: some View {
-        Section {
-            if let credentials = account.credentials, account.isSignedIn {
-                LabeledContent {
-                    Button("Sign Out…") { confirmingSignOut = true }
-                } label: {
-                    Text(credentials.email ?? "ChatGPT account")
-                    Text("Using ChatGPT plan")
-                }
-            } else if account.signingIn {
-                LabeledContent {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Button("Cancel") { account.cancelSignIn() }
-                    }
-                } label: {
-                    Text("Waiting for your browser…")
-                    Text("Finish signing in to ChatGPT, then come back here.")
-                }
-            } else {
-                LabeledContent {
-                    Button("Continue with ChatGPT") { signIn() }
-                } label: {
-                    Text("Account")
-                    Text("Sign in to use your Plus or Pro plan. No API key needed.")
-                }
-            }
-            if let error = account.lastError {
-                LabeledContent("Status") {
-                    StatusLabel(text: error, color: .red)
-                }
-            }
-        } header: {
-            Text("ChatGPT")
-        } footer: {
-            if account.isSignedIn {
-                Link("Manage usage", destination: ChatGPTPlan.usageSettings)
-            }
-        }
+    private func provider(_ title: String, _ provider: CleanupProvider) -> some View {
+        Button {
+            settings.cleanupProvider = provider
+        } label: {
+            Text(title).font(.system(size: 11, weight: .medium)).padding(.horizontal, 13).frame(height: 25)
+                .background(
+                    settings.cleanupProvider == provider ? PressayPalette.button : .clear, in: .rect(cornerRadius: 5))
+        }.buttonStyle(.plain).accessibilityAddTraits(settings.cleanupProvider == provider ? .isSelected : [])
     }
-
-    private var chatGPTModelPicker: some View {
-            Picker(selection: $settings.chatGPTModel) {
-                ForEach(chatGPTModelChoices, id: \.slug) { choice in
-                    let option = ChatGPTModelOption(slug: choice.slug, name: ChatGPTCleanupModel.displayName(for: choice.slug))
-                    Text(option.title).tag(choice.slug)
-                }
-            } label: {
-                let option = ChatGPTModelOption(slug: settings.chatGPTModel, name: ChatGPTCleanupModel.displayName(for: settings.chatGPTModel))
-                Text("Model")
-                Text(option.subtitle)
-            }
+    private func example(_ label: String, _ text: String, accent: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(label).font(.system(size: 10)).foregroundStyle(accent ? PressayPalette.accent : PressayPalette.muted)
+            Text(text).font(.system(size: 13)).lineSpacing(5).foregroundStyle(
+                accent ? PressayPalette.text : PressayPalette.muted)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(18)
     }
-
     /// Always includes the current choice so the picker is never blank while loading.
     private var chatGPTModelChoices: [(slug: String, name: String)] {
-        var choices = account.models
+        var choices =
+            account.models.isEmpty
+            ? [
+                (
+                    slug: ChatGPTCleanupModel.defaultSlug,
+                    name: ChatGPTCleanupModel.displayName(for: ChatGPTCleanupModel.defaultSlug)
+                ), (slug: "gpt-6-luna", name: ChatGPTCleanupModel.displayName(for: "gpt-6-luna")),
+            ] : account.models
         if !choices.contains(where: { $0.slug == settings.chatGPTModel }) {
             choices.insert((settings.chatGPTModel, ChatGPTCleanupModel.displayName(for: settings.chatGPTModel)), at: 0)
         }
-        return choices.sorted { ChatGPTModelOption.rank($0.slug) < ChatGPTModelOption.rank($1.slug) }
+        return choices.sorted {
+            let left = ChatGPTModelOption.rank($0.slug)
+            let right = ChatGPTModelOption.rank($1.slug)
+            return left == right ? $0.name.localizedStandardCompare($1.name) == .orderedAscending : left < right
+        }
+    }
+
+    private var chatGPTPickerItems: [PressayPickerItem<String>] {
+        let ranked = chatGPTModelChoices.filter { ChatGPTModelOption.rank($0.slug) < 2 }
+        let untested = chatGPTModelChoices.filter { ChatGPTModelOption.rank($0.slug) == 2 }
+        return ranked.map {
+            .choice(
+                ChatGPTModelOption(slug: $0.slug, name: ChatGPTCleanupModel.displayName(for: $0.slug)).title, $0.slug)
+        }
+            + (untested.isEmpty ? [] : [.heading("Untested")] + untested.map { .choice($0.name, $0.slug) })
     }
 
     private func signIn() {
@@ -972,68 +869,27 @@ private struct ClaudeCleanupSettingsView: View {
         }
     }
 
-    private var claudeModelPicker: some View {
-            Picker(selection: $settings.claudeCleanupModel) {
-                ForEach(ClaudeCleanupModel.allCases) { model in
-                    Text(model.optionTitle).tag(model)
-                }
-            } label: {
-                Text("Model")
-                Text(keyConfigured ? settings.claudeCleanupModel.optionSubtitle : "Add an API key to choose a model.")
-            }
-            .disabled(!keyConfigured)
-    }
-
-    private var keySection: some View {
-        Section {
-            if let key = coordinator.claudeAPIKey {
-                LabeledContent {
-                    HStack(spacing: 6) {
-                        Button("Verify") { testConnection() }
-                            .disabled(testing)
-                        Button("Remove…", role: .destructive) { confirmingRemove = true }
-                    }
-                } label: {
-                    Text("API Key")
-                    Text("••••" + String(key.suffix(4)))
-                        .monospaced()
-                }
-            } else {
-                LabeledContent {
-                    SecureField("API Key", text: $keyDraft, prompt: Text("sk-ant-…"))
-                        .labelsHidden()
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 240)
-                        .onSubmit(saveKey)
-                } label: {
-                    Text("API Key")
-                    Text("Paste your key and press Return.")
-                }
-            }
-            if testing {
-                LabeledContent("Status") {
-                    ProgressView().controlSize(.small)
-                }
-            } else if let keyStatus {
-                LabeledContent("Status") {
-                    StatusLabel(text: keyStatus, color: keyStatusIsError ? .red : .green)
-                }
-            }
-        } header: {
-            Text("Anthropic")
-        } footer: {
-            if !keyConfigured {
-                Link("Get an API key", destination: URL(string: "https://console.anthropic.com/settings/keys")!)
-            }
-        }
-    }
-
     private func setStatus(_ text: String?, error: Bool) {
         keyStatus = text
         keyStatusIsError = error
     }
 
+    private func removeKey() {
+        #if DEBUG
+            guard !DesignReview.enabled else { return }
+        #endif
+        ClaudeAPIKeyStore.clear()
+        setStatus(nil, error: false)
+        coordinator.reloadClaudeKey()
+    }
+
     private func saveKey() {
+        #if DEBUG
+            guard !DesignReview.enabled else {
+                keyDraft = ""
+                return
+            }
+        #endif
         let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
         let saved = ClaudeAPIKeyStore.save(key)
@@ -1048,6 +904,12 @@ private struct ClaudeCleanupSettingsView: View {
     }
 
     private func testConnection() {
+        #if DEBUG
+            guard !DesignReview.enabled else {
+                setStatus("Verified in review", error: false)
+                return
+            }
+        #endif
         guard let key = coordinator.claudeAPIKey else { return }
         testing = true
         keyStatus = nil
@@ -1067,210 +929,41 @@ private struct ClaudeCleanupSettingsView: View {
     }
 }
 
-private extension ClaudeCleanupModel {
-    var optionTitle: String {
-        switch self {
-        case .haiku55: "Haiku 5.5 (Recommended)"
-        case .sonnet55: "Sonnet 5.5"
-        }
-    }
-
-    var optionSubtitle: String {
-        switch self {
-        case .haiku55: "Fast and accurate. Under $1 a month."
-        case .sonnet55: "Slightly better with rare names. About $5 a month."
-        }
-    }
-}
-
-/// Picker copy; the catalog can list models Pressay hasn't tested.
 private struct ChatGPTModelOption {
     let slug: String
     let name: String
-
     static let recommended = ChatGPTCleanupModel.defaultSlug
-
-    static func rank(_ slug: String) -> Int {
-        switch slug {
-        case recommended: 0
-        case "gpt-6-luna": 1
-        default: 2
-        }
-    }
-
-    var title: String { slug == Self.recommended ? "\(name) (Recommended)" : name }
-
-    var subtitle: String {
-        switch slug {
-        case Self.recommended: "Best results of every model tested."
-        case "gpt-6-luna": "A little quicker, but misses more fixes."
-        default: "Not tested with Pressay yet."
-        }
+    static func rank(_ slug: String) -> Int { slug == recommended ? 0 : slug == "gpt-6-luna" ? 1 : 2 }
+    var title: String {
+        slug == Self.recommended ? "1. \(name) · Recommended" : slug == "gpt-6-luna" ? "2. \(name) · Faster" : name
     }
 }
 
-// MARK: - Notetaker
-
-struct NotetakerSettingsSheet: View {
-    @ObservedObject var coordinator: AppCoordinator
+struct PressayConfirmation: View {
     @Environment(\.dismiss) private var dismiss
-
+    let title: String
+    let detail: String
+    let action: String
+    var destructive = false
+    let confirm: () -> Void
     var body: some View {
-        NotesSettingsView(coordinator: coordinator)
-            .frame(minWidth: 540, idealWidth: 560, minHeight: 420, idealHeight: 640)
-            .presentationSizing(.form)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-    }
-}
-
-private struct NotesSettingsView: View {
-    @ObservedObject var coordinator: AppCoordinator
-    @ObservedObject private var settings: AppSettings
-    @ObservedObject private var chatGPT: ChatGPTAccount
-
-    init(coordinator: AppCoordinator) {
-        self.coordinator = coordinator
-        settings = coordinator.settings
-        chatGPT = coordinator.chatGPT
-    }
-
-    var body: some View {
-        Form {
-            PaneHero(section: .notes, title: "Notetaker Settings", blurb: "Takes notes in your meetings. Pressay transcribes on this Mac as people talk, then writes up clear notes when the call ends.")
-
-            Section("Local transcription") {
-                Picker(selection: $settings.meetingASRModel) {
-                    ForEach(Array(ASRModel.meetingRecommendations.enumerated()), id: \.element.id) { rank, model in
-                        Text("\(rank + 1). \(model.displayName)\(model == .defaultMeeting ? " (Recommended)" : "")").tag(model)
-                    }
-                } label: {
-                    Text("Meeting speech model")
-                    Text(settings.meetingASRModel.caption)
-                }
-                .disabled(coordinator.liveSession != nil || coordinator.meetingStarting)
-                Text("Ranked for meeting accuracy. English configurations. Downloads on first use; only the active model stays loaded. Your dictation model returns when the meeting ends.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section {
-                Toggle(isOn: Binding(get: { settings.notesUseAI && !options.isEmpty }, set: { settings.notesUseAI = $0 })) {
-                    Text("Write up notes with AI")
-                    Text("A title, summary, decisions and action items, built from the transcript and your own notes.")
-                }
-                .disabled(options.isEmpty)
-                if !options.isEmpty {
-                    Picker("Model", selection: modelBinding) {
-                        ForEach(options) { model in
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(model.isRecommended ? "\(model.title) (Recommended)" : model.title)
-                                Text(model.subtitle).font(.caption).foregroundStyle(.secondary)
-                            }
-                            .padding(.vertical, 2)
-                            .tag(model.id)
-                        }
-                    }
-                    .pickerStyle(.radioGroup)
-                    .disabled(!settings.notesUseAI)
-                }
-            } header: {
-                Text("AI notes")
-            } footer: {
-                if options.isEmpty {
-                    HStack {
-                        Text("Add a Claude API key or sign in with ChatGPT to have notes written up. Until then you keep the full transcript.")
-                        Spacer()
-                        Button("Set Up…") {
-                            coordinator.notetakerSettingsShown = false
-                            coordinator.settingsPaneRequest = "claude"
-                        }
-                    }
-                } else {
-                    Text(providerCaption + " Models appear here for the providers you’ve set up in AI Cleanup.")
-                }
-            }
-
-            Section {
-                Toggle(isOn: $settings.detectCalls) {
-                    Text("Offer to take notes when a call starts")
-                    Text("Zoom, Teams, Meet, FaceTime, Slack and more. Pressay checks which apps use the microphone, never what they hear.")
-                }
-                Toggle(isOn: $settings.stopWhenCallEnds) {
-                    Text("Stop when the call ends")
-                    Text("When the call app stops using the microphone.")
-                }
-                .disabled(!settings.detectCalls)
-                Toggle(isOn: $settings.meetingSystemAudio) {
-                    Text("Transcribe the other people")
-                    Text("Records your Mac’s sound alongside your microphone, so everyone on the call is in the transcript.")
-                }
-                Toggle(isOn: $settings.separateVoices) {
-                    Text("Tell speakers apart")
-                    Text("Labels each voice on the call, on this Mac. The AI adds names when people introduce themselves or are addressed by name.")
-                }
-                .disabled(!settings.meetingSystemAudio)
-            } header: {
-                Text("Calls")
-            } footer: {
-                Text("The first meeting asks for permission to record system audio. Audio is never saved; only the transcript is.")
-            }
-
-            Section("While recording") {
-                Picker("Stop after", selection: $settings.maxMeetingHours) {
-                    ForEach([1, 2, 3, 4, 6, 8], id: \.self) { hours in
-                        Text(hours == 1 ? "1 hour" : "\(hours) hours").tag(hours)
-                    }
-                }
-                Toggle(isOn: $settings.openNotepad) {
-                    Text("Show the notepad")
-                    Text("A small floating window with the timer and your notes, above other apps while you’re in the call.")
-                }
-                Toggle("Show the live transcript", isOn: $settings.showLiveTranscript)
-                    .disabled(!settings.openNotepad)
-            }
-
-        }
-        .formStyle(.grouped)
-        .toggleStyle(.switch)
-    }
-
-    private var options: [NotesModel] {
-        _ = chatGPT.isSignedIn
-        return coordinator.notesModelOptions
-    }
-
-    private var modelBinding: Binding<String> {
-        Binding(
-            get: { coordinator.notesModel?.id ?? "" },
-            set: { settings.notesModel = $0 }
-        )
-    }
-
-    private var providerCaption: String {
-        switch coordinator.notesModel {
-        case .claude?: "Uses your Claude API key. Transcripts are sent to Anthropic only to write the notes."
-        case .chatgpt?: "Uses your ChatGPT plan at no extra cost. Transcripts are sent to OpenAI only to write the notes."
-        case nil: ""
+        PressaySheet(title: title) {
+            Text(detail).font(.system(size: 12)).foregroundStyle(PressayPalette.muted)
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(action, action: confirm).buttonStyle(PressayButtonStyle(kind: destructive ? .danger : .primary))
+                    .keyboardShortcut(.defaultAction)
+            }.padding(.top, 24)
         }
     }
-
 }
 
-// MARK: - Dictionary
-
-private struct DictionaryEntry: Identifiable {
+private struct DictionaryWord: Identifiable {
     let preferred: String
-    let aliases: [String]
-    let line: String
-    var id: String { line }
-}
-
-private struct LearnedWord: Identifiable {
-    let preferred: String
-    let records: [LearnedVocabularyStore.Record]
+    let collection: String
+    let line: String?
+    let learned: [LearnedVocabularyStore.Record]
     var id: String { preferred.lowercased() }
 }
 
@@ -1278,392 +971,216 @@ private struct DictionarySettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings
     @ObservedObject private var learned: LearnedVocabularyStore
-    @ObservedObject private var suggestions: VocabularySuggestionStore
-    @State private var confirmingRestore = false
-    @State private var addingEntry = false
     @State private var search = ""
-
+    @State private var adding = false
+    @State private var restoring = false
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         settings = coordinator.settings
         learned = coordinator.settings.learnedVocabulary
-        suggestions = coordinator.settings.vocabularySuggestions
     }
-
-    var body: some View {
-        Form {
-            PaneHero(section: .dictionary, blurb: "Names, products, and jargon Pressay should always spell your way.")
-
-            if filteredSections.isEmpty && filteredLearned.isEmpty {
-                Section {
-                    ContentUnavailableView {
-                        Label(search.isEmpty ? "No Words" : "No Results", systemImage: search.isEmpty ? "character.book.closed" : "magnifyingglass")
-                    } description: {
-                        Text(search.isEmpty ? "Add names and terms you say often." : "No words match “\(search)”.")
-                    }
-                }
-            }
-
-            if search.isEmpty && !suggestions.suggestions.isEmpty {
-                Section {
-                    ForEach(suggestions.suggestions.prefix(8)) { suggestion in
-                        SuggestionRow(suggestion: suggestion) {
-                            settings.accept(suggestion)
-                        } onDismiss: {
-                            suggestions.dismiss(suggestion)
-                        }
-                    }
-                } header: {
-                    Text("Suggestions")
-                } footer: {
-                    Text("Words Pressay noticed in your dictations and corrections. Dismissed suggestions won’t come back.")
-                }
-            }
-
-            ForEach(Array(filteredSections.enumerated()), id: \.offset) { _, section in
-                Section(Self.titleCase(section.title ?? "Your Words")) {
-                    ForEach(section.entries) { entry in
-                        WordRow(
-                            word: entry.preferred,
-                            detail: entry.aliases.isEmpty ? nil : "Sounds like " + Self.quotedList(entry.aliases)
-                        ) {
-                            deleteEntry(line: entry.line)
-                        }
-                    }
-                }
-            }
-
-            if !filteredLearned.isEmpty {
-                Section {
-                    ForEach(filteredLearned) { word in
-                        WordRow(word: word.preferred, detail: "Heard as " + Self.quotedList(word.records.map(\.heard))) {
-                            word.records.forEach { learned.remove($0) }
-                        }
-                    }
-                } header: {
-                    Text("Learned Automatically")
-                } footer: {
-                    Text("Added when you correct a word after dictating, or when Pressay hears a close match to one of your words. Removed spellings aren’t learned again.")
-                }
-            }
-
-            Section {
-                Toggle(isOn: $settings.learnFromEdits) {
-                    Text("Learn from corrections")
-                    Text("After dictating, Pressay briefly watches for words you retype and adds them. Nothing you type is stored.")
-                }
-                .toggleStyle(.switch)
-            }
-
-            Section {
-                LabeledContent("\(settings.vocabularyEntries.count) Words") {
-                    Button("Restore Defaults…") { confirmingRestore = true }
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .searchable(text: $search, placement: .toolbar, prompt: "Search")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { addingEntry = true } label: { Label("Add Word", systemImage: "plus") }
-                    .help("Add a word")
-            }
-        }
-        .sheet(isPresented: $addingEntry) {
-            AddDictionaryEntrySheet { preferred, aliases in
-                addEntry(preferred: preferred, aliases: aliases)
-            }
-        }
-        .confirmationDialog(
-            "Replace your dictionary with the defaults?",
-            isPresented: $confirmingRestore
-        ) {
-            Button("Restore Defaults", role: .destructive) { settings.restoreCuratedVocabulary() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Words you added yourself will be removed.")
-        }
-    }
-
-    /// “a”, “b”, and “c”
-    static func quotedList(_ items: [String]) -> String {
-        let quoted = items.map { "“\($0)”" }
-        return quoted.formatted(.list(type: .and))
-    }
-
-    /// Section titles come from free-form `#` comment lines in the source.
-    static func titleCase(_ title: String) -> String {
-        let minor: Set<String> = ["and", "or", "the", "a", "an", "of", "for", "to", "in", "on"]
-        return title.split(separator: " ").enumerated().map { index, word in
-            let w = String(word)
-            if index > 0, minor.contains(w.lowercased()) { return w.lowercased() }
-            guard let first = w.first, first.isLowercase else { return w }
-            return first.uppercased() + w.dropFirst()
-        }.joined(separator: " ")
-    }
-
-    private var filteredLearned: [LearnedWord] {
-        let records = search.isEmpty ? learned.records : learned.records.filter {
-            $0.preferred.localizedCaseInsensitiveContains(search) || $0.heard.localizedCaseInsensitiveContains(search)
-        }
-        var order: [String] = []
-        var groups: [String: [LearnedVocabularyStore.Record]] = [:]
-        for record in records {
-            let key = record.preferred.lowercased()
-            if groups[key] == nil { order.append(key) }
-            groups[key, default: []].append(record)
-        }
-        return order.compactMap { key in
-            groups[key].map { LearnedWord(preferred: $0[0].preferred, records: $0) }
-        }
-    }
-
-    private var filteredSections: [(title: String?, entries: [DictionaryEntry])] {
-        let sections = parsedSections
-        guard !search.isEmpty else { return sections.filter { !$0.entries.isEmpty } }
-        return sections.compactMap { section in
-            let entries = section.entries.filter {
-                $0.preferred.localizedCaseInsensitiveContains(search)
-                    || $0.aliases.contains { $0.localizedCaseInsensitiveContains(search) }
-            }
-            return entries.isEmpty ? nil : (section.title, entries)
-        }
-    }
-
-    private var parsedSections: [(title: String?, entries: [DictionaryEntry])] {
-        var sections: [(String?, [DictionaryEntry])] = []
-        var currentTitle: String?
-        var current: [DictionaryEntry] = []
-        func flush() {
-            if currentTitle != nil || !current.isEmpty {
-                sections.append((currentTitle, current))
-            }
-        }
-        for rawLine in settings.vocabularySource.split(whereSeparator: \.isNewline) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
+    private var words: [DictionaryWord] {
+        var result: [DictionaryWord] = []
+        var seen: Set<String> = []
+        var collection = "Your words"
+        for raw in settings.vocabularySource.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
             if line.hasPrefix("#") {
-                flush()
-                currentTitle = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
-                current = []
-            } else if let entry = VocabularyParser.parse(line).first {
-                current.append(DictionaryEntry(preferred: entry.preferred, aliases: entry.aliases, line: line))
+                collection = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
+            } else if let entry = VocabularyParser.parse(line).first, seen.insert(entry.preferred.lowercased()).inserted
+            {
+                result.append(.init(preferred: entry.preferred, collection: collection, line: line, learned: []))
             }
         }
-        flush()
-        return sections
+        for record in learned.records where seen.insert(record.preferred.lowercased()).inserted {
+            result.append(
+                .init(
+                    preferred: record.preferred, collection: "Learned", line: nil,
+                    learned: learned.records.filter {
+                        $0.preferred.caseInsensitiveCompare(record.preferred) == .orderedSame
+                    }))
+        }
+        return result
     }
-
-    private func deleteEntry(line: String) {
-        let lines = settings.vocabularySource
-            .split(whereSeparator: \.isNewline)
-            .map(String.init)
-            .filter { $0.trimmingCharacters(in: .whitespaces) != line }
-        settings.vocabularySource = lines.joined(separator: "\n")
+    private var filtered: [DictionaryWord] {
+        words.filter {
+            search.isEmpty || $0.preferred.localizedCaseInsensitiveContains(search)
+                || $0.collection.localizedCaseInsensitiveContains(search)
+        }
     }
-
-    private func addEntry(preferred: String, aliases: [String]) {
-        settings.addVocabularyWord(preferred, aliases: aliases)
-    }
-}
-
-private struct SuggestionRow: View {
-    let suggestion: VocabularySuggestion
-    let onAdd: () -> Void
-    let onDismiss: () -> Void
-
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(suggestion.preferred)
-                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+        PressayPage {
+            PressayHeading(title: "Dictionary", subtitle: "Set the spelling of names and terms.") {
+                Button {
+                    adding = true
+                } label: {
+                    Label("Add word", systemImage: "plus")
+                }.buttonStyle(PressayButtonStyle(kind: .primary))
             }
-            .help(suggestion.example)
-            Spacer()
-            Button("Dismiss", action: onDismiss)
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
-            Button("Add", action: onAdd)
-        }
-        .contextMenu {
-            Button("Add to Dictionary", action: onAdd)
-            Button("Dismiss", action: onDismiss)
-        }
-    }
-
-    private var detail: String {
-        let times = suggestion.count == 1 ? "once" : "\(suggestion.count) times"
-        switch suggestion.origin {
-        case .edit: return "You corrected “\(suggestion.heard ?? "")” to this"
-        case .cleanup: return "AI Cleanup fixed “\(suggestion.heard ?? "")” to this \(times)"
-        case .recurring: return "Said in \(suggestion.count) dictations"
-        }
-    }
-}
-
-private struct WordRow: View {
-    let word: String
-    let detail: String?
-    let onDelete: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(word)
-                if let detail {
-                    Text(detail).font(.caption).foregroundStyle(.secondary)
+            if !words.isEmpty {
+                HStack {
+                    PressaySearch(placeholder: "Search words", text: $search)
+                    Spacer()
+                    Text("\(words.count) words").font(.system(size: 11)).foregroundStyle(PressayPalette.muted)
+                }.padding(.bottom, 14)
+            }
+            if filtered.isEmpty {
+                PressayEmpty(
+                    title: search.isEmpty ? "No words yet" : "No words found",
+                    detail: search.isEmpty
+                        ? "Add a word or let Pressay learn from your corrections." : "Try a different search.",
+                    systemImage: search.isEmpty ? "character.book.closed" : "magnifyingglass",
+                    actionTitle: words.isEmpty ? "Add your first word" : nil, action: { adding = true })
+            } else {
+                PressayGroup {
+                    HStack {
+                        Text("SPELLING")
+                        Spacer()
+                        Text("COLLECTION").frame(width: 115, alignment: .leading)
+                    }
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(PressayPalette.muted).padding(
+                        .horizontal, 18
+                    ).padding(.vertical, 12)
+                    ForEach(filtered) { word in
+                        HStack {
+                            Text(word.preferred).font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            Text(word.collection).font(.system(size: 10)).foregroundStyle(PressayPalette.muted).frame(
+                                width: 115, alignment: .leading)
+                        }.padding(.horizontal, 18).padding(.vertical, 11)
+                            .overlay(alignment: .top) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
+                            .contextMenu { Button("Remove", role: .destructive) { remove(word) } }
+                            .accessibilityAction(named: "Remove") { remove(word) }
+                    }
                 }
             }
-            Spacer()
-            Button(action: onDelete) {
-                Image(systemName: "minus.circle.fill")
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, .red)
+            HStack(spacing: 11) {
+                Toggle("Learn from corrections", isOn: $settings.learnFromEdits).fixedSize()
+                Spacer()
+                if !words.isEmpty {
+                    Button("Restore defaults…") { restoring = true }.buttonStyle(.plain).foregroundStyle(
+                        PressayPalette.accent
+                    ).font(.system(size: 12))
+                }
+            }.padding(.top, 28).padding(.horizontal, 2)
+        }
+        .sheet(isPresented: $adding) { AddDictionaryEntrySheet { settings.addVocabularyWord($0) } }
+        .sheet(isPresented: $restoring) {
+            PressayConfirmation(
+                title: "Restore dictionary defaults?",
+                detail: "This replaces your added words with the default dictionary.", action: "Restore defaults",
+                destructive: true
+            ) {
+                settings.restoreCuratedVocabulary()
+                restoring = false
             }
-            .buttonStyle(.plain)
-            .opacity(hovering ? 1 : 0)
-            .help("Remove")
-            .accessibilityLabel("Remove \(word)")
         }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .contextMenu {
-            Button("Remove", role: .destructive, action: onDelete)
+    }
+    private func remove(_ word: DictionaryWord) {
+        if let line = word.line {
+            settings.vocabularySource = settings.vocabularySource.split(whereSeparator: \.isNewline).map(String.init)
+                .filter { $0.trimmingCharacters(in: .whitespaces) != line }.joined(separator: "\n")
         }
+        learned.block(preferred: word.preferred)
     }
 }
 
 private struct AddDictionaryEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var preferred = ""
-    @State private var aliases = ""
-    let onSave: (String, [String]) -> Void
-
+    @FocusState private var focused: Bool
+    let onSave: (String) -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Form {
-                Section {
-                    TextField("Word", text: $preferred, prompt: Text("Required"))
-                    TextField("Sounds like", text: $aliases, prompt: Text("Optional"))
-                } header: {
-                    Text("Add Word")
-                } footer: {
-                    Text("Type it the way it should be spelled. Add what it sounds like if Pressay keeps mishearing it; separate several with commas.")
-                }
-            }
-            .formStyle(.grouped)
-            .scrollDisabled(true)
-            HStack {
+        PressaySheet(title: "Add a word") {
+            Text("Use this spelling when Pressay hears the word.").font(.system(size: 12)).foregroundStyle(
+                PressayPalette.muted
+            ).padding(.top, -12).padding(.bottom, 24)
+            Text("Preferred spelling").font(.system(size: 12, weight: .semibold)).padding(.bottom, 8)
+            TextField("e.g. Figma", text: $preferred).modifier(PressayField()).focused($focused).onSubmit(save)
+                .accessibilityLabel("Preferred spelling")
+            Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.top, 24)
+            HStack(spacing: 8) {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Add") {
-                    let aliasList = aliases.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-                    onSave(preferred.trimmingCharacters(in: .whitespaces), aliasList)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(preferred.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            .padding([.horizontal, .bottom], 20)
-        }
-        .frame(width: 420)
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Add word", action: save).buttonStyle(PressayButtonStyle(kind: .primary)).keyboardShortcut(
+                    .defaultAction
+                ).disabled(preferred.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }.padding(.top, 18)
+        }.onAppear { focused = true }
+    }
+    private func save() {
+        let value = preferred.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        onSave(value)
+        dismiss()
     }
 }
-
-// MARK: - Snippets
 
 private struct SnippetsSettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings
     @State private var editing: Snippet?
     @State private var adding = false
-
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         settings = coordinator.settings
     }
-
     private func triggers(except id: UUID?) -> Set<String> {
         Set(settings.snippets.filter { $0.id != id }.map { SnippetExpander.normalized($0.trigger) })
     }
-
     var body: some View {
-        Form {
-            PaneHero(section: .snippets, blurb: "Say a short phrase and Pressay types the full text: a link, an address, a sign-off.")
-
-            if settings.snippets.isEmpty {
-                Section {
-                    ContentUnavailableView {
-                        Label("No Snippets", systemImage: "text.quote")
-                    } description: {
-                        Text("Try “my calendar link” for your booking URL, or “my address” for your shipping address.")
-                    } actions: {
-                        Button("Add Snippet") { adding = true }
-                    }
-                }
-            } else {
-                Section {
-                    ForEach(settings.snippets) { snippet in
-                        SnippetRow(snippet: snippet) { editing = snippet } onDelete: {
-                            settings.snippets.removeAll { $0.id == snippet.id }
-                        }
-                    }
-                } footer: {
-                    Text("Works anywhere in a dictation, in any app. Snippet text is inserted exactly as written.")
-                }
+        PressayPage {
+            PressayHeading(title: "Snippets", subtitle: "Expand spoken phrases into saved text.") {
+                Button {
+                    adding = true
+                } label: {
+                    Label("Add snippet", systemImage: "plus")
+                }.buttonStyle(PressayButtonStyle(kind: .primary))
             }
-        }
-        .formStyle(.grouped)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { adding = true } label: { Label("Add Snippet", systemImage: "plus") }
-                    .help("Add a snippet")
+            if settings.snippets.isEmpty {
+                PressayEmpty(
+                    title: "No snippets yet",
+                    detail: "Turn a phrase into your booking link, an address, or your usual sign-off.",
+                    systemImage: "text.quote", actionTitle: "Create your first snippet", action: { adding = true })
+            } else {
+                PressayGroup {
+                    ForEach(settings.snippets) { snippet in
+                        Button {
+                            editing = snippet
+                        } label: {
+                            HStack(alignment: .center, spacing: 16) {
+                                Text(snippet.trigger).font(.system(size: 13, weight: .medium)).frame(
+                                    width: 164, alignment: .leading)
+                                Image(systemName: "arrow.right").font(.system(size: 12)).foregroundStyle(
+                                    PressayPalette.muted)
+                                Text(snippet.text).font(.system(size: 13)).lineSpacing(3).lineLimit(2).foregroundStyle(
+                                    PressayPalette.muted
+                                ).frame(maxWidth: .infinity, alignment: .leading)
+                                Image(systemName: "pencil").font(.system(size: 13)).frame(width: 20, height: 28)
+                                    .foregroundStyle(PressayPalette.muted).accessibilityHidden(true)
+                            }.padding(.horizontal, 20).padding(.vertical, 17).frame(minHeight: 72)
+                        }.buttonStyle(.plain).help("Edit snippet").accessibilityLabel("Edit \(snippet.trigger)")
+                            .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
+                            .contextMenu {
+                                Button("Edit…") { editing = snippet }
+                                Button("Delete…", role: .destructive) { editing = snippet }
+                            }
+                    }
+                }
             }
         }
         .sheet(isPresented: $adding) {
-            SnippetSheet(snippet: nil, taken: triggers(except: nil)) { settings.snippets.append($0) }
+            SnippetSheet(snippet: nil, taken: triggers(except: nil), onDelete: nil) { settings.snippets.append($0) }
         }
         .sheet(item: $editing) { snippet in
-            SnippetSheet(snippet: snippet, taken: triggers(except: snippet.id)) { updated in
-                if let index = settings.snippets.firstIndex(where: { $0.id == updated.id }) {
-                    settings.snippets[index] = updated
+            SnippetSheet(
+                snippet: snippet, taken: triggers(except: snippet.id),
+                onDelete: { settings.snippets.removeAll { $0.id == snippet.id } }
+            ) { updated in
+                if let i = settings.snippets.firstIndex(where: { $0.id == updated.id }) {
+                    settings.snippets[i] = updated
                 }
             }
-        }
-    }
-}
-
-private struct SnippetRow: View {
-    let snippet: Snippet
-    let onEdit: () -> Void
-    let onDelete: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("“\(snippet.trigger)”")
-                Text(snippet.text).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            }
-            Spacer()
-            HStack(spacing: 6) {
-                Button(action: onEdit) { Image(systemName: "pencil.circle.fill") }
-                    .help("Edit")
-                Button(action: onDelete) {
-                    Image(systemName: "minus.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.white, .red)
-                }
-                .help("Remove")
-            }
-            .buttonStyle(.plain)
-            .opacity(hovering ? 1 : 0)
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(count: 2, perform: onEdit)
-        .contextMenu {
-            Button("Edit…", action: onEdit)
-            Button("Remove", role: .destructive, action: onDelete)
         }
     }
 }
@@ -1672,117 +1189,112 @@ private struct SnippetSheet: View {
     @Environment(\.dismiss) private var dismiss
     let snippet: Snippet?
     let taken: Set<String>
+    let onDelete: (() -> Void)?
     let onSave: (Snippet) -> Void
     @State private var trigger = ""
     @State private var text = ""
-
+    @State private var deleting = false
     private var duplicate: Bool { taken.contains(SnippetExpander.normalized(trigger)) }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Form {
-                Section {
-                    TextField("When you say", text: $trigger, prompt: Text("my calendar link"))
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Pressay types")
-                        TextEditor(text: $text)
-                            .font(.body)
-                            .frame(height: 110)
-                            .scrollContentBackground(.hidden)
-                            .padding(4)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(.background))
-                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
-                    }
-                } header: {
-                    Text(snippet == nil ? "Add Snippet" : "Edit Snippet")
-                } footer: {
-                    Text(duplicate ? "You already have a snippet for this phrase." : "Use a phrase you wouldn’t say otherwise, like “my calendar link” rather than “calendar”.")
-                        .foregroundStyle(duplicate ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+        PressaySheet(title: snippet == nil ? "New snippet" : "Edit snippet") {
+            Text("When I say").font(.system(size: 12, weight: .semibold)).padding(.bottom, 8)
+            TextField("e.g. my calendar link", text: $trigger).modifier(PressayField()).accessibilityLabel("When I say")
+            Text("Type this").font(.system(size: 12, weight: .semibold)).padding(.top, 22).padding(.bottom, 8)
+            TextEditor(text: $text).font(.system(size: 13)).scrollContentBackground(.hidden).scrollIndicators(.hidden)
+                .frame(height: 93).modifier(PressayField()).accessibilityLabel("Type this")
+            Text(
+                duplicate
+                    ? "You already have a snippet for this phrase."
+                    : "Choose a phrase you wouldn’t otherwise say in conversation."
+            )
+            .font(.system(size: 11)).foregroundStyle(duplicate ? PressayPalette.danger : PressayPalette.muted).padding(
+                .top, 10)
+            Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.top, 24)
+            HStack(spacing: 8) {
+                if onDelete != nil {
+                    Button("Delete…") { deleting = true }.buttonStyle(PressayButtonStyle(kind: .danger))
                 }
-            }
-            .formStyle(.grouped)
-            .scrollDisabled(true)
-            HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button(snippet == nil ? "Add" : "Save") {
-                    onSave(Snippet(id: snippet?.id ?? UUID(), trigger: trigger.trimmingCharacters(in: .whitespacesAndNewlines), text: text))
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    onSave(
+                        .init(
+                            id: snippet?.id ?? UUID(), trigger: trigger.trimmingCharacters(in: .whitespacesAndNewlines),
+                            text: text))
                     dismiss()
                 }
-                .keyboardShortcut(.defaultAction)
-                .disabled(SnippetExpander.normalized(trigger).isEmpty || text.isEmpty || duplicate)
-            }
-            .padding([.horizontal, .bottom], 20)
+                .buttonStyle(PressayButtonStyle(kind: .primary)).keyboardShortcut(.defaultAction)
+                .disabled(
+                    SnippetExpander.normalized(trigger).isEmpty
+                        || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || duplicate)
+            }.padding(.top, 18)
         }
-        .frame(width: 460)
         .onAppear {
             trigger = snippet?.trigger ?? ""
             text = snippet?.text ?? ""
         }
+        .sheet(isPresented: $deleting) {
+            PressayConfirmation(
+                title: "Delete snippet?", detail: "This phrase will no longer insert its saved text.",
+                action: "Delete snippet", destructive: true
+            ) {
+                onDelete?()
+                deleting = false
+                dismiss()
+            }
+        }
     }
 }
-
-// MARK: - History
 
 private struct HistoryView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var history: HistoryStore
     @State private var showingDeleteAll = false
     @State private var searchText = ""
-
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         history = coordinator.history
     }
-
     var body: some View {
-        Form {
-            if searchText.isEmpty {
-                PaneHero(section: .history, blurb: "Everything you’ve dictated, kept only on this Mac for 30 days.")
+        PressayPage {
+            PressayHeading(title: "History") {
+                Button("Clear history…") { showingDeleteAll = true }.disabled(history.records.isEmpty).buttonStyle(
+                    PressayButtonStyle(kind: .quiet))
+            }
+            if !history.records.isEmpty {
+                PressaySearch(placeholder: "Search dictations", text: $searchText).padding(.bottom, 24)
             }
             if groups.isEmpty {
-                Section {
-                    ContentUnavailableView {
-                        Label(searchText.isEmpty ? "No Dictations" : "No Results", systemImage: searchText.isEmpty ? "clock" : "magnifyingglass")
-                    } description: {
-                        Text(searchText.isEmpty ? "Hold your talk key and speak. Dictations appear here." : "Nothing matches “\(searchText)”.")
-                    }
-                }
+                PressayEmpty(
+                    title: history.records.isEmpty ? "No dictations yet" : "No matching dictations.",
+                    detail: history.records.isEmpty
+                        ? "Your dictations stay here for 30 days. Hold \(coordinator.settings.holdKey.displayName) in any app to get started."
+                        : "Try another word or an app name.",
+                    systemImage: history.records.isEmpty ? "clock" : "magnifyingglass",
+                    hint: history.records.isEmpty ? coordinator.settings.holdKey.shortcutLabel : nil)
             }
             ForEach(groups, id: \.title) { group in
-                Section(group.title) {
-                    ForEach(group.records) { record in
-                        HistoryRow(record: record, coordinator: coordinator)
-                    }
+                PressaySection(title: group.title) {
+                    PressayGroup { ForEach(group.records) { HistoryRow(record: $0, coordinator: coordinator) } }
                 }
             }
-            if !groups.isEmpty {
-                Section {} footer: {
-                    Text("Audio recordings are deleted after 7 days.")
-                }
+            if !history.records.isEmpty {
+                Text("Dictations are kept for 30 days; audio for 7 days.").font(.system(size: 11)).foregroundStyle(
+                    PressayPalette.muted
+                ).padding(.top, 5)
             }
         }
-        .formStyle(.grouped)
-        .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button("Delete All History…", role: .destructive) { showingDeleteAll = true }
-                        .disabled(history.records.isEmpty)
-                } label: {
-                    Label("More", systemImage: "ellipsis")
-                }
-                .menuIndicator(.hidden)
+        .sheet(isPresented: $showingDeleteAll) {
+            PressayConfirmation(
+                title: "Clear dictation history?",
+                detail: "All dictations and their audio recordings will be deleted. This can’t be undone.",
+                action: "Clear history", destructive: true
+            ) {
+                try? history.deleteAll()
+                showingDeleteAll = false
             }
-        }
-        .confirmationDialog("Delete all history and audio?", isPresented: $showingDeleteAll) {
-            Button("Delete All", role: .destructive) { try? history.deleteAll() }
-        } message: {
-            Text("This can’t be undone.")
         }
     }
-
     private var filteredRecords: [DictationRecord] {
         guard !searchText.isEmpty else { return history.records }
         return history.records.filter {
@@ -1818,42 +1330,30 @@ private struct HistoryView: View {
 private struct HistoryRow: View {
     let record: DictationRecord
     let coordinator: AppCoordinator
-    /// Outside History's day sections, the time alone doesn't say when.
     var showsDay = false
-    @State private var hovering = false
     @State private var copied = false
-
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            appIcon
-            VStack(alignment: .leading, spacing: 3) {
-                Text(record.referenceText)
-                    .lineLimit(3)
-                Text(meta)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .top, spacing: 12) {
+            AppIcon(bundleID: record.targetBundleID).padding(.top, 2)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(record.referenceText).font(.system(size: 13)).lineSpacing(5).padding(.vertical, 2).lineLimit(3)
+                    .textSelection(.enabled)
+                Text(meta).font(.system(size: 10)).foregroundStyle(PressayPalette.muted).frame(minHeight: 15)
+            }.frame(maxWidth: .infinity, alignment: .leading)
             Button(action: copy) {
-                Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                    .labelStyle(.iconOnly)
-                    .contentTransition(.symbolEffect(.replace))
+                Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 13)).frame(
+                    width: 28, height: 28)
             }
-            .buttonStyle(.borderless)
-            .opacity(hovering || copied ? 1 : 0)
-            .help("Copy")
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .contextMenu {
-            Button("Copy", action: copy)
-            Button("Paste Again") { coordinator.retry(record) }
-            Divider()
-            Button("Delete", role: .destructive) { try? coordinator.history.delete(record) }
-        }
+            .buttonStyle(.plain).foregroundStyle(PressayPalette.muted).help("Copy dictation").accessibilityLabel(
+                "Copy dictation")
+        }.padding(.horizontal, 17).padding(.vertical, 12)
+            .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
+            .contextMenu {
+                Button("Copy", action: copy)
+                Button("Paste again") { coordinator.retry(record) }
+                Button("Delete", role: .destructive) { try? coordinator.history.delete(record) }
+            }
     }
-
     private func copy() {
         coordinator.copy(record)
         copied = true
@@ -1862,27 +1362,24 @@ private struct HistoryRow: View {
             copied = false
         }
     }
-
-    @ViewBuilder
-    private var appIcon: some View {
-        if let icon = AppInfo.icon(for: record.targetBundleID) {
-            Image(nsImage: icon).resizable().frame(width: 22, height: 22)
-        } else {
-            Image(systemName: "text.cursor")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 22)
-                .background(.quinary, in: RoundedRectangle(cornerRadius: 6))
-        }
-    }
-
     private var meta: String {
-        var parts: [String] = []
-        if let app = AppInfo.name(for: record.targetBundleID) { parts.append(app) }
-        parts.append(showsDay
-                     ? record.createdAt.formatted(.relative(presentation: .named))
-                     : record.createdAt.formatted(date: .omitted, time: .shortened))
-        parts.append("\(Int(record.duration.rounded())) sec")
-        return parts.joined(separator: " · ")
+        [
+            AppInfo.name(for: record.targetBundleID),
+            showsDay
+                ? record.createdAt.formatted(.relative(presentation: .named))
+                : record.createdAt.formatted(date: .omitted, time: .shortened), "\(Int(record.duration.rounded())) sec",
+        ].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+private struct MeetingRecordingStatus: View {
+    @ObservedObject var session: LiveSession
+    var body: some View {
+        HStack(spacing: 7) {
+            Circle().fill(session.phase == .finishing ? PressayPalette.muted : PressayPalette.danger)
+                .frame(width: 5, height: 5)
+            Text(session.phase == .finishing ? "Finishing meeting" : "Recording meeting")
+                .font(.system(size: 11))
+        }
     }
 }

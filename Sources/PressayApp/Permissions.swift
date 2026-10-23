@@ -37,6 +37,9 @@ final class PermissionController: ObservableObject {
     @Published private(set) var microphoneGranted = false
     @Published private(set) var accessibilityGranted = false
     @Published private(set) var inputMonitoringGranted = false
+    #if DEBUG
+    private var reviewPermissions: Set<Kind> = []
+    #endif
     var onStatusChange: (() -> Void)?
     private var monitoringTask: Task<Void, Never>?
 
@@ -51,6 +54,16 @@ final class PermissionController: ObservableObject {
     }
 
     func refresh() {
+        #if DEBUG
+        if DesignReview.enabled {
+            let allowed = ProcessInfo.processInfo.environment["PRESSAY_REVIEW_PERMISSIONS"] != "missing"
+            microphoneGranted = allowed || reviewPermissions.contains(.microphone)
+            accessibilityGranted = allowed || reviewPermissions.contains(.accessibility)
+            inputMonitoringGranted = allowed || reviewPermissions.contains(.inputMonitoring)
+            return
+        }
+        #endif
+
         let microphone = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         let accessibility = AXIsProcessTrusted()
         let inputMonitoring = CGPreflightListenEventAccess()
@@ -79,6 +92,9 @@ final class PermissionController: ObservableObject {
     }
 
     func request(_ kind: Kind) {
+        #if DEBUG
+        if DesignReview.enabled { reviewPermissions.insert(kind); refresh(); return }
+        #endif
         switch kind {
         case .microphone:
             Task { await requestMicrophone() }

@@ -83,7 +83,7 @@ int pressay_asr_run(pressay_asr *h, const float *pcm, size_t count, const char *
             transcribe_run_params params;
             CALL(transcribe_run_params_init)(&params);
             params.timestamps = TRANSCRIBE_TIMESTAMPS_NONE;
-            params.language = "en";
+            params.language = nullptr; // Automatic detection across the model’s full language set.
             // Deliberately leave vocabulary/prompt unset: the full glossary
             // degraded MOSS accuracy in the held-out benchmark.
             auto status = CALL(transcribe_run)(h->session, pcm, static_cast<int>(count), &params);

@@ -16,8 +16,9 @@ final class LiveSession: ObservableObject {
     let kind: Note.Kind
     /// Start on the note's timeline, so multi-sitting notes keep one clock.
     let offset: TimeInterval
-    let startedAt = Date()
+    let startedAt: Date
 
+    @Published private(set) var stoppedAt: Date?
     @Published private(set) var phase: Phase = .recording
     @Published private(set) var lines: [TranscriptLine] = []
     @Published private(set) var micLevel: Float = 0
@@ -46,8 +47,10 @@ final class LiveSession: ObservableObject {
         vocabulary: [VocabularyParser.Entry],
         inputUID: String?,
         captureSystemAudio: Bool,
-        separateVoices: Bool = false
+        separateVoices: Bool = false,
+        startedAt: Date = .now
     ) throws {
+        self.startedAt = startedAt
         self.noteID = noteID
         self.kind = kind
         self.offset = offset
@@ -70,7 +73,7 @@ final class LiveSession: ObservableObject {
                     self?.pending -= 1
                     continue
                 }
-                let cleaned = DeterministicPromptCleaner.clean(text, vocabulary: vocabulary)
+                let cleaned = DeterministicPromptCleaner.clean(text, vocabulary: vocabulary, englishRules: SpeechLanguage.usesEnglishRules(text))
                 guard let self, !Task.isCancelled else { continue }
                 pending -= 1
                 guard !cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
@@ -92,6 +95,29 @@ final class LiveSession: ObservableObject {
             }
         }
         mic.onSamples = { [pipeline] in pipeline.append($0, from: .me) }
+        #if DEBUG
+        if DesignReview.enabled {
+            let state = ProcessInfo.processInfo.environment["PRESSAY_REVIEW_MEETING_STATE"] ?? "recording"
+            if state != "listening" {
+                lines = [
+                    .init(speaker: .me, start: 706, text: "Let’s start with the first-time experience. I think we can make setup feel a lot simpler."),
+                    .init(speaker: .others, start: 715, text: "Agreed. Keep the permissions together, make the talk key easy to find, and leave the advanced options in settings.", voice: 1),
+                    .init(speaker: .me, start: 728, text: "I’ll work through that today and share the updated flow before Thursday."),
+                    .init(speaker: .others, start: 741, text: "Great. Let’s review it together, then check the empty states in both light and dark mode.", voice: 1),
+                    .init(speaker: .me, start: 754, text: "And we can keep the first step simple.")
+                ]
+                micLevel = 1
+            }
+            if state == "long" {
+                lines = (0..<8).flatMap { part in lines.map { line in
+                    TranscriptLine(speaker: line.speaker, start: Double(part * 90) + line.start - 706,
+                                   text: line.text, voice: line.voice)
+                } }
+            }
+            if state == "finishing" { stoppedAt = startedAt.addingTimeInterval(754); phase = .finishing }
+            return
+        }
+        #endif
         // Echo cancellation keeps speaker output out of "Me".
         do {
             try mic.start(echoCancellation: kind == .meeting, preferredInputUID: inputUID)
@@ -146,16 +172,25 @@ final class LiveSession: ObservableObject {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
             guard let self, phase == .recording else { return }
-            if pipeline.received(from: .others) == 0 { return showMissingSystemAudio() }
-            try? await Task.sleep(for: .seconds(86))
-            guard phase == .recording, pipeline.peak(of: .others) == 0 else { return }
+            if pipeline.received(from: .others) == 0 { showMissingSystemAudio() }
+            for _ in 0..<43 {
+                guard phase == .recording, !Task.isCancelled else { return }
+                if pipeline.peak(of: .others) > 0 {
+                    if notice == Self.missingSystemAudioNotice { notice = nil }
+                    return
+                }
+                try? await Task.sleep(for: .seconds(2))
+            }
+            guard phase == .recording, !Task.isCancelled else { return }
             logger.error("System audio has been digital silence for 90 s")
             showMissingSystemAudio()
         }
     }
 
+    private static let missingSystemAudioNotice = "Only your microphone is being transcribed. To include the other people, allow Pressay in System Settings › Privacy & Security › Screen & System Audio Recording, under System Audio Recording Only."
+
     private func showMissingSystemAudio() {
-        notice = "Only your microphone is being transcribed. To include the other people, allow Pressay in System Settings › Privacy & Security › Screen & System Audio Recording, under System Audio Recording Only."
+        notice = Self.missingSystemAudioNotice
     }
 
     private func injectFile(_ path: String) {
@@ -178,6 +213,7 @@ final class LiveSession: ObservableObject {
 
     func finish() async -> [TranscriptLine] {
         guard phase == .recording else { return lines }
+        stoppedAt = stoppedAt ?? .now
         phase = .finishing
         mic.stop()
         system?.stop()
@@ -193,6 +229,7 @@ final class LiveSession: ObservableObject {
 
     /// Stops at once and drops whatever was still being transcribed.
     func discard() {
+        stoppedAt = stoppedAt ?? .now
         phase = .finishing
         onLine = nil
         mic.stop()

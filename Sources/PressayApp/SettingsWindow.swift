@@ -14,7 +14,7 @@ enum ForegroundWindowPresenter {
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     init(coordinator: AppCoordinator) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 980, height: 680),
+            contentRect: NSRect(x: 0, y: 0, width: 1080, height: 740),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -23,19 +23,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         self.coordinator = coordinator
 
         window.title = "Pressay"
-        // Keeps the titlebar height steady when a pane adds toolbar items.
-        window.toolbar = NSToolbar(identifier: "PressaySettings")
-        window.toolbarStyle = .unified
-        window.minSize = NSSize(width: 760, height: 520)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.toolbar = nil
+        window.minSize = NSSize(width: 900, height: 620)
         window.isReleasedWhenClosed = false
         window.center()
         window.setFrameAutosaveName("PressayMainWindow")
         let hosting = NSHostingController(rootView: SettingsRootView(coordinator: coordinator))
-        // Lets the split view own the toolbar and floating sidebar.
         hosting.sceneBridgingOptions = [.toolbars, .title]
         hosting.sizingOptions = []
         window.contentViewController = hosting
-        window.setContentSize(NSSize(width: 980, height: 680))
+        window.setContentSize(NSSize(width: 1080, height: 740))
         window.delegate = self
     }
 

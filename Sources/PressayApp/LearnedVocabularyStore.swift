@@ -1,10 +1,7 @@
 import Foundation
 import PressayCore
 
-/// Vocabulary rules the tuner derived from transcripts, with a blocklist for
-/// deleted rules. Rules persist as long as their heard term keeps appearing
-/// in transcripts; the daily pass refreshes `lastSeenAt` and expires rules
-/// unused for `LearnedRuleRetention.unusedLifetime`.
+/// Learned spellings expire when unused; explicit removals stay blocked.
 @MainActor
 final class LearnedVocabularyStore: ObservableObject {
     struct Record: Codable, Equatable, Sendable {
@@ -28,6 +25,7 @@ final class LearnedVocabularyStore: ObservableObject {
         static let schemaVersion = "vocabularyTuner.schemaVersion"
     }
 
+    private var observations: [String: Int] = [:]
     @Published private(set) var records: [Record] = []
     @Published private(set) var blocklist: Set<String> = []
 
@@ -57,13 +55,9 @@ final class LearnedVocabularyStore: ObservableObject {
         records.map { VocabularyParser.Entry(preferred: $0.preferred, aliases: [$0.heard]) }
     }
 
-    /// Daily-pass semantics: incoming det rules insert or refresh; every
-    /// existing rule whose heard term still occurs in the transcript window
-    /// gets `lastSeenAt` bumped; rules unused past the retention lifetime
-    /// expire. `heard` is the identity everywhere (SwiftUI row IDs, remove(),
-    /// the blocklist), so an incoming heard term takes over its record.
+    /// `heard` identifies a rule. Recurring terms refresh retention even without a new correction.
     func applyDailyPass(detRules: [LearnedRule], heardTermsInWindow: Set<String>, now: Date = .now) {
-        let incoming = detRules.filter { !blocklist.contains($0.heard.lowercased()) }
+        let incoming = detRules.filter { !isBlocked(heard: $0.heard, preferred: $0.preferred) }
         let incomingByHeard = Dictionary(
             incoming.map { ($0.heard.lowercased(), $0) },
             uniquingKeysWith: { first, _ in first }
@@ -97,11 +91,10 @@ final class LearnedVocabularyStore: ObservableObject {
         persist()
     }
 
-    /// Returns only genuinely new rules (not blocklisted or known). Additive, not replacing:
-    /// the K3 judge only sees unseen candidates, so replacing would wipe earlier K3 rules.
+    /// Incoming spellings replace the same heard term; unrelated rules survive.
     @discardableResult
     func mergeRules(_ rules: [LearnedRule], source: LearnedRule.Source) -> [LearnedRule] {
-        let incoming = rules.filter { !blocklist.contains($0.heard.lowercased()) }
+        let incoming = rules.filter { !isBlocked(heard: $0.heard, preferred: $0.preferred) }
         let knownHeard = Set(records.map { $0.heard.lowercased() })
         let incomingHeard = Set(incoming.map { $0.heard.lowercased() })
         let kept = records.filter {
@@ -123,6 +116,45 @@ final class LearnedVocabularyStore: ObservableObject {
         persist()
     }
 
+    /// Explicitly removing a word prevents the background engine from adding it back.
+    func block(preferred: String) {
+        blocklist.insert("preferred:" + preferred.lowercased())
+        for record in records where record.preferred.caseInsensitiveCompare(preferred) == .orderedSame {
+            blocklist.insert(record.heard.lowercased())
+        }
+        records.removeAll { $0.preferred.caseInsensitiveCompare(preferred) == .orderedSame }
+        persist()
+    }
+
+    func unblockPreferred(_ preferred: String) {
+        blocklist.remove("preferred:" + preferred.lowercased())
+        persist()
+    }
+
+    private func isBlocked(heard: String, preferred: String) -> Bool {
+        blocklist.contains(heard.lowercased()) || blocklist.contains("preferred:" + preferred.lowercased())
+    }
+
+    func observe(_ corrections: [VocabularyCorrection]) {
+        for correction in corrections {
+            // A user correcting our learned spelling retracts that mapping.
+            let contradicted = records.filter {
+                $0.preferred.caseInsensitiveCompare(correction.heard) == .orderedSame
+                    && $0.preferred.caseInsensitiveCompare(correction.typed) != .orderedSame
+            }
+            for record in contradicted { remove(record) }
+            let key = correction.heard.lowercased() + "→" + correction.typed.lowercased()
+            // Conflicting targets reset uncertain evidence rather than racing to a rule.
+            observations = observations.filter { !$0.key.hasPrefix(correction.heard.lowercased() + "→") || $0.key == key }
+            observations[key, default: 0] += 1
+            if correction.isStrong || observations[key, default: 0] >= 3 {
+                mergeRules([LearnedRule(heard: correction.heard, preferred: correction.typed,
+                                       count: observations[key, default: 1], source: .edit)], source: .edit)
+                observations[key] = nil
+            }
+        }
+    }
+
     func unblock(_ heard: String) {
         guard blocklist.remove(heard.lowercased()) != nil else { return }
         persist()
@@ -138,6 +170,17 @@ final class LearnedVocabularyStore: ObservableObject {
             records = decoded
         }
         blocklist = Set(defaults.stringArray(forKey: Key.blocklist) ?? [])
+        // Preserve explicit dismissals from the retired suggestion queue.
+        let dismissed = defaults.stringArray(forKey: "vocabularySuggestions.dismissed") ?? []
+        if !dismissed.isEmpty {
+            for id in dismissed {
+                let parts = id.components(separatedBy: "→")
+                if let preferred = parts.last, !preferred.isEmpty { blocklist.insert("preferred:" + preferred.lowercased()) }
+                if parts.count > 1, !parts[0].isEmpty { blocklist.insert(parts[0].lowercased()) }
+            }
+            persist()
+            defaults.removeObject(forKey: "vocabularySuggestions.dismissed")
+        }
         migrateIfNeeded()
     }
 
@@ -160,73 +203,5 @@ final class LearnedVocabularyStore: ObservableObject {
     private func persist() {
         defaults.set(try? JSONEncoder().encode(records), forKey: Key.rules)
         defaults.set(Array(blocklist), forKey: Key.blocklist)
-    }
-}
-
-/// Mined suggestions are replaced daily; edit suggestions accumulate; dismissed ones never return.
-@MainActor
-final class VocabularySuggestionStore: ObservableObject {
-    private enum Key {
-        static let suggestions = "vocabularySuggestions.pending"
-        static let dismissed = "vocabularySuggestions.dismissed"
-        static let lastMined = "vocabularySuggestions.lastMined"
-    }
-
-    @Published private(set) var suggestions: [VocabularySuggestion] = []
-    private var dismissed: Set<String>
-    private let defaults: UserDefaults
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        dismissed = Set(defaults.stringArray(forKey: Key.dismissed) ?? [])
-        if let data = defaults.data(forKey: Key.suggestions),
-           let decoded = try? JSONDecoder().decode([VocabularySuggestion].self, from: data) {
-            suggestions = decoded
-        }
-    }
-
-    var lastMined: Date? { defaults.object(forKey: Key.lastMined) as? Date }
-
-    func replaceMined(_ mined: [VocabularySuggestion], known: Set<String>) {
-        let kept = suggestions.filter { $0.origin == .edit && !isKnown($0, known) }
-        let fresh = mined.filter { !dismissed.contains($0.id) && !isKnown($0, known) }
-        let keptIDs = Set(kept.map(\.id))
-        suggestions = kept + fresh.filter { !keptIDs.contains($0.id) }
-        defaults.set(Date(), forKey: Key.lastMined)
-        persist()
-    }
-
-    func add(_ suggestion: VocabularySuggestion) {
-        guard !dismissed.contains(suggestion.id) else { return }
-        if let index = suggestions.firstIndex(where: { $0.id == suggestion.id }) {
-            let existing = suggestions[index]
-            suggestions[index] = VocabularySuggestion(
-                heard: existing.heard, preferred: existing.preferred, origin: existing.origin,
-                count: existing.count + 1, example: suggestion.example
-            )
-        } else {
-            suggestions.insert(suggestion, at: 0)
-        }
-        persist()
-    }
-
-    func dismiss(_ suggestion: VocabularySuggestion) {
-        dismissed.insert(suggestion.id)
-        remove(suggestion)
-    }
-
-    func remove(_ suggestion: VocabularySuggestion) {
-        suggestions.removeAll { $0.id == suggestion.id }
-        persist()
-    }
-
-    private func isKnown(_ suggestion: VocabularySuggestion, _ known: Set<String>) -> Bool {
-        if let heard = suggestion.heard { return known.contains(heard.lowercased()) }
-        return known.contains(suggestion.preferred.lowercased())
-    }
-
-    private func persist() {
-        defaults.set(try? JSONEncoder().encode(suggestions), forKey: Key.suggestions)
-        defaults.set(Array(dismissed), forKey: Key.dismissed)
     }
 }

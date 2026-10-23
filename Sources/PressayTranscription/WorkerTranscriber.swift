@@ -19,7 +19,7 @@ public actor WorkerTranscriber: SpeechTranscriber {
     }
     public static func releaseResidentModel() async { await ASRWorkerHost.shared.release() }
     public var engineName: String { model.displayName }
-    public func setLanguage(_ language: String) {} // Benchmarked English configurations.
+    public func setLanguage(_ language: String) {} // Worker models auto-detect; none accepts a fixed-language hint.
     public func setStatusHandler(_ handler: @escaping @Sendable (String) -> Void) { status = handler }
     public func setProgressHandler(_ handler: @escaping @Sendable (Double?) -> Void) { progress = handler }
 
@@ -70,7 +70,7 @@ public actor WorkerTranscriber: SpeechTranscriber {
             }
             throw PressayError.modelUnavailable("\(model.displayName) could not finish this audio. Try another model.")
         }
-        let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = model.plainTranscript(result.text)
         return model.isTranscriptionRefusal(text) ? "" : text
     }
 

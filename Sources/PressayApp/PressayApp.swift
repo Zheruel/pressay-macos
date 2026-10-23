@@ -28,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeSystemMicReleases()
     }
 
-    /// A warm mic must not survive sleep or screen lock — resuming into a
+    /// An active mic must not survive sleep or screen lock — resuming into a
     /// half-torn-down Bluetooth link is how the input wedges into silence.
     private nonisolated func observeSystemMicReleases() {
         let center = NSWorkspace.shared.notificationCenter

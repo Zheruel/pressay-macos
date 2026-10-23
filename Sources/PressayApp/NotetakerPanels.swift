@@ -22,6 +22,9 @@ private final class FloatingPanel: NSPanel {
         isMovableByWindowBackground = true
         isReleasedWhenClosed = false
         sharingType = .none
+        #if DEBUG
+            if DesignReview.enabled { sharingType = .readOnly }
+        #endif
         if titled {
             titleVisibility = .hidden
             titlebarAppearsTransparent = true
@@ -53,12 +56,14 @@ final class NotepadPanelController {
 
     func show(session: LiveSession) {
         if let panel, panel.isVisible { return }
-        let height: CGFloat = coordinator.settings.showLiveTranscript ? 460 : 300
-        let panel = panel ?? FloatingPanel(size: NSSize(width: 340, height: height), titled: true)
+        let height: CGFloat = coordinator.settings.showLiveTranscript ? 490 : 300
+        let panel = panel ?? FloatingPanel(size: NSSize(width: 360, height: height), titled: false)
         self.panel = panel
-        panel.minSize = NSSize(width: 300, height: 220)
-        panel.contentViewController = NSHostingController(rootView: NotepadView(coordinator: coordinator, session: session))
-        panel.setContentSize(NSSize(width: 340, height: height))
+        panel.styleMask.insert(.resizable)
+        panel.minSize = NSSize(width: 340, height: 220)
+        panel.contentViewController = NSHostingController(
+            rootView: NotepadView(coordinator: coordinator, session: session))
+        panel.setContentSize(NSSize(width: 360, height: height))
         panel.placeTopRight()
         panel.orderFrontRegardless()
     }
@@ -73,6 +78,7 @@ private struct NotepadView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var session: LiveSession
     @ObservedObject private var settings: AppSettings
+    @State private var transcriptHeight: CGFloat = 75
 
     init(coordinator: AppCoordinator, session: LiveSession) {
         self.coordinator = coordinator
@@ -81,55 +87,64 @@ private struct NotepadView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             header
             if let notice = session.notice {
-                Label(notice, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .symbolRenderingMode(.multicolor)
+                Label(notice, systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 11)).foregroundStyle(PressayPalette.warning).padding(14)
             }
             if settings.showLiveTranscript {
-                liveTranscript
-                Divider()
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack {
+                        Text("Live transcript").font(.system(size: 12, weight: .semibold)).foregroundStyle(
+                            PressayPalette.muted)
+                        Spacer()
+                        Image(systemName: "waveform").font(.system(size: 12)).foregroundStyle(PressayPalette.accent)
+                    }
+                    liveTranscript
+                }.padding(.horizontal, 18).padding(.vertical, 17)
+                Rectangle().fill(PressayPalette.line).frame(height: 1)
             }
-            MyNotesEditor(text: myNotes, fontSize: 13)
-                .frame(minHeight: 70)
+            VStack(alignment: .leading, spacing: 13) {
+                Text("My notes").font(.system(size: 12, weight: .semibold)).foregroundStyle(PressayPalette.muted)
+                MyNotesEditor(text: myNotes, fontSize: 13).frame(minHeight: 70)
+            }.padding(.horizontal, 18).padding(.vertical, 17)
         }
-        .padding(.horizontal, 14)
-        .padding(.bottom, 14)
-        .padding(.top, 22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(.regularMaterial)
+        .foregroundStyle(PressayPalette.text).background(PressayPalette.base)
+        .clipShape(.rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PressayPalette.strongLine))
         .ignoresSafeArea()
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            RecordingDot(active: session.phase == .recording)
+            Circle().fill(session.phase == .recording ? PressayPalette.danger : PressayPalette.muted).frame(
+                width: 7, height: 7)
             TimelineView(.periodic(from: session.startedAt, by: 1)) { context in
-                Text(TranscriptLine.timestamp(session.offset + context.date.timeIntervalSince(session.startedAt)))
-                    .monospacedDigit()
+                Text(
+                    TranscriptLine.timestamp(
+                        session.offset + (session.stoppedAt ?? context.date).timeIntervalSince(session.startedAt))
+                )
+                .monospacedDigit().font(.system(size: 14, weight: .semibold))
             }
-            .font(.headline)
-            LevelMeter(label: nil, level: max(session.micLevel, session.othersLevel), tint: .red)
-            Spacer(minLength: 4)
-            Button { coordinator.showNotes() } label: {
-                Image(systemName: "arrow.up.forward.app")
+            if session.phase == .recording {
+                RecordingLevelBars(level: max(session.micLevel, session.othersLevel))
             }
-            .buttonStyle(.glass)
-            .buttonBorderShape(.circle)
-            .controlSize(.small)
-            .help("Open in Pressay")
-            if session.phase == .finishing {
-                ProgressView().controlSize(.small)
-            } else {
-                Button("Stop") { coordinator.stopRecording() }
-                    .buttonStyle(.glassProminent)
-                    .tint(.red)
-                    .controlSize(.small)
-            }
+            Text(session.phase == .finishing ? "Finishing…" : "Recording")
+                .font(.system(size: 11)).foregroundStyle(PressayPalette.muted).frame(
+                    maxWidth: .infinity, alignment: .leading)
+            Button {
+                coordinator.showNotes()
+            } label: {
+                Image(systemName: "arrow.up.forward.app").font(.system(size: 12)).frame(width: 26, height: 30)
+            }.buttonStyle(.plain).foregroundStyle(PressayPalette.muted).help("Open in Pressay").accessibilityLabel(
+                "Open in Pressay")
+            Button("Stop") { coordinator.stopRecording() }
+                .buttonStyle(PressayButtonStyle(kind: .danger)).disabled(session.phase == .finishing)
         }
+        .padding(14).background(PressayPalette.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
     }
 
     private var myNotes: Binding<String> {
@@ -143,25 +158,40 @@ private struct NotepadView: View {
     private var liveTranscript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 11) {
                     if session.lines.isEmpty {
                         Text("Listening…").foregroundStyle(.secondary)
                     }
                     let note = coordinator.notes.note(session.noteID)
                     ForEach(Array(session.lines.suffix(40).enumerated()), id: \.offset) { _, line in
                         let label = note?.label(for: line) ?? (line.speaker == .me ? "You" : "Others")
-                        Text("\(Text(label + "  ").foregroundStyle(line.speaker == .me ? Color.accentColor : .orange).fontWeight(.semibold))\(line.text)")
-                            .font(.callout)
-                            .textSelection(.enabled)
+                        Text(
+                            "\(Text(label + "  ").foregroundStyle(line.speaker == .me ? PressayPalette.accent : PressayPalette.warning).fontWeight(.semibold))\(line.text)"
+                        )
+                        .font(.system(size: 13))
+                        .textSelection(.enabled)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: NotepadTranscriptHeight.self, value: geometry.size.height)
+                    }
+                }
             }
-            .frame(minHeight: 90)
+            .frame(height: min(max(transcriptHeight, 60), 185))
+            .onPreferenceChange(NotepadTranscriptHeight.self) { height in
+                if abs(transcriptHeight - height) > 1 { transcriptHeight = height }
+            }
             .onChange(of: session.lines.count) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
         }
     }
+}
+
+private struct NotepadTranscriptHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 75
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 // MARK: - Call prompt
@@ -173,7 +203,7 @@ final class CallPromptController {
 
     func show(app: String, onStart: @escaping () -> Void) {
         dismiss()
-        let panel = FloatingPanel(size: NSSize(width: 380, height: 72), titled: false)
+        let panel = FloatingPanel(size: NSSize(width: 496, height: 104), titled: false)
         let view = CallPromptView(
             app: app,
             onStart: { [weak self] in
@@ -183,13 +213,16 @@ final class CallPromptController {
             onDismiss: { [weak self] in self?.dismiss() }
         )
         let hosting = NSHostingView(rootView: view)
-        hosting.frame = NSRect(x: 0, y: 0, width: 380, height: 72)
+        hosting.frame = NSRect(x: 0, y: 0, width: 496, height: 104)
         panel.contentView = hosting
         panel.setContentSize(hosting.fittingSize)
         panel.placeTopRight()
         panel.alphaValue = 0
         panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { $0.duration = 0.2; panel.animator().alphaValue = 1 }
+        NSAnimationContext.runAnimationGroup {
+            $0.duration = 0.2
+            panel.animator().alphaValue = 1
+        }
         self.panel = panel
         timeout = Task { [weak self] in
             try? await Task.sleep(for: .seconds(30))
@@ -212,26 +245,31 @@ private struct CallPromptView: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(nsImage: PressayBrand.appIcon)
-                .resizable()
-                .frame(width: 36, height: 36)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Take notes for this call?").font(.headline)
-                Text("\(app) is using your microphone.").font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            }
-            Spacer(minLength: 4)
+        HStack(spacing: 13) {
+            Image(nsImage: PressayBrand.appIcon).resizable().frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Take notes for this call?").font(.system(size: 13, weight: .semibold))
+                Text("\(app) is using your microphone.").font(.system(size: 11)).foregroundStyle(PressayPalette.muted)
+            }.frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 6) {
-                Button("Not Now", action: onDismiss)
-                    .buttonStyle(.glass)
-                Button("Start", action: onStart)
-                    .buttonStyle(.glassProminent)
+                Button("Not now", action: onDismiss).buttonStyle(PressayButtonStyle(kind: .quiet))
+                Button("Start", action: onStart).buttonStyle(PressayButtonStyle(kind: .primary))
             }
-            .controlSize(.small)
-            .fixedSize()
         }
-        .padding(14)
-        .frame(width: 380)
-        .glassEffect(.regular, in: .rect(cornerRadius: 24))
+        .padding(20).frame(width: 496, height: 104)
+        .foregroundStyle(PressayPalette.text).background(PressayPalette.base, in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(PressayPalette.strongLine))
+    }
+}
+
+private struct RecordingLevelBars: View {
+    let level: Float
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<7) { index in
+                Capsule().fill(PressayPalette.danger)
+                    .frame(width: 2, height: max(3, CGFloat(level) * [8, 14, 18, 12, 20, 16, 9][index]))
+            }
+        }.frame(width: 26, height: 18).accessibilityHidden(true)
     }
 }

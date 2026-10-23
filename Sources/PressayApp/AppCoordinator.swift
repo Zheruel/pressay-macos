@@ -18,7 +18,11 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     @Published private(set) var modelDownloadProgress: Double?
     @Published private(set) var lastError: String?
 
+    #if DEBUG
+    let settings = AppSettings(defaults: DesignReview.defaults)
+    #else
     let settings = AppSettings()
+    #endif
     let permissions = PermissionController()
     let history: HistoryStore
     let tunerRunner = VocabularyTunerRunner()
@@ -29,6 +33,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private let overlay = OverlayPanelController()
     private let sounds = DictationSoundPlayer()
     private var transcriber: any SpeechTranscriber
+    var activeSpeechModelName: String { engineModel.displayName }
     private var engineModel: ASRModel
     private var modelChangeTask: Task<Void, Never>?
     private var meetingStartTask: Task<Void, Never>?
@@ -41,27 +46,20 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private var activeMonitor: HotkeyMonitor?
     /// Captured at key press so a mid-session model swap can't hand the clip to an unprepared engine.
     private var sessionEngine: (any SpeechTranscriber)?
-    /// Transcribes long dictations while the key is held.
     private let dictationDetector = SpeechDetector.make()
     private var streamer: DictationStreamer?
     /// Invalidates stale prepare completions after a model swap.
     private var prepareGeneration = 0
-    private var coolDownTask: Task<Void, Never>?
     /// Backstop for the readiness cue when a device never reports live audio.
     private var armingTimeoutTask: Task<Void, Never>?
-    private var lastDictationEnded: Date?
-    /// Parks warming after a failed open so a broken device can't spin.
-    private var warmUpFailed = false
     private var keyPressedAt = Date.distantPast
-    private var commandMode = false
     private let cleaner = ClaudeCleaner()
     private let chatGPTCleaner = ChatGPTCleaner()
     private let editWatcher = EditWatcher()
     let chatGPT = ChatGPTAccount()
     #if DEBUG
-    // PRESSAY_NOTES_DIR points design reviews at sample meetings.
     let notes = ProcessInfo.processInfo.environment["PRESSAY_NOTES_DIR"]
-        .map { NotesStore(directory: URL(fileURLWithPath: $0)) } ?? NotesStore()
+        .map { NotesStore(directory: URL(fileURLWithPath: $0)) } ?? (DesignReview.enabled ? NotesStore(directory: DesignReview.notesDirectory) : NotesStore())
     #else
     let notes = NotesStore()
     #endif
@@ -75,9 +73,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private lazy var notepad = NotepadPanelController(coordinator: self)
     private let callPrompt = CallPromptController()
     private let callDetector = CallDetector()
-    /// A main-window section to switch to, e.g. "notes" for the Notetaker.
     @Published var settingsPaneRequest: String?
-    @Published var notetakerSettingsShown = false
+    @Published var notetakerSettingsSelected = false
     /// A hand-edited note waiting for the user to confirm a rewrite.
     @Published var rewriteRequest: UUID?
     private var callSettingsWatch: AnyCancellable?
@@ -87,7 +84,11 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         // Before the history store opens: its retention pass must see audio at its final location.
         Self.migrateApplicationSupportDirectory()
         do {
+            #if DEBUG
+            history = try HistoryStore(inMemory: DesignReview.enabled)
+            #else
             history = try HistoryStore()
+            #endif
         } catch {
             history = try! HistoryStore(inMemory: true)
             lastError = "History will not persist: \(error.localizedDescription)"
@@ -119,19 +120,30 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func start() {
+        #if DEBUG
+        if DesignReview.enabled {
+            NSApp.appearance = DesignReview.appearance
+            permissions.refresh()
+            modelReady = true
+            modelStatus = "Ready"
+            claudeAPIKey = "sk-ant-design-fixture-1234"
+            DesignReview.populate(self)
+            runDesignDemo()
+            return
+        }
+        #endif
+
         chatGPTForward = chatGPT.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         if chatGPT.isSignedIn { Task { await chatGPT.loadModels() } }
         try? history.rewriteAudioPaths(from: "/LocalFlow/", to: "/Pressay/")
         permissions.startMonitoring()
         settings.refreshLaunchAtLogin()
         applyTranscriptionLanguage()
-        applyMicWarmth()
         try? history.applyRetention()
         reloadClaudeKey()
         callDetector.onEvent = { [weak self] in self?.handleCall($0) }
         callSettingsWatch = settings.$detectCalls.sink { [weak self] in self?.applyCallDetection($0) }
         for note in notes.notes where note.needsWriteUp { writeUpNote(note.id, review: true) }
-        // Independent of TCC onboarding.
         Task { await prepareModel() }
         Task { @MainActor in tunerRunner.scheduleIfNeeded(history: history, settings: settings) }
         if !settings.onboardingComplete {
@@ -224,6 +236,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         case "key":
             claudeAPIKey = "sk-ant-demo-000000000000000000001234"
             showSettings()
+        case "notepad":
+            startMeeting()
         case "notes":
             showNotes()
         case "settings":
@@ -245,7 +259,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             Task { @MainActor in
                 let overlay = self.overlay
                 while true {
-                    overlay.showArming(style: commandMode ? .command : .dictation)
+                    overlay.showArming()
                     try? await Task.sleep(for: .seconds(1.5))
                     overlay.showRecording()
                     for i in 0..<40 {
@@ -305,8 +319,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    var commandModeAvailable: Bool { !settings.holdKey.isShift }
-
     private var cleanupActive: Bool {
         settings.claudeCleanup && cleanupConfigured
     }
@@ -314,7 +326,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private func runCleanup(
         _ raw: String,
         targetBundleID: String?,
-        style: AppStyle?,
         vocabulary: [VocabularyParser.Entry],
         timeout: TimeInterval
     ) async throws -> String {
@@ -324,7 +335,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             return try await cleaner.clean(
                 raw,
                 targetBundleID: targetBundleID,
-                style: style,
                 vocabulary: vocabulary,
                 model: settings.claudeCleanupModel,
                 apiKey: apiKey,
@@ -335,38 +345,11 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             return try await chatGPTCleaner.clean(
                 raw,
                 targetBundleID: targetBundleID,
-                style: style,
                 vocabulary: vocabulary,
                 model: settings.chatGPTModel,
                 effort: ChatGPTCleanupModel.effort,
                 accessToken: token,
                 timeout: timeout
-            )
-        }
-    }
-
-    /// Command Mode runs on the AI Cleanup provider and model, with a longer budget than cleanup.
-    private func runCommand(_ instruction: String, selection: String?, target: CapturedTarget, style: AppStyle?) async throws -> String {
-        let context = target.context.leadingText + target.context.trailingText
-        let user = CommandPrompt.user(instruction: instruction, selection: selection, context: context, app: target.bundleID, style: style)
-        let timeout: TimeInterval = 20 + Double(selection?.count ?? 0) / 400
-        return try await Timeout.run(for: .seconds(timeout + 5)) { [self] in
-            try await requestCommand(user: user, timeout: timeout)
-        }
-    }
-
-    private func requestCommand(user: String, timeout: TimeInterval) async throws -> String {
-        switch settings.cleanupProvider {
-        case .claude:
-            guard let apiKey = claudeAPIKey else { throw NotesAIError.notConfigured }
-            return try await cleaner.complete(
-                system: CommandPrompt.system, user: user, model: settings.claudeCleanupModel, apiKey: apiKey, timeout: timeout
-            )
-        case .chatgpt:
-            let token = try await chatGPT.accessToken()
-            return try await chatGPTCleaner.complete(
-                instructions: CommandPrompt.system, user: user, model: settings.chatGPTModel,
-                effort: ChatGPTCleanupModel.effort, accessToken: token, timeout: timeout
             )
         }
     }
@@ -404,6 +387,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func restartHotkey() {
+        #if DEBUG
+        guard !DesignReview.enabled else { return }
+        #endif
         guard permissions.inputMonitoringGranted else {
             hotkey.stop()
             return
@@ -417,7 +403,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func applyTranscriptionLanguage() {
-        let code = settings.language.whisperCode
+        let code = (liveSession != nil || meetingStarting ? settings.meetingLanguage : settings.language).whisperCode
         Task { [transcriber] in await transcriber.setLanguage(code) }
     }
 
@@ -430,6 +416,17 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
 
     /// An in-flight dictation keeps the engine captured at its key press.
     func applyASRModel() {
+        #if DEBUG
+        if DesignReview.enabled {
+            let model = settings.asrModel
+            if !model.supportedLanguages.contains(settings.language) { settings.language = .auto }
+            engineModel = model
+            modelReady = true
+            modelPreparing = false
+            modelStatus = "Ready"
+            return
+        }
+        #endif
         modelChangeTask?.cancel()
         guard liveSession == nil, !meetingStarting else { return }
         guard stateMachine.phase == .idle else {
@@ -451,10 +448,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         Task { await prepareModel(force: true) }
     }
 
-    private func installEngine(_ model: ASRModel) {
+    private func installEngine(_ model: ASRModel, language: TranscriptionLanguage? = nil) {
         sessionEngine = nil
         engineModel = model
-        transcriber = Self.makeTranscriber(for: model, language: settings.language)
+        transcriber = Self.makeTranscriber(for: model, language: language ?? settings.language)
         modelReady = false
         // A prepare for the old engine may still be running; its completion must not mark this one ready.
         prepareGeneration += 1
@@ -545,18 +542,11 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         activeMonitor = monitor
         sessionEngine = transcriber
         keyPressedAt = Date()
-        commandMode = commandModeAvailable && NSEvent.modifierFlags.contains(.shift)
-        if commandMode, !cleanupConfigured {
-            commandMode = false
-            overlay.showError("Command Mode needs AI. Set it up in Settings › AI Cleanup.")
-            stateMachine.reset()
-            return
-        }
-        coolDownTask?.cancel()
         do {
             // Cue waits for real audio: a cold Bluetooth link gives 550 ms+ of silence, and beeping
             // through it trains people to talk into a dead mic.
-            overlay.showArming(style: commandMode ? .command : .dictation)
+            overlay.showArming()
+            recorder.preferredInputUID = settings.inputDeviceUID
             try recorder.start()
             let streamer = DictationStreamer(engine: transcriber, detector: dictationDetector) { [recorder] in
                 recorder.liveAudio(from: $0)
@@ -581,7 +571,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         stateMachine.begin()
         sounds.play(.begin)
         recorder.markEarcon(duration: sounds.beginCaptureDelay)
-        overlay.showRecording(style: commandMode ? .command : .dictation)
+        overlay.showRecording()
     }
 
     private func startArmingTimeout() {
@@ -603,9 +593,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         self.streamer = nil
         do {
             let raw = try recorder.stop()
-            // After stop(): coolDown() refuses to cut a live dictation.
-            scheduleMicCoolDown()
-            // Held-key duration, not clip duration: pre-roll seeds every warm capture with up to 0.5 s.
             let held = Date().timeIntervalSince(keyPressedAt)
             guard held >= DictationProcessingPolicy.minimumClipDuration else {
                 Task { await streamer?.cancel() }
@@ -613,10 +600,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 return
             }
             sounds.play(.release)
-            recorder.mutePreRoll(for: sounds.beginCaptureDelay)
-            // Shift can join at any point during the hold.
-            let command = commandMode || (commandModeAvailable && cleanupConfigured && NSEvent.modifierFlags.contains(.shift))
-            if command { overlay.showRecording(style: .command) }
             overlay.showProcessing()
             let captured = target ?? accessibility.capture(vocabulary: settings.vocabularyTerms)
             let target = accessibility.refreshInsertionTarget(captured)
@@ -624,16 +607,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             sessionEngine = nil
             processingTask = Task { [weak self] in
                 guard let self else { return }
-                if command {
-                    var selection = target.selectedText
-                    if selection == nil, !AppStyle.copiesLineWithoutSelection(target.bundleID) {
-                        selection = await accessibility.copySelection(from: target)
-                    }
-                    if selection?.isEmpty == true { selection = nil }
-                    await process(raw, target: target, engine: engine, streamer: streamer, command: .some(selection))
-                } else {
-                    await process(raw, target: target, engine: engine, streamer: streamer)
-                }
+                await process(raw, target: target, engine: engine, streamer: streamer)
             }
         } catch PressayError.recordingTooShort {
             Task { await streamer?.cancel() }
@@ -659,111 +633,12 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         target = nil
         overlay.hide()
         sounds.play(.cancel)
-            recorder.mutePreRoll(for: sounds.beginCaptureDelay)
-        scheduleMicCoolDown()
-    }
-
-    // MARK: - Warm microphone
-
-    /// Re-entrant: each dictation restarts the clock.
-    private func scheduleMicCoolDown() {
-        lastDictationEnded = Date()
-        warmUpFailed = false
-        applyMicWarmth()
-    }
-
-    /// Single place that reconciles the recorder's stream with the policy.
-    func applyMicWarmth() {
-        guard stateMachine.phase != .recording, stateMachine.phase != .arming else { return }
-        guard liveSession == nil else {
-            recorder.coolDown()
-            return
-        }
-        // A warm stream is bound to its device; it must close before a new choice takes effect.
-        if recorder.preferredInputUID != settings.inputDeviceUID {
-            recorder.preferredInputUID = settings.inputDeviceUID
-            recorder.coolDown()
-        }
-        let conditions = warmConditions(at: Date())
-        let shouldWarm = MicWarmPolicy.shouldStayWarm(conditions, now: Date())
-        logger.debug(
-            """
-            warmth: enabled=\(conditions.enabled, privacy: .public) \
-            bluetooth=\(conditions.isBluetooth, privacy: .public) \
-            everDictated=\(conditions.lastDictationEnded != nil, privacy: .public) \
-            warm=\(self.recorder.isWarm, privacy: .public) → \
-            \(shouldWarm ? "warm" : "cool", privacy: .public)
-            """
-        )
-        // A device that refuses to open should not be retried on every audio
-        // event; one failure parks warming until the next real dictation.
-        guard shouldWarm, !warmUpFailed else {
-            coolDownTask?.cancel()
-            coolDownTask = nil
-            recorder.coolDown()
-            return
-        }
-        do {
-            try recorder.warmUp()
-        } catch {
-            warmUpFailed = true
-            coolDownTask?.cancel()
-            coolDownTask = nil
-            logger.info("could not keep the mic warm: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-        // Whoever warms the stream owns closing it.
-        scheduleCoolDown(for: conditions)
-    }
-
-    /// Uses the policy's expiry, not a bare sleep, so a wall-clock change can't leave the mic open.
-    private func scheduleCoolDown(for conditions: MicWarmPolicy.Conditions) {
-        coolDownTask?.cancel()
-        guard let expiry = MicWarmPolicy.expiry(conditions, now: Date()) else {
-            coolDownTask = nil
-            return
-        }
-        coolDownTask = Task { [weak self] in
-            let remaining = max(0, expiry.timeIntervalSinceNow)
-            try? await Task.sleep(for: .seconds(remaining))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self else { return }
-                // A dictation may have pushed the deadline out while sleeping.
-                if MicWarmPolicy.shouldStayWarm(self.warmConditions(at: Date()), now: Date()) {
-                    self.applyMicWarmth()
-                } else {
-                    self.coolDownTask = nil
-                    self.recorder.coolDown()
-                }
-            }
-        }
-    }
-
-    /// The mic the recorder will open: the chosen one while it is connected, else the system default.
-    private var inputIsBluetooth: Bool {
-        if let uid = settings.inputDeviceUID, let device = AudioDeviceMonitor.device(forUID: uid) {
-            return device.isBluetooth
-        }
-        return AudioDeviceMonitor.defaultInputIsBluetooth
-    }
-
-    private func warmConditions(at now: Date) -> MicWarmPolicy.Conditions {
-        MicWarmPolicy.Conditions(
-            enabled: settings.keepMicWarm,
-            isBluetooth: inputIsBluetooth,
-            lastDictationEnded: lastDictationEnded
-        )
     }
 
     /// Resuming into a half-torn-down Bluetooth link wedges the input into silence.
     func releaseMicForSystemEvent() {
-        coolDownTask?.cancel()
-        coolDownTask = nil
         armingTimeoutTask?.cancel()
         armingTimeoutTask = nil
-        lastDictationEnded = nil
-        // forceClose: coolDown() declines while recording.
         recorder.forceClose()
         if stateMachine.phase == .recording || stateMachine.phase == .arming {
             stateMachine.cancel()
@@ -797,19 +672,16 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    /// `command` is set in Command Mode, holding the selected text if there is any.
     private func process(
         _ raw: AudioRecorder.RawCapture,
         target: CapturedTarget,
         engine: any SpeechTranscriber,
-        streamer: DictationStreamer? = nil,
-        command: String?? = nil
+        streamer: DictationStreamer? = nil
     ) async {
         let releasedAt = Date()
         let recordID = UUID()
         var audioURL: URL?
         do {
-            // ~5 ms per second of audio.
             let clip = try await Task.detached(priority: .userInitiated) {
                 let converted = try raw.segments.flatMap {
                     try AudioResampler.convert($0.samples, from: $0.sampleRate)
@@ -828,8 +700,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             logger.info("Transcribing \(clip.duration, privacy: .public)s clip with \(asrTimeout, privacy: .public)s budget")
             let engineName = await engine.engineName
             let transcript = try await Timeout.run(for: .seconds(asrTimeout)) {
-                // Long dictations were mostly transcribed while the key was held.
-                if let streamed = await streamer?.finish(raw) { return streamed }
+                    if let streamed = await streamer?.finish(raw) { return streamed }
                 return try await engine.transcribe(clip)
             }
             guard !Task.isCancelled else {
@@ -837,7 +708,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 return
             }
 
-            let learnedRules = tunerRunner.learnImmediately(from: transcript.text, settings: settings)
+            let englishRules = SpeechLanguage.usesEnglishRules(transcript.text, hint: settings.language)
+            if englishRules { _ = tunerRunner.learnImmediately(from: transcript.text, settings: settings) }
 
             // Shell commands are case-sensitive; never auto-capitalize into a terminal.
             let isTerminal = target.bundleID.map {
@@ -848,30 +720,15 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 vocabulary: settings.vocabularyEntries,
                 capitalizeFirstWord: !isTerminal,
                 // Fuzzy rewrites would break case-sensitive paths and branches.
-                phoneticFallback: !isTerminal
+                phoneticFallback: !isTerminal,
+                englishRules: englishRules
             )
             var finalText = deterministic
             var structureLatency: TimeInterval = 0
             var usedLanguageModel = false
             let structureStarted = Date()
-            let style = settings.matchAppStyle ? AppStyle.detect(bundleID: target.bundleID, windowTitle: target.windowTitle) : nil
             let snippet = SnippetExpander.exactMatch(deterministic, snippets: settings.snippets)
-            if case .some(let selection) = command {
-                guard cleanupConfigured else {
-                    overlay.showError("Command Mode needs AI. Set it up in Settings › AI Cleanup.")
-                    resetAfterNonResult()
-                    return
-                }
-                overlay.showPolishing()
-                do {
-                    finalText = try await runCommand(deterministic, selection: selection, target: target, style: style)
-                    usedLanguageModel = true
-                } catch {
-                    logger.error("Command failed: \(error.localizedDescription, privacy: .public)")
-                    fail(error, message: "The command didn’t work. Try again.")
-                    return
-                }
-            } else if let snippet {
+            if let snippet {
                 finalText = snippet.text
             } else if cleanupActive,
                ClaudeCleanupPolicy.shouldClean(transcript.text, isTerminal: isTerminal) {
@@ -882,7 +739,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 overlay.showPolishing()
                 do {
                     finalText = try await Timeout.run(for: .seconds(timeout)) { [self] in
-                        try await runCleanup(raw, targetBundleID: target.bundleID, style: style, vocabulary: vocabulary, timeout: timeout)
+                        try await runCleanup(raw, targetBundleID: target.bundleID, vocabulary: vocabulary, timeout: timeout)
                     }
                     usedLanguageModel = true
                 } catch ChatGPTCleaner.CleanupError.usageLimit {
@@ -893,10 +750,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                     logger.error("AI cleanup fell back to rules: \(error.localizedDescription, privacy: .public)")
                 }
             }
-            if !usedLanguageModel, snippet == nil, settings.structuredDictation, !isTerminal {
+            if !usedLanguageModel, snippet == nil, settings.structuredDictation, !isTerminal, englishRules {
                 finalText = TranscriptStructurer.structure(deterministic)
             }
-            if command == nil, snippet == nil {
+            if snippet == nil {
                 finalText = SnippetExpander.expand(finalText, snippets: settings.snippets)
             }
             structureLatency = Date().timeIntervalSince(structureStarted)
@@ -928,7 +785,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             }
             stateMachine.succeed()
             showInsertionOutcome(insertion)
-            if settings.learnFromEdits, command == nil, !isTerminal, insertion != .copied {
+            if settings.learnFromEdits, !isTerminal, insertion != .copied {
                 editWatcher.watch(pid: target.pid, inserted: finalText) { [weak self] corrections in
                     self?.learnFromEdits(corrections)
                 }
@@ -936,7 +793,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             // The overlay's success beat yields if a new press arrives.
             stateMachine.reset()
             self.target = nil
-            celebrateLearnedRules(learnedRules)
             tunerRunner.scheduleIfNeeded(history: history, settings: settings)
         } catch PressayError.recordingTooShort {
             resetAfterNonResult()
@@ -977,7 +833,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         stateMachine.fail(error.localizedDescription)
         overlay.showError(message ?? error.localizedDescription)
         sounds.play(.error)
-        recorder.mutePreRoll(for: sounds.beginCaptureDelay)
         target = nil
         // Allow an immediate retry while the error is still showing.
         stateMachine.reset()
@@ -1021,6 +876,22 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func startMeeting() {
+        #if DEBUG
+        if DesignReview.enabled {
+            guard liveSession == nil, let note = notes.notes.first,
+                  let session = try? LiveSession(noteID: note.id, kind: .meeting, offset: 0,
+                    transcriber: transcriber, vocabulary: [], inputUID: nil, captureSystemAudio: false, startedAt: .now.addingTimeInterval(ProcessInfo.processInfo.environment["PRESSAY_REVIEW_MEETING_STATE"] == "listening" ? -8 : -754)) else { return }
+            notes.modify(note.id, keepOrder: true) {
+                $0.title = "Meeting"
+                if ProcessInfo.processInfo.environment["PRESSAY_REVIEW_MEETING_STATE"] == "listening" { $0.myNotes = "" }
+            }
+            engineModel = settings.meetingASRModel
+            liveSession = session
+            notepad.show(session: session)
+            return
+        }
+        #endif
+
         guard !meetingStarting, liveSession == nil, finishTask == nil else { return }
         guard permissions.microphoneGranted, stateMachine.phase == .idle, !modelPreparing else {
             recordingError = !permissions.microphoneGranted
@@ -1031,7 +902,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
         meetingStarting = true
         recorder.forceClose()
-        installEngine(settings.meetingASRModel)
+        installEngine(settings.meetingASRModel, language: settings.meetingLanguage)
         showNotes()
         meetingStartTask = Task { [weak self] in
             guard let self else { return }
@@ -1075,8 +946,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         callPrompt.dismiss()
 
         let noteID = UUID()
-        coolDownTask?.cancel()
-        coolDownTask = nil
         recorder.forceClose()
         do {
             let session = try LiveSession(
@@ -1110,7 +979,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             logger.error("Recording failed to start: \(error.localizedDescription, privacy: .public)")
             recordingError = "Couldn’t start the Notetaker: \(error.localizedDescription)"
             showNotes()
-            applyMicWarmth()
             applyASRModel()
         }
     }
@@ -1164,7 +1032,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             liveSession = nil
             finishTask = nil
             applyASRModel()
-            applyMicWarmth()
             finishNote(session.noteID, newLines: lines, from: session.offset, duration: duration, automatic: automatic)
         }
     }
@@ -1190,7 +1057,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         } else {
             notes.modify(session.noteID) { $0.lines.removeAll { $0.start >= session.offset } }
         }
-        applyMicWarmth()
     }
 
     /// `newLines` replace the ones streamed in live from `offset` on: they now say which voice spoke.
@@ -1285,7 +1151,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    /// Answers from one meeting, or from recent meetings when `noteID` is nil.
     func ask(_ question: String, about noteID: UUID?) async throws -> String {
         guard settings.notesUseAI else { throw NotesAIError.turnedOff }
         let source = noteID.flatMap(notes.note).map { [$0] } ?? Self.relevantMeetings(for: question, in: notes.notes)
@@ -1322,7 +1187,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         return "The AI couldn’t write this note: \(error.localizedDescription)"
     }
 
-    /// Meetings that mention the question's words first, then the newest.
     private static func relevantMeetings(for question: String, in notes: [Note], limit: Int = 30) -> [Note] {
         let words = question.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 3 }
         func hits(_ note: Note) -> Int {
@@ -1365,8 +1229,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func openNotetakerSettings() {
-        showNotes()
-        notetakerSettingsShown = true
+        notetakerSettingsSelected = true
+        settingsPaneRequest = "general"
+        showSettings()
     }
 
     func canWriteUp(_ note: Note) -> Bool {
@@ -1374,39 +1239,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             && notesModel != nil && liveSession?.noteID != note.id
     }
 
-    /// Close matches apply at once; looser ones wait in Suggestions so a change of mind never becomes a rule.
     private func learnFromEdits(_ corrections: [VocabularyCorrection]) {
-        let strong = corrections.filter(\.isStrong).map {
-            LearnedRule(heard: $0.heard, preferred: $0.typed, count: 1, source: .edit)
-        }
-        let learned = settings.learnedVocabulary.mergeRules(strong, source: .edit)
-        for correction in corrections where !correction.isStrong {
-            settings.vocabularySuggestions.add(VocabularySuggestion(
-                heard: correction.heard, preferred: correction.typed, origin: .edit, count: 1,
-                example: "You changed “\(correction.heard)” to “\(correction.typed)”"
-            ))
-        }
-        logger.info("Edit learning: \(learned.count, privacy: .public) learned, \(corrections.count - strong.count, privacy: .public) suggested")
-        celebrateLearnedRules(learned)
-    }
-
-    private func celebrateLearnedRules(_ rules: [LearnedRule], retrying: Bool = false) {
-        guard !rules.isEmpty, stateMachine.phase == .idle else { return }
-        guard overlay.isIdle else {
-            if !retrying {
-                Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .seconds(2.6))
-                    self?.celebrateLearnedRules(rules, retrying: true)
-                }
-            }
-            return
-        }
-        let message = rules.count == 1
-            ? "Learned: \(rules[0].heard) → \(rules[0].preferred)"
-            : "Learned \(rules.count) new words"
-        sounds.play(.learned)
-        recorder.mutePreRoll(for: sounds.beginCaptureDelay)
-        overlay.showLearnedToast(message)
+        guard settings.learnFromEdits else { return }
+        settings.learnedVocabulary.observe(corrections)
     }
 
     private func showInsertionOutcome(_ outcome: InsertionOutcome) {

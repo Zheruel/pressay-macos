@@ -30,13 +30,13 @@ No account, no telemetry, no subscription. Audio never leaves the Mac.
 ## Features
 
 - **Dictation anywhere.** Hold Right Option (configurable), speak, release. The text lands in the field that was focused when you started, in native, web and Electron apps. The clipboard is preserved.
-- **Local speech recognition for each task.** Orukeet is recommended for fast everyday dictation; MOSS for meeting accuracy. Ranked pickers also offer Parakeet Ultra, Qwen3-ASR 1.7B and Mega-ASR. Legacy models remain available for additional languages.
-- **AI Cleanup (optional).** Fixes misheard words, removes fillers and false starts, and formats lists and paragraphs, without changing what you said. Runs on your Anthropic API key or your ChatGPT Plus/Pro plan. Only text is sent. It matches the app: casual in Slack, full sentences in Mail, tidy paragraphs in Notes.
-- **Command Mode.** Hold Shift with your talk key and say what to do. Select text and say "make this shorter" or "translate to German", or say "write a reply saying I'm running late" with nothing selected.
+- **Local speech recognition for each task.** Orukeet is recommended for fast everyday dictation; MOSS for meeting accuracy. Ranked pickers also offer Parakeet Ultra, Qwen3-ASR 1.7B and Mega-ASR. All models use automatic language detection; fixed-language choices appear where the runtime supports them.
+- **AI Cleanup (optional).** Fixes misheard words, removes fillers and false starts, and formats lists and paragraphs, without changing what you said. Runs on your Anthropic API key or your ChatGPT Plus/Pro plan. Only text is sent.
 - **Snippets.** Say "my calendar link" and Pressay types the URL. Works inside any dictation.
 - **Notetaker.** Offers to take notes when a call starts. Records your mic as "You" and tells the other people on the call apart on-device (Speaker 1, Speaker 2, or their names), so it works with Zoom, Meet, Teams or Slack and no bot joins the call. When the call ends you get a titled note with a summary, decisions, action items with owners, and open questions. Ask anything about one meeting or all of them, and keep your action items in one list or send them to Reminders.
-- **A dictionary that learns.** Retype a word Pressay got wrong and it learns the spelling. Names that keep recurring are suggested. Both the on-device rules and AI Cleanup use the dictionary.
-- **Fast start.** A built-in or wired mic stays warm for 45 s after a dictation, with a 0.5 s pre-roll, so your first word is never clipped. Bluetooth headphones are never held open, so they stay in music mode between dictations. The start sound plays only once real audio arrives.
+- **A dictionary that learns.** Retype a word Pressay got wrong and it learns the spelling. Repeated, consistent corrections and recurring names are learned quietly; stale rules expire and removed words stay removed. Both the on-device rules and AI Cleanup use the dictionary.
+- **Microphone lifecycle.** The microphone opens when you hold the talk key and closes when you release or cancel. The start sound plays once real audio arrives.
+- **Graphite workspace.** A consistent dark and light interface with recent dictations, speaking pace, streak, personal action items, and combined Dictation/Notetaker settings under General.
 
 ## How it works
 
@@ -91,8 +91,8 @@ When Zoom, Teams, Meet, FaceTime, Slack or another call app starts using the mic
 - An on-device voice activity model finds speech, even from quiet participants, and each utterance is transcribed on the Mac as soon as the speaker pauses.
 - Up to four other voices are told apart on the Mac. After the call, the AI names a speaker only when they introduced themselves or were addressed by name, and fixes misheard names and terms using your Dictionary. Rename speakers from the meeting header.
 - When the call ends (or you click **Stop**), the AI writes the note. Each meeting has **Summary**, **Transcript** and **My Notes** tabs, and an **Ask anything** box. Past meetings are grouped by day and searchable, and you can ask questions across all of them.
-- **Action items** collects what you (or everyone) agreed to do across meetings. Tick them off, or add them to Reminders.
-- Pick the model under the gear on the Notetaker page: Claude Haiku 5.5 (recommended) or Sonnet 5.5 with an API key, GPT-6.1 Sol (recommended) or GPT-6 Luna with a ChatGPT plan. Only providers you have set up are listed.
+- **Action items** collects your open tasks across meetings. Complete them with the circular control, or add them to Reminders. Other assignments remain in each meeting note.
+- Choose speech recognition, language, and the ranked notes model under **General › Notetaker**. Claude Sonnet 5.5 and GPT-6.1 Sol lead their provider lists. Only providers you have set up are listed.
 - Audio is never saved. Only the transcript and your notes go to the AI provider, to write the note or answer a question.
 
 The meeting prompt was tuned over six blind-judged rounds on 12 meetings: [`docs/notes/meetings/`](docs/notes/meetings/README.md).

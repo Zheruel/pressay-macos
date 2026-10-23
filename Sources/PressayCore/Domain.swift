@@ -41,8 +41,16 @@ public struct HoldKey: Codable, Sendable, Hashable, Identifiable {
     public var familyDeviceBits: UInt64? { Self.modifierFamilies[keyCode]?.familyDevices }
 
     public var isModifier: Bool { modifierFlagMask != nil }
-    /// Shift is Command Mode's modifier, so a Shift hold key has no Command Mode.
-    public var isShift: Bool { modifierFlagMask == 0x20000 }
+    public var shortcutLabel: String {
+        let glyph: String? = switch modifierFlagMask {
+        case 0x80000: "⌥"
+        case 0x100000: "⌘"
+        case 0x20000: "⇧"
+        case 0x40000: "⌃"
+        default: nil
+        }
+        return glyph.map { $0 + " " + displayName } ?? displayName
+    }
 
     public var displayName: String { Self.keyNames[keyCode] ?? "Key \(keyCode)" }
 
@@ -106,7 +114,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     case voxtralMini = "voxtralMini"
     case whisperTurboGGML = "whisperTurboGGML"
     case qwen3ASR06 = "qwen3ASR06"
-    /// English lock and ITN are load-bearing; see `supportedLanguages`, `requestsExplicitFormatting`.
+    /// ITN is enabled explicitly; see `requestsExplicitFormatting`.
     case funASRMLTNano = "funASRMLTNano"
 
     public var id: String { rawValue }
@@ -141,15 +149,15 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
 
     public var caption: String {
         switch self {
-        case .orukeet: "Recommended for dictation. Strong accuracy with very fast local processing. English."
-        case .moss: "Recommended for meetings. Best meeting accuracy in our tests; slower than Orukeet. English."
-        case .parakeetUltra: "Fast alternative with strong conversational accuracy. English."
-        case .megaASR: "Alternative for difficult audio. Larger download and slower processing. English."
-        case .qwen3ASR17: "Strong accuracy on clear speech and technical terms. English."
+        case .orukeet: "Recommended for dictation. Strong accuracy with very fast local processing. 25 languages."
+        case .moss: "Recommended for meetings. Best meeting accuracy in our tests; slower than Orukeet. 50+ languages."
+        case .parakeetUltra: "Fast alternative with strong conversational accuracy. 25 languages."
+        case .megaASR: "Alternative for difficult audio. Larger download and slower processing. Multilingual."
+        case .qwen3ASR17: "Strong accuracy on clear speech and technical terms. 30 languages."
         case .voxtralMini: "Multilingual alternative. 8 languages. Uses about 5 GB of memory."
         case .whisperTurboGGML: "Multilingual alternative. 100 languages. Uses about 1 GB of memory."
-        case .qwen3ASR06: "Smaller English-only alternative."
-        case .funASRMLTNano: "Legacy English-only alternative."
+        case .qwen3ASR06: "Smaller alternative. 30 languages."
+        case .funASRMLTNano: "Multilingual alternative. 31 languages."
         }
     }
 
@@ -180,27 +188,29 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
-    /// What each engine was measured to do safely, not everything it advertises:
-    /// Fun-ASR on auto-detect invented Korean/Spanish sentences for near-silent clips.
+    /// Fixed hints only where the installed engine accepts them. The Qwen GGUF
+    /// runtime auto-detects all 30 languages but rejects caller-supplied hints.
     public var supportedLanguages: [TranscriptionLanguage] {
+        guard supportsLanguageHint else { return [.auto] }
+        return [.auto] + languageCodes.compactMap(TranscriptionLanguage.from(code:))
+    }
+
+    /// Advertised language coverage is distinct from fixed-language control.
+    public var languageCodes: [String] {
         switch self {
-        // Qwen takes no hint; English-only keeps the non-Latin hallucination filter armed.
-        case .orukeet, .moss, .parakeetUltra, .megaASR, .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: [.english]
-        case .whisperTurboGGML: TranscriptionLanguage.allCases
-        // Auto is Voxtral's default: forcing a language made it fabricate text for near-silent audio.
-        case .voxtralMini:
-            [.auto, .english, .french, .german, .spanish, .italian,
-             .portuguese, .dutch, .hindi]
+        case .orukeet: ["bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "ru", "sk", "sl", "es", "sv", "uk"]
+        case .moss: []
+        case .parakeetUltra: ["bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "ru", "sk", "sl", "es", "sv", "uk"]
+        case .qwen3ASR17: ["ar", "yue", "zh", "cs", "da", "nl", "en", "fil", "fi", "fr", "de", "el", "hi", "hu", "id", "it", "ja", "ko", "mk", "ms", "fa", "pl", "pt", "ro", "ru", "es", "sv", "th", "tr", "vi"]
+        case .megaASR: []
+        case .voxtralMini: ["nl", "en", "fr", "de", "hi", "it", "pt", "es"]
+        case .whisperTurboGGML: ["af", "sq", "am", "ar", "hy", "as", "az", "ba", "eu", "be", "bn", "bs", "br", "bg", "yue", "ca", "zh", "hr", "cs", "da", "nl", "en", "et", "fo", "fi", "fr", "gl", "ka", "de", "el", "gu", "ht", "ha", "haw", "he", "hi", "hu", "is", "id", "it", "ja", "jw", "kn", "kk", "km", "ko", "lo", "la", "lv", "ln", "lt", "lb", "mk", "mg", "ms", "ml", "mt", "mi", "mr", "mn", "my", "ne", "no", "nn", "oc", "ps", "fa", "pl", "pt", "pa", "ro", "ru", "sa", "sr", "sn", "sd", "si", "sk", "sl", "so", "es", "su", "sw", "sv", "tl", "tg", "ta", "tt", "te", "th", "bo", "tr", "tk", "uk", "ur", "uz", "vi", "cy", "yi", "yo"]
+        case .qwen3ASR06: ["ar", "yue", "zh", "cs", "da", "nl", "en", "fil", "fi", "fr", "de", "el", "hi", "hu", "id", "it", "ja", "ko", "mk", "ms", "fa", "pl", "pt", "ro", "ru", "es", "sv", "th", "tr", "vi"]
+        case .funASRMLTNano: ["ar", "bg", "yue", "zh", "hr", "cs", "da", "nl", "en", "et", "fil", "fi", "el", "hi", "hu", "id", "ga", "ja", "ko", "lv", "lt", "ms", "mt", "pl", "pt", "ro", "sk", "sl", "sv", "th", "vi"]
         }
     }
 
-    /// Used when the current selection isn't in `supportedLanguages`.
-    public var defaultLanguage: TranscriptionLanguage {
-        switch self {
-        case .orukeet, .moss, .parakeetUltra, .megaASR, .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: .english
-        case .whisperTurboGGML, .voxtralMini: .auto
-        }
-    }
+    public var defaultLanguage: TranscriptionLanguage { .auto }
 
     /// Measured: 60 s splits cut Voxtral worst case 13.3 s → 7.7 s; below ~40 s overhead wins. Whisper chunks internally.
     public var preferredChunkSeconds: TimeInterval? {
@@ -214,17 +224,15 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
     public var offersLanguageChoice: Bool { supportedLanguages.count > 1 }
 
     public var languageCaption: String {
-        switch self {
-        case .orukeet, .moss, .parakeetUltra, .megaASR, .funASRMLTNano, .qwen3ASR17, .qwen3ASR06: "English (this model takes no language hint)"
-        case .whisperTurboGGML: "Automatic handles mixed Norwegian and English"
-        case .voxtralMini: "Automatic is safest on short clips for this model"
-        }
+        let count = languageCodes.count
+        let coverage = self == .moss ? "50+ languages" : self == .megaASR ? "Multilingual" : "\(count) languages"
+        return coverage + (supportsLanguageHint ? " · automatic detection or a fixed language" : " · automatic detection")
     }
 
     public var supportsLanguageHint: Bool {
         switch self {
         case .funASRMLTNano, .whisperTurboGGML, .voxtralMini: true
-        case .orukeet, .moss, .parakeetUltra, .megaASR, .qwen3ASR17, .qwen3ASR06: false
+        default: false
         }
     }
 
@@ -250,8 +258,19 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
         }
     }
 
+    public func plainTranscript(_ text: String) -> String {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // MOSS can emit diarization markers even when timestamps are disabled.
+        guard self == .moss,
+              text.range(of: #"^\[\d+(?:\.\d+)?\]"#, options: .regularExpression) != nil,
+              text.range(of: #"\[\d+(?:\.\d+)?\]$"#, options: .regularExpression) != nil else { return text }
+        return text.replacingOccurrences(of: #"\[(?:\d+(?:\.\d+)?|S\d{1,3})\]"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Only short output is judged, so a real dictation that merely *starts* with an apology survives.
-    public func isTranscriptionRefusal(_ text: String) -> Bool {
+    public func isTranscriptionRefusal(_ text: String, language: String = "auto") -> Bool {
         guard text.count <= 64 else { return false }
         if emitsAssistantRefusals {
             let lower = text.lowercased()
@@ -261,7 +280,7 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
                 return true
             }
         }
-        return expectsLatinScriptOnly && Self.isPredominantlyNonLatin(text)
+        return language == "en" && Self.isPredominantlyNonLatin(text)
     }
 
     /// Ignores punctuation and digits so "아, 그거는." still reads as non-Latin.
@@ -274,64 +293,223 @@ public enum ASRModel: String, CaseIterable, Codable, Sendable, Identifiable {
 }
 
 /// Fixed cases force a language token, skipping detection that can misfire on short clips.
+/// Persisted names remain compatible; engine codes cover the complete shipping model catalog.
 public enum TranscriptionLanguage: String, CaseIterable, Codable, Sendable, Identifiable {
     case auto = "Automatic"
-    case english = "English"
-    case norwegian = "Norsk"
+    case afrikaans = "Afrikaans"
+    case albanian = "Albanian"
+    case amharic = "Amharic"
+    case arabic = "العربية"
+    case armenian = "Armenian"
+    case assamese = "Assamese"
+    case azerbaijani = "Azerbaijani"
+    case bashkir = "Bashkir"
+    case basque = "Basque"
+    case belarusian = "Belarusian"
+    case bengali = "Bengali"
+    case bosnian = "Bosnian"
+    case breton = "Breton"
+    case bulgarian = "Bulgarian"
+    case cantonese = "Cantonese"
+    case catalan = "Catalan"
+    case chinese = "中文"
+    case croatian = "Croatian"
+    case czech = "Czech"
     case danish = "Dansk"
-    case german = "Deutsch"
-    case spanish = "Español"
-    case french = "Français"
-    case italian = "Italiano"
     case dutch = "Nederlands"
+    case english = "English"
+    case estonian = "Estonian"
+    case faroese = "Faroese"
+    case filipino = "Filipino"
+    case finnish = "Finnish"
+    case french = "Français"
+    case galician = "Galician"
+    case georgian = "Georgian"
+    case german = "Deutsch"
+    case greek = "Greek"
+    case gujarati = "Gujarati"
+    case haitianCreole = "Haitian Creole"
+    case hausa = "Hausa"
+    case hawaiian = "Hawaiian"
+    case hebrew = "Hebrew"
+    case hindi = "हिन्दी"
+    case hungarian = "Hungarian"
+    case icelandic = "Icelandic"
+    case indonesian = "Indonesian"
+    case irish = "Irish"
+    case italian = "Italiano"
+    case japanese = "日本語"
+    case javanese = "Javanese"
+    case kannada = "Kannada"
+    case kazakh = "Kazakh"
+    case khmer = "Khmer"
+    case korean = "한국어"
+    case lao = "Lao"
+    case latin = "Latin"
+    case latvian = "Latvian"
+    case lingala = "Lingala"
+    case lithuanian = "Lithuanian"
+    case luxembourgish = "Luxembourgish"
+    case macedonian = "Macedonian"
+    case malagasy = "Malagasy"
+    case malay = "Malay"
+    case malayalam = "Malayalam"
+    case maltese = "Maltese"
+    case maori = "Maori"
+    case marathi = "Marathi"
+    case mongolian = "Mongolian"
+    case myanmar = "Myanmar"
+    case nepali = "Nepali"
+    case norwegian = "Norsk"
+    case nynorsk = "Nynorsk"
+    case occitan = "Occitan"
+    case pashto = "Pashto"
+    case persian = "Persian"
     case polish = "Polski"
     case portuguese = "Português"
-    case swedish = "Svenska"
-    case ukrainian = "Українська"
+    case punjabi = "Punjabi"
+    case romanian = "Romanian"
     case russian = "Русский"
-    case arabic = "العربية"
-    case hindi = "हिन्दी"
-    case chinese = "中文"
-    case japanese = "日本語"
-    case korean = "한국어"
+    case sanskrit = "Sanskrit"
+    case serbian = "Serbian"
+    case shona = "Shona"
+    case sindhi = "Sindhi"
+    case sinhala = "Sinhala"
+    case slovak = "Slovak"
+    case slovenian = "Slovenian"
+    case somali = "Somali"
+    case spanish = "Español"
+    case sundanese = "Sundanese"
+    case swahili = "Swahili"
+    case swedish = "Svenska"
+    case tagalog = "Tagalog"
+    case tajik = "Tajik"
+    case tamil = "Tamil"
+    case tatar = "Tatar"
+    case telugu = "Telugu"
+    case thai = "Thai"
+    case tibetan = "Tibetan"
+    case turkish = "Turkish"
+    case turkmen = "Turkmen"
+    case ukrainian = "Українська"
+    case urdu = "Urdu"
+    case uzbek = "Uzbek"
+    case vietnamese = "Vietnamese"
+    case welsh = "Welsh"
+    case yiddish = "Yiddish"
+    case yoruba = "Yoruba"
 
     public var id: String { rawValue }
-
     public var whisperCode: String {
         switch self {
         case .auto: "auto"
-        case .english: "en"
-        case .norwegian: "no"
+        case .afrikaans: "af"
+        case .albanian: "sq"
+        case .amharic: "am"
+        case .arabic: "ar"
+        case .armenian: "hy"
+        case .assamese: "as"
+        case .azerbaijani: "az"
+        case .bashkir: "ba"
+        case .basque: "eu"
+        case .belarusian: "be"
+        case .bengali: "bn"
+        case .bosnian: "bs"
+        case .breton: "br"
+        case .bulgarian: "bg"
+        case .cantonese: "yue"
+        case .catalan: "ca"
+        case .chinese: "zh"
+        case .croatian: "hr"
+        case .czech: "cs"
         case .danish: "da"
-        case .german: "de"
-        case .spanish: "es"
-        case .french: "fr"
-        case .italian: "it"
         case .dutch: "nl"
+        case .english: "en"
+        case .estonian: "et"
+        case .faroese: "fo"
+        case .filipino: "fil"
+        case .finnish: "fi"
+        case .french: "fr"
+        case .galician: "gl"
+        case .georgian: "ka"
+        case .german: "de"
+        case .greek: "el"
+        case .gujarati: "gu"
+        case .haitianCreole: "ht"
+        case .hausa: "ha"
+        case .hawaiian: "haw"
+        case .hebrew: "he"
+        case .hindi: "hi"
+        case .hungarian: "hu"
+        case .icelandic: "is"
+        case .indonesian: "id"
+        case .irish: "ga"
+        case .italian: "it"
+        case .japanese: "ja"
+        case .javanese: "jw"
+        case .kannada: "kn"
+        case .kazakh: "kk"
+        case .khmer: "km"
+        case .korean: "ko"
+        case .lao: "lo"
+        case .latin: "la"
+        case .latvian: "lv"
+        case .lingala: "ln"
+        case .lithuanian: "lt"
+        case .luxembourgish: "lb"
+        case .macedonian: "mk"
+        case .malagasy: "mg"
+        case .malay: "ms"
+        case .malayalam: "ml"
+        case .maltese: "mt"
+        case .maori: "mi"
+        case .marathi: "mr"
+        case .mongolian: "mn"
+        case .myanmar: "my"
+        case .nepali: "ne"
+        case .norwegian: "no"
+        case .nynorsk: "nn"
+        case .occitan: "oc"
+        case .pashto: "ps"
+        case .persian: "fa"
         case .polish: "pl"
         case .portuguese: "pt"
-        case .swedish: "sv"
-        case .ukrainian: "uk"
+        case .punjabi: "pa"
+        case .romanian: "ro"
         case .russian: "ru"
-        case .arabic: "ar"
-        case .hindi: "hi"
-        case .chinese: "zh"
-        case .japanese: "ja"
-        case .korean: "ko"
+        case .sanskrit: "sa"
+        case .serbian: "sr"
+        case .shona: "sn"
+        case .sindhi: "sd"
+        case .sinhala: "si"
+        case .slovak: "sk"
+        case .slovenian: "sl"
+        case .somali: "so"
+        case .spanish: "es"
+        case .sundanese: "su"
+        case .swahili: "sw"
+        case .swedish: "sv"
+        case .tagalog: "tl"
+        case .tajik: "tg"
+        case .tamil: "ta"
+        case .tatar: "tt"
+        case .telugu: "te"
+        case .thai: "th"
+        case .tibetan: "bo"
+        case .turkish: "tr"
+        case .turkmen: "tk"
+        case .ukrainian: "uk"
+        case .urdu: "ur"
+        case .uzbek: "uz"
+        case .vietnamese: "vi"
+        case .welsh: "cy"
+        case .yiddish: "yi"
+        case .yoruba: "yo"
         }
     }
-
-    /// `auto` is false: an auto-detecting engine may legitimately return any script.
-    public var usesLatinScript: Bool {
-        switch self {
-        case .auto, .ukrainian, .russian, .arabic, .hindi,
-             .chinese, .japanese, .korean:
-            false
-        case .english, .norwegian, .danish, .german, .spanish, .french,
-             .italian, .dutch, .polish, .portuguese, .swedish:
-            true
-        }
-    }
+    public static func from(code: String) -> Self? { allCases.first { $0.whisperCode == code } }
+    public var displayName: String { self == .auto ? "Automatic" : Locale(identifier: "en").localizedString(forLanguageCode: whisperCode)?.capitalized ?? rawValue }
+    public var usesLatinScript: Bool { self != .auto && !Set(["am","ar","as","ba","be","bg","bn","bo","el","fa","gu","he","hi","hy","ja","ka","kk","km","kn","ko","lo","mk","ml","mn","mr","my","ne","pa","ps","ru","sa","sd","si","sr","ta","te","th","uk","ur","uz","yi","yue","zh"]).contains(whisperCode) }
 }
 
 public enum DictationPhase: Equatable, Sendable {
@@ -399,9 +577,6 @@ public enum DictationProcessingPolicy {
 
     /// The coordinator's pre-check and AudioTrimmer's guard must agree on this.
     public static let minimumClipDuration: TimeInterval = 0.25
-
-    /// 45 s clears the 35 s median of 548 real inter-dictation gaps and sits on the coverage knee.
-    public static let micWarmWindow: TimeInterval = 45
 
     public static let preRollDuration: TimeInterval = 0.5
 

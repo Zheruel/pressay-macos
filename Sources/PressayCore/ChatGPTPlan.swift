@@ -26,7 +26,6 @@ public enum ChatGPTCleanupModel {
     /// Medium beat low on Luna and matched it on Sol, at equal latency on both.
     public static let effort = "medium"
 
-    /// "gpt-6-luna" → "GPT-6 Luna", for slugs the catalog hasn't named yet.
     public static func displayName(for slug: String) -> String {
         slug.split(separator: "-").map { part in
             part == "gpt" ? "GPT" : part.prefix(1).uppercased() + part.dropFirst()
@@ -197,7 +196,7 @@ public struct ChatGPTAuthClient: Sendable {
         self.session = session
     }
 
-    public func complete(attempt: ChatGPTAuthAttempt, callback: URL) async throws -> ChatGPTCredentials {
+    public func complete(attempt: ChatGPTAuthAttempt, callback: URL, expectedSubject: String? = nil) async throws -> ChatGPTCredentials {
         let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? []
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
         guard value("state") == attempt.state else { throw ChatGPTAuthError.stateMismatch }
@@ -222,7 +221,7 @@ public struct ChatGPTAuthClient: Sendable {
             "resource": ChatGPTPlan.resource,
         ])
         guard let idToken = token["id_token"] as? String else { throw ChatGPTAuthError.badToken("no id_token") }
-        let claims = try await verifyIDToken(idToken, clientID: clientID, nonce: attempt.nonce)
+        let claims = try await verifyIDToken(idToken, clientID: clientID, nonce: attempt.nonce, expectedSubject: expectedSubject)
         let credentials = try Self.credentials(from: token, clientID: clientID, idToken: idToken, claims: claims)
         guard credentials.planUsageGranted else { throw ChatGPTAuthError.planNotGranted }
         return credentials
@@ -295,7 +294,7 @@ public struct ChatGPTAuthClient: Sendable {
 
     // MARK: ID token
 
-    func verifyIDToken(_ token: String, clientID: String, nonce: String) async throws -> [String: Any] {
+    func verifyIDToken(_ token: String, clientID: String, nonce: String, expectedSubject: String? = nil) async throws -> [String: Any] {
         let parts = token.split(separator: ".").map(String.init)
         guard parts.count == 3,
               let headerData = Data(base64URLEncoded: parts[0]),
@@ -320,11 +319,11 @@ public struct ChatGPTAuthClient: Sendable {
         guard SecKeyVerifySignature(key, .rsaSignatureMessagePKCS1v15SHA256, signed as CFData, signature as CFData, nil) else {
             throw ChatGPTAuthError.badToken("bad signature")
         }
-        try Self.checkClaims(claims, clientID: clientID, nonce: nonce)
+        try Self.checkClaims(claims, clientID: clientID, nonce: nonce, expectedSubject: expectedSubject)
         return claims
     }
 
-    static func checkClaims(_ claims: [String: Any], clientID: String, nonce: String, now: Date = Date()) throws {
+    static func checkClaims(_ claims: [String: Any], clientID: String, nonce: String, expectedSubject: String? = nil, now: Date = Date()) throws {
         guard claims["iss"] as? String == ChatGPTPlan.issuer else { throw ChatGPTAuthError.badToken("issuer") }
         let audiences = (claims["aud"] as? [String]) ?? [(claims["aud"] as? String) ?? ""]
         guard audiences.contains(clientID) else { throw ChatGPTAuthError.badToken("audience") }
@@ -332,6 +331,9 @@ public struct ChatGPTAuthClient: Sendable {
             throw ChatGPTAuthError.badToken("expired")
         }
         guard claims["nonce"] as? String == nonce else { throw ChatGPTAuthError.badToken("nonce") }
+        if let expectedSubject, claims["sub"] as? String != expectedSubject {
+            throw ChatGPTAuthError.badToken("account identity changed")
+        }
     }
 
     /// PKCS#1 RSAPublicKey DER from a JWK's modulus and exponent.
@@ -409,7 +411,6 @@ public struct ChatGPTCleaner: Sendable {
     public static func requestBody(
         transcript: String,
         targetBundleID: String?,
-        style: AppStyle? = nil,
         vocabulary: [VocabularyParser.Entry],
         model: String,
         effort: String?
@@ -420,7 +421,7 @@ public struct ChatGPTCleaner: Sendable {
             "instructions": ClaudeCleanupPrompt.system(vocabulary: vocabulary),
             "input": [[
                 "role": "user",
-                "content": ClaudeCleanupPrompt.user(transcript: transcript, targetBundleID: targetBundleID, style: style),
+                "content": ClaudeCleanupPrompt.user(transcript: transcript, targetBundleID: targetBundleID),
             ]],
             "store": false,
             "stream": true,
@@ -432,7 +433,6 @@ public struct ChatGPTCleaner: Sendable {
     public func clean(
         _ transcript: String,
         targetBundleID: String?,
-        style: AppStyle? = nil,
         vocabulary: [VocabularyParser.Entry],
         model: String,
         effort: String?,
@@ -442,7 +442,6 @@ public struct ChatGPTCleaner: Sendable {
         let body = Self.requestBody(
             transcript: transcript,
             targetBundleID: targetBundleID,
-            style: style,
             vocabulary: vocabulary,
             model: model,
             effort: effort
@@ -500,7 +499,6 @@ public struct ChatGPTCleaner: Sendable {
         throw CleanupError.incomplete
     }
 
-    /// Returns the full text on `response.completed`.
     static func handle(_ event: [String: Any], into reader: inout SSEReader) throws -> String? {
         switch event["type"] as? String {
         case "response.output_text.delta":
@@ -528,7 +526,6 @@ public struct ChatGPTCleaner: Sendable {
         return .http(status, text)
     }
 
-    /// Server order.
     public func models(accessToken: String) async throws -> [(slug: String, name: String)] {
         var request = URLRequest(url: ChatGPTPlan.modelsEndpoint, timeoutInterval: 10)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "authorization")

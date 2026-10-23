@@ -34,7 +34,6 @@ final class AudioRecorder: @unchecked Sendable {
     private var lastLevelUpdate = Date.distantPast
     private var speechMeter = SpeechActivityMeter()
     private var isRecording = false
-    /// True while merely warm, too.
     private var engineOpen = false
     private var configurationObserver: (any NSObjectProtocol)?
     private let logger = Logger(subsystem: "dev.localflow.app", category: "audio")
@@ -43,7 +42,6 @@ final class AudioRecorder: @unchecked Sendable {
     private var preRoll: [Float] = []
     private var preRollWrite = 0
     private var preRollFilled = 0
-    private var preRollMutedUntil: Date?
 
     /// Bluetooth links deliver zero-filled buffers for hundreds of ms while negotiating.
     private var hasLiveAudio = false
@@ -59,8 +57,6 @@ final class AudioRecorder: @unchecked Sendable {
 
     /// CoreAudio UID; nil follows the system default.
     var preferredInputUID: String?
-
-    var isWarm: Bool { engineOpen }
 
     init() {
         // .main serializes with start()/stop()/cancel(), so isRecording needs no lock here.
@@ -79,20 +75,6 @@ final class AudioRecorder: @unchecked Sendable {
         }
     }
 
-    // MARK: - Warmth
-
-    /// Spares the next key press the hardware start latency.
-    func warmUp() throws {
-        guard !engineOpen else { return }
-        try openEngine()
-    }
-
-    /// Refuses to cut a dictation.
-    func coolDown() {
-        guard !isRecording else { return }
-        closeEngine()
-    }
-
     /// For sleep/lock: a half-torn-down Bluetooth link wedges the input into silence on wake.
     func forceClose() {
         closeEngine()
@@ -106,7 +88,6 @@ final class AudioRecorder: @unchecked Sendable {
             try openEngine()
         }
 
-        // A warm mic keeps its converged noise floor; openEngine() resets a fresh one.
         lastLevelUpdate = Date()
         announcedFirstAudio = false
         lock.withLock {
@@ -122,9 +103,10 @@ final class AudioRecorder: @unchecked Sendable {
         }
     }
 
-    /// Resample + trim happen later, off the main actor; the stream stays warm.
+    /// Release the hardware before resampling and transcription run off the main actor.
     func stop() throws -> RawCapture {
         guard isRecording else { throw PressayError.recordingTooShort }
+        defer { closeEngine() }
 
         return lock.withLock {
             isRecording = false
@@ -139,11 +121,7 @@ final class AudioRecorder: @unchecked Sendable {
     }
 
     func cancel() {
-        lock.withLock {
-            isRecording = false
-            samples.removeAll(keepingCapacity: true)
-            finishedSegments.removeAll()
-        }
+        closeEngine()
         onLevel?(.silent)
     }
 
@@ -171,11 +149,6 @@ final class AudioRecorder: @unchecked Sendable {
             guard isRecording, finishedSegments.isEmpty, offset <= samples.count else { return nil }
             return LiveAudio(samples: Array(samples[offset...]), sampleRate: sampleRate, earconWindow: earconWindow)
         }
-    }
-
-    /// Release/cancel cues play into the warm stream and would otherwise lead the *next* dictation.
-    func mutePreRoll(for duration: TimeInterval) {
-        lock.withLock { preRollMutedUntil = Date().addingTimeInterval(duration) }
     }
 
     // MARK: - Engine
@@ -207,7 +180,7 @@ final class AudioRecorder: @unchecked Sendable {
         do {
             try installTapAndStart(on: input, format: format)
         } catch {
-            try? catchingObjCException { input.removeTap(onBus: 0) }
+            closeEngine()
             throw PressayError.microphoneUnavailable
         }
         engineOpen = true
@@ -256,9 +229,8 @@ final class AudioRecorder: @unchecked Sendable {
     /// Idempotent: macOS can post this several times per device transition.
     private func handleConfigurationChange() {
         guard engineOpen else { return }
-        logger.info("configuration change while \(self.isRecording ? "recording" : "warm", privacy: .public)")
-        // Between dictations, don't follow the system onto a new device: it may be a headset,
-        // where an open mic switches playback to call audio. The next dictation opens it cold.
+        logger.info("microphone configuration changed")
+        // Do not reopen a stream after a recording has ended.
         guard isRecording else {
             closeEngine()
             return
@@ -321,10 +293,6 @@ final class AudioRecorder: @unchecked Sendable {
 
     private func appendPreRollLocked(_ mono: [Float]) {
         guard !preRoll.isEmpty else { return }
-        if let preRollMutedUntil {
-            guard Date() >= preRollMutedUntil else { return }
-            self.preRollMutedUntil = nil
-        }
         let capacity = preRoll.count
         let source = mono.count > capacity ? Array(mono.suffix(capacity)) : mono
         for sample in source {

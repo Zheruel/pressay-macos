@@ -19,13 +19,11 @@ enum NotetakerRoute: Hashable {
     case actionItems
 }
 
-/// The Notetaker page of the main window: past meetings, then a note page pushed on top.
 struct NotetakerPage: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var store: NotesStore
     @ObservedObject private var settings: AppSettings
     @State private var path: [NotetakerRoute] = []
-    @State private var search = ""
     @State private var deleting: UUID?
 
     init(coordinator: AppCoordinator) {
@@ -43,9 +41,6 @@ struct NotetakerPage: View {
                     case .actionItems: ActionItemsPage(coordinator: coordinator)
                     }
                 }
-        }
-        .sheet(isPresented: $coordinator.notetakerSettingsShown) {
-            NotetakerSettingsSheet(coordinator: coordinator)
         }
         .confirmationDialog("Delete this meeting?", isPresented: deletingShown) {
             Button("Delete", role: .destructive) {
@@ -73,12 +68,15 @@ struct NotetakerPage: View {
             if let id, path.last != .note(id) { path = [.note(id)] }
         }
         #if DEBUG
-        .onAppear {
-            if ProcessInfo.processInfo.environment["PRESSAY_OPEN_NOTE"] != nil,
-               let first = store.notes.max(by: { $0.createdAt < $1.createdAt }) {
-                path = ProcessInfo.processInfo.environment["PRESSAY_OPEN_NOTE"] == "actions" ? [.actionItems] : [.note(first.id)]
+            .onAppear {
+                if ProcessInfo.processInfo.environment["PRESSAY_OPEN_NOTE"] != nil,
+                    let first = store.notes.max(by: { $0.createdAt < $1.createdAt })
+                {
+                    path =
+                        ProcessInfo.processInfo.environment["PRESSAY_OPEN_NOTE"] == "actions"
+                        ? [.actionItems] : [.note(first.id)]
+                }
             }
-        }
         #endif
     }
 
@@ -96,72 +94,88 @@ struct NotetakerPage: View {
 
     // MARK: Home
 
-    @ViewBuilder
     private var home: some View {
-        Group {
-            if store.notes.isEmpty {
-                NotetakerHero(coordinator: coordinator)
+        PressayPage {
+            PressayHeading(title: "Notetaker") {
+                HStack(spacing: 8) {
+                    StartNotetakerButton(coordinator: coordinator, prominent: true)
+                    Button {
+                        coordinator.openNotetakerSettings()
+                    } label: {
+                        Label("Settings", systemImage: "slider.horizontal.3")
+                    }
+                }
+            }
+            if coordinator.meetingStarting {
+                VStack(spacing: 16) {
+                    ProgressView().controlSize(.large)
+                    Text("Preparing meeting").font(.system(size: 19, weight: .semibold))
+                    Text(coordinator.modelStatus).font(.system(size: 12)).foregroundStyle(PressayPalette.muted)
+                    if let value = coordinator.modelDownloadProgress { ProgressView(value: value).frame(width: 220) }
+                    Button("Cancel") { coordinator.cancelMeetingStart() }
+                }.frame(maxWidth: .infinity, minHeight: 450)
+            } else if store.notes.isEmpty {
+                PressayEmpty(
+                    title: "No meetings yet",
+                    detail: "Start Notetaker for a call or an in-person meeting. Your meetings will appear here.", systemImage: "person.2")
             } else {
-                List {
-                    Section {
-                        StartCard(coordinator: coordinator)
-                            .listRowSeparator(.hidden)
-                        if search.isEmpty, openItemCount > 0 {
-                            NavigationLink(value: NotetakerRoute.actionItems) {
-                                HStack(spacing: 10) {
-                                    Image(systemName: "checklist")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 26, height: 26)
-                                        .background(Circle().fill(Color.orange.gradient))
-                                    Text(openItemCount == 1 ? "1 open action item for you" : "\(openItemCount) open action items for you")
-                                        .font(.headline)
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(.tertiary)
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 10)
-                                .contentShape(.rect)
-                                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
-                            }
-                            .buttonStyle(.plain)
-                            .listRowSeparator(.hidden)
-                        }
-                    }
-                    let groups = groups
-                    ForEach(groups, id: \.title) { group in
-                        Section(group.title) {
-                            ForEach(group.notes) { note in
-                                NavigationLink(value: NotetakerRoute.note(note.id)) {
-                                    NoteListRow(note: note, recording: coordinator.liveSession?.noteID == note.id)
-                                }
-                                .contextMenu { NoteMenuItems(coordinator: coordinator, note: note, onDelete: { deleting = note.id }) }
-                            }
-                        }
-                    }
-                    if groups.isEmpty {
-                        ContentUnavailableView.search(text: search)
-                            .frame(maxWidth: .infinity, minHeight: 220)
-                            .listRowSeparator(.hidden)
-                    }
+                if openItemCount > 0 {
+                    NavigationLink(value: NotetakerRoute.actionItems) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "checklist").font(.system(size: 18)).foregroundStyle(
+                                PressayPalette.accent)
+                            Text("\(openItemCount) open action \(openItemCount == 1 ? "item" : "items") for you").font(
+                                .system(size: 12))
+                            Spacer();
+                            Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(
+                                PressayPalette.muted)
+                        }.contentShape(.rect)
+                    }.buttonStyle(.plain).padding(.bottom, 20)
+                    Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.bottom, 24)
                 }
-                .listStyle(.inset)
-                .searchable(text: $search, placement: .toolbar, prompt: "Search meetings")
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if store.notes.contains(where: { $0.kind == .meeting && $0.hasTranscript }) {
-                        AskBar(coordinator: coordinator, noteID: nil)
+                PressaySection(title: "Recent meetings") {
+                    PressayGroup {
+                        ForEach(store.notes.sorted { $0.createdAt > $1.createdAt }) { note in
+                            NavigationLink(value: NotetakerRoute.note(note.id)) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "person.2.wave.2").font(.system(size: 18)).foregroundStyle(
+                                        PressayPalette.accent
+                                    )
+                                    .frame(width: 34, height: 34).background(
+                                        PressayPalette.accentSurface, in: .rect(cornerRadius: 8))
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(note.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                                        Text(
+                                            [
+                                                note.createdAt.formatted(date: .abbreviated, time: .shortened),
+                                                note.durationText, note.participants.joined(separator: ", "),
+                                            ].filter { !$0.isEmpty }.joined(separator: " · ")
+                                        )
+                                        .font(.system(size: 10)).foregroundStyle(PressayPalette.muted).lineLimit(1)
+                                    }.frame(maxWidth: .infinity, alignment: .leading)
+                                    Text(
+                                        note.formatting
+                                            ? "Writing up…" : note.body.isEmpty ? "Transcript only" : "Written up"
+                                    )
+                                    .font(.system(size: 10, weight: .medium)).foregroundStyle(
+                                        note.body.isEmpty ? PressayPalette.muted : PressayPalette.success
+                                    )
+                                    .padding(.horizontal, 9).padding(.vertical, 4)
+                                    .background(
+                                        note.body.isEmpty ? PressayPalette.button : PressayPalette.successSurface,
+                                        in: .capsule)
+                                }.padding(.horizontal, 18).padding(.vertical, 15).contentShape(.rect)
+                            }.buttonStyle(.plain)
+                                .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
+                                .contextMenu {
+                                    NoteMenuItems(
+                                        coordinator: coordinator, note: note, onDelete: { deleting = note.id })
+                                }
+                        }
                     }
                 }
             }
-        }
-        .navigationTitle("Notetaker")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                NotetakerSettingsButton(coordinator: coordinator)
-            }
-        }
+        }.navigationTitle("")
     }
 
     private var openItemCount: Int {
@@ -170,46 +184,7 @@ struct NotetakerPage: View {
         }
     }
 
-    private var groups: [(title: String, notes: [Note])] {
-        let notes = store.notes.sorted { $0.createdAt > $1.createdAt }.filter { note in
-            search.isEmpty
-                || note.title.localizedCaseInsensitiveContains(search)
-                || note.body.localizedCaseInsensitiveContains(search)
-                || note.myNotes.localizedCaseInsensitiveContains(search)
-                || note.lines.contains { $0.text.localizedCaseInsensitiveContains(search) }
-        }
-        let calendar = Calendar.current
-        var result: [(title: String, notes: [Note])] = []
-        for note in notes {
-            let title: String
-            if calendar.isDateInToday(note.createdAt) {
-                title = "Today"
-            } else if calendar.isDateInYesterday(note.createdAt) {
-                title = "Yesterday"
-            } else if calendar.isDate(note.createdAt, equalTo: .now, toGranularity: .year) {
-                title = note.createdAt.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
-            } else {
-                title = note.createdAt.formatted(.dateTime.month(.abbreviated).day().year())
-            }
-            if result.last?.title == title {
-                result[result.count - 1].notes.append(note)
-            } else {
-                result.append((title, [note]))
-            }
-        }
-        return result
-    }
-}
 
-private struct NotetakerSettingsButton: View {
-    @ObservedObject var coordinator: AppCoordinator
-
-    var body: some View {
-        Button { coordinator.notetakerSettingsShown = true } label: {
-            Label("Notetaker Settings", systemImage: "gearshape")
-        }
-        .help("Notetaker settings")
-    }
 }
 
 private struct NoteMenuItems: View {
@@ -238,63 +213,9 @@ func copyToPasteboard(_ text: String) {
     NSPasteboard.general.setString(text, forType: .string)
 }
 
-/// The top of the meetings list: start now, and whether calls are picked up.
-private struct StartCard: View {
-    @ObservedObject var coordinator: AppCoordinator
-    @ObservedObject private var settings: AppSettings
-
-    init(coordinator: AppCoordinator) {
-        self.coordinator = coordinator
-        settings = coordinator.settings
-    }
-
-    var body: some View {
-        HStack(spacing: 16) {
-            if coordinator.liveSession == nil {
-                StartNotetakerButton(coordinator: coordinator)
-                    .controlSize(.large)
-            } else {
-                Label("Taking notes now", systemImage: "record.circle")
-                    .font(.headline)
-                    .foregroundStyle(.red)
-            }
-            CallDetectionStatus(coordinator: coordinator)
-            Spacer(minLength: 0)
-        }
-        .padding(16)
-        // Flat, so the glass button on it reads as glass.
-        .background(.fill.quinary, in: .rect(cornerRadius: 22))
-        .padding(.vertical, 6)
-    }
-}
-
-private struct CallDetectionStatus: View {
-    @ObservedObject var coordinator: AppCoordinator
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if coordinator.settings.detectCalls {
-                HStack(spacing: 6) {
-                    Circle().fill(.green).frame(width: 7, height: 7)
-                    Text("Listening for calls").font(.callout.weight(.medium))
-                }
-                Text("When Zoom, Meet, Teams or Slack uses your mic, Pressay offers to take notes.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Call detection is off").font(.callout.weight(.medium))
-                Button("Offer to take notes when a call starts") { coordinator.settings.detectCalls = true }
-                    .buttonStyle(.link)
-                    .font(.caption)
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// Clear glass with a red record glyph, like Voice Memos, rather than a bright accent pill.
 struct StartNotetakerButton: View {
     @ObservedObject var coordinator: AppCoordinator
+    var prominent = false
 
     var body: some View {
         if coordinator.meetingStarting {
@@ -304,72 +225,14 @@ struct StartNotetakerButton: View {
                 Button("Cancel") { coordinator.cancelMeetingStart() }
             }
         } else {
-            Button { coordinator.startMeeting() } label: {
-                Label {
-                    Text("Start Notetaker").fontWeight(.semibold)
-                } icon: {
-                    Image(systemName: "record.circle.fill")
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, .red)
-                }
-                .padding(.horizontal, 4)
+            Button {
+                coordinator.startMeeting()
+            } label: {
+                Label("Start Notetaker", systemImage: "plus")
             }
-            .buttonStyle(.glass)
+            .buttonStyle(PressayButtonStyle(kind: prominent ? .primary : .standard))
             .disabled(coordinator.liveSession != nil)
         }
-    }
-}
-
-struct NotetakerIcon: View {
-    var size: CGFloat = 64
-
-    var body: some View {
-        Image(systemName: "person.2.wave.2.fill")
-            .font(.system(size: size * 0.45, weight: .medium))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(RoundedRectangle(cornerRadius: size * 0.25, style: .continuous).fill(Color.orange.gradient))
-    }
-}
-
-private struct NoteListRow: View {
-    let note: Note
-    var recording = false
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text(note.createdAt.formatted(.dateTime.hour().minute()))
-                .font(.callout)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .leading)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(note.title).font(.headline).lineLimit(1)
-                Group {
-                    if recording {
-                        Label("Recording", systemImage: "record.circle").foregroundStyle(.red)
-                    } else if note.formatting {
-                        Text("Writing up…").foregroundStyle(.secondary)
-                    } else {
-                        Text(preview).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }
-                .font(.subheadline)
-            }
-            Spacer()
-            if note.duration >= 60 {
-                Text(note.durationText).font(.callout).foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.vertical, 4)
-        .hoverHighlight()
-    }
-
-    private var preview: String {
-        note.body
-            .components(separatedBy: "\n")
-            .map { $0.replacingOccurrences(of: #"^\s*(#+ |- \[[ xX]\] |- |\* |\d+\. )"#, with: "", options: .regularExpression) }
-            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? "Transcript only"
     }
 }
 
@@ -378,29 +241,8 @@ extension Note {
 
     var durationText: String {
         guard duration >= 60 else { return "under 1 min" }
-        return Duration.seconds(duration).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated, maximumUnitCount: 2))
-    }
-}
-
-private struct NotetakerHero: View {
-    @ObservedObject var coordinator: AppCoordinator
-
-    var body: some View {
-        VStack(spacing: 14) {
-            NotetakerIcon()
-            Text("Notetaker").font(.largeTitle.weight(.bold))
-            Text("Pressay transcribes your meetings on this Mac as people talk, then writes up the notes: a summary, decisions and action items.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 460)
-            StartNotetakerButton(coordinator: coordinator)
-                .controlSize(.extraLarge)
-            .padding(.top, 6)
-            CallDetectionStatus(coordinator: coordinator).padding(.top, 4)
-        }
-        .padding(40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        return Duration.seconds(duration).formatted(
+            .units(allowed: [.hours, .minutes], width: .abbreviated, maximumUnitCount: 2))
     }
 }
 
@@ -428,14 +270,18 @@ private struct NotePage: View {
     var body: some View {
         Group {
             if let session = coordinator.liveSession, session.noteID == id {
-                LiveRecordingView(
+                LiveMeetingView(
                     session: session,
+                    title: store.note(id)?.title ?? "Meeting",
                     earlierLines: store.note(id)?.lines.filter { $0.start < session.offset } ?? [],
+                    othersLabel: store.note(id)?.othersLabel ?? "Others",
+                    speakerNames: store.note(id)?.speakerNames ?? [],
                     myNotes: myNotes(persist: false),
                     onStop: { coordinator.stopRecording() },
                     onDiscard: coordinator.discardRecording
                 )
-                .navigationTitle("Taking Notes")
+                .navigationTitle("")
+                .navigationBarBackButtonHidden(true)
             } else if let note = store.note(id) {
                 NoteDetailView(
                     coordinator: coordinator,
@@ -1002,142 +848,6 @@ private struct AskBar: View {
 
 // MARK: - Live
 
-private struct LiveRecordingView: View {
-    @ObservedObject var session: LiveSession
-    let earlierLines: [TranscriptLine]
-    @Binding var myNotes: String
-    let onStop: () -> Void
-    let onDiscard: () -> Void
-
-    @State private var confirmingDiscard = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if let notice = session.notice {
-                Label(notice, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .symbolRenderingMode(.multicolor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .glassEffect(.regular.tint(.yellow.opacity(0.12)), in: .rect(cornerRadius: 14))
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-            }
-            // An HStack, not HSplitView: the AppKit split view nudged the sidebar while recording.
-            HStack(spacing: 0) {
-                transcript
-                    .frame(minWidth: 300, maxWidth: .infinity)
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        LiveHeader(session: session)
-                            .padding(.top, 12)
-                    }
-                Divider()
-                myNotesEditor.frame(width: 300)
-            }
-        }
-        .toolbar { controls }
-        .confirmationDialog("Discard this recording?", isPresented: $confirmingDiscard) {
-            Button("Discard", role: .destructive, action: onDiscard)
-        } message: {
-            Text("What was transcribed in this recording will be deleted.")
-        }
-    }
-
-    private var allLines: [TranscriptLine] { earlierLines + session.lines }
-
-    private var transcript: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if allLines.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Listening…").font(.system(size: 15, weight: .medium))
-                            Text("What you and the others say appears here after each pause.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else {
-                        TranscriptLinesView(lines: allLines, isMeeting: true)
-                    }
-                    if session.pending > 0 {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Transcribing…")
-                        }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    }
-                    Color.clear.frame(height: 1).id("bottom")
-                }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 20)
-            }
-            .onChange(of: session.lines.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-            .onChange(of: session.pending > 0) { _, transcribing in
-                if transcribing { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) } }
-            }
-        }
-    }
-
-    private var myNotesEditor: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("My Notes").font(.headline)
-            Text("Jot anything. Pressay folds your notes into the summary when you stop.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            MyNotesEditor(text: $myNotes)
-        }
-        .padding(16)
-    }
-
-    @ToolbarContentBuilder
-    private var controls: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            if session.phase == .finishing {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Finishing…").foregroundStyle(.secondary)
-                }
-            } else {
-                Button("Discard…") { confirmingDiscard = true }
-                    .help("Delete this recording")
-                Button(action: onStop) {
-                    Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon)
-                }
-                .buttonStyle(.glassProminent)
-                .tint(.red)
-                .keyboardShortcut(.return, modifiers: .command)
-                .help("Stop and write up the notes (⌘↩)")
-            }
-        }
-    }
-}
-
-private struct LiveHeader: View {
-    @ObservedObject var session: LiveSession
-
-    var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                RecordingDot(active: session.phase == .recording)
-                TimelineView(.periodic(from: session.startedAt, by: 1)) { context in
-                    Text(TranscriptLine.timestamp(session.offset + context.date.timeIntervalSince(session.startedAt)))
-                        .monospacedDigit()
-                        .fontWeight(.semibold)
-                }
-            }
-            LevelMeter(label: "You", level: session.micLevel, tint: .accentColor)
-            LevelMeter(label: "Others", level: session.othersLevel, tint: .orange)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: .capsule)
-    }
-}
-
 struct MyNotesEditor: View {
     @Binding var text: String
     var fontSize: CGFloat = 14
@@ -1378,42 +1088,22 @@ private struct SpeakersEditor: View {
     @State private var original = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Who else was on the call?").font(.headline)
-            TextField("Names, separated by commas", text: $names)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 300)
-                .onSubmit(save)
-            if !suggestions.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(suggestions, id: \.self) { name in
-                        Button("+ \(name)") { add(name) }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                    }
-                }
-            }
-            Text("Helps the AI say who said what and spell names right. With one name, the transcript shows it instead of “Others”.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 300, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Spacer()
-                if coordinator.canWriteUp(note), !note.edited, parsed != Self.parse(original) {
-                    Button("Save and Update Summary") {
-                        save()
-                        coordinator.writeUpNote(note.id)
-                    }
-                }
-                Button("Save", action: save)
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(16)
-        .onAppear {
-            names = note.participants.joined(separator: ", ")
-            original = names
+        PressaySheet(title: "Who was on the call?", width: 410) {
+            Text("Names help identify speakers and correct spelling.").font(.system(size: 12)).foregroundStyle(
+                PressayPalette.muted
+            ).padding(.top, -12).padding(.bottom, 22)
+            Text("Names").font(.system(size: 12, weight: .semibold)).padding(.bottom, 8)
+            TextField("Names", text: $names).modifier(PressayField()).onSubmit(save)
+            Text("Separate names with commas. This helps Pressay spell names correctly and attribute the conversation.")
+                .font(.system(size: 11)).foregroundStyle(PressayPalette.muted).padding(.top, 10)
+            Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.top, 24)
+            HStack(spacing: 8) {
+                Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save", action: save).buttonStyle(PressayButtonStyle(kind: .primary)).keyboardShortcut(
+                    .defaultAction)
+            }.padding(.top, 18)
+        }.onAppear {
+            names = note.participants.joined(separator: ", "); original = names
         }
     }
 
@@ -1450,48 +1140,23 @@ private struct VoiceNamesEditor: View {
     @State private var original: [String] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Who was speaking?").font(.headline)
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
-                ForEach(Array(names.indices), id: \.self) { index in
-                    GridRow {
-                        Text("Speaker \(index + 1)").foregroundStyle(.secondary)
-                        TextField("Name", text: $names[index])
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 200)
-                            .onSubmit(save)
-                    }
-                }
+        PressaySheet(title: "Speaker names", width: 410) {
+            Text("Update the speaker labels used in your transcript.").font(.system(size: 12)).foregroundStyle(
+                PressayPalette.muted
+            ).padding(.top, -12).padding(.bottom, 22)
+            ForEach(Array(names.indices), id: \.self) { index in
+                Text("Speaker \(index + 1)").font(.system(size: 12, weight: .semibold)).padding(.bottom, 8)
+                TextField("Name", text: $names[index]).modifier(PressayField()).onSubmit(save).padding(.bottom, 18)
             }
-            if !suggestions.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(suggestions, id: \.self) { name in
-                        Button("+ \(name)") { fill(name) }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(!names.contains(where: { trimmed($0).isEmpty }))
-                    }
-                }
-            }
-            Text("Pressay tells voices apart by how they sound, so now and then a line goes to the wrong person. Check the Transcript tab to see who each speaker is.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 290, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Spacer()
-                if coordinator.canWriteUp(note), !note.edited, names.map(trimmed) != original.map(trimmed) {
-                    Button("Save and Update Summary") {
-                        save()
-                        coordinator.writeUpNote(note.id)
-                    }
-                }
-                Button("Save", action: save)
-                    .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(16)
-        .onAppear {
+            Text("Use the existing Transcript tab to check which voice belongs to each person.").font(.system(size: 11))
+                .foregroundStyle(PressayPalette.muted)
+            Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.top, 24)
+            HStack(spacing: 8) {
+                Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save", action: save).buttonStyle(PressayButtonStyle(kind: .primary)).keyboardShortcut(
+                    .defaultAction)
+            }.padding(.top, 18)
+        }.onAppear {
             let count = note.voices.max() ?? 0
             names = (0..<count).map { note.speakerNames.indices.contains($0) ? note.speakerNames[$0] : "" }
             original = names
@@ -1531,129 +1196,103 @@ private struct VoiceNamesEditor: View {
 private struct ActionItemsPage: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var store: NotesStore
-    private enum Scope { case mine, everyone }
-    @State private var scope = Scope.mine
-    @State private var showDone = false
-
-    init(coordinator: AppCoordinator) {
-        self.coordinator = coordinator
-        store = coordinator.notes
-    }
-
-    private struct Group: Identifiable {
-        let note: Note
-        let items: [ActionItem]
-        var id: UUID { note.id }
-    }
-
-    var body: some View {
-        let groups = groups
-        List {
-            ForEach(groups) { group in
-                Section {
-                    ForEach(group.items, id: \.self) { item in
-                        ActionItemRow(item: item, showOwner: scope == .everyone) {
-                            coordinator.toggleActionItem(group.note.id, item: item)
-                        }
-                        .contextMenu {
-                            NavigationLink("Open Meeting", value: NotetakerRoute.note(group.note.id))
-                        }
-                    }
-                } header: {
-                    HStack(alignment: .firstTextBaseline) {
-                        NavigationLink(value: NotetakerRoute.note(group.note.id)) {
-                            HStack(spacing: 6) {
-                                Text(group.note.title).foregroundStyle(.primary)
-                                Text(group.note.createdAt.formatted(.dateTime.month(.abbreviated).day()))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        Spacer()
-                        RemindersButton(coordinator: coordinator, note: group.note, includeUnowned: scope == .everyone)
-                            .font(.callout)
-                    }
-                }
-            }
-            if !groups.isEmpty {
-                Text("Ticking an item here ticks it in the meeting notes too.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .listRowSeparator(.hidden)
-            }
-        }
-        .listStyle(.inset)
-        .overlay {
-            if groups.isEmpty {
-                ContentUnavailableView(
-                    hasAnyItems ? "All Done" : "No Action Items",
-                    systemImage: "checklist.checked",
-                    description: Text(scope == .mine ? "Action items assigned to you in your meeting notes appear here." : "Action items from your meeting notes appear here.")
-                )
-            }
-        }
-        .navigationTitle("Action Items")
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("Show", selection: $scope) {
-                    Text("Mine").tag(Scope.mine)
-                    Text("Everyone").tag(Scope.everyone)
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Toggle(isOn: $showDone) { Text("Show Completed") }
-                    .toggleStyle(.button)
-                    .help(showDone ? "Hide completed items" : "Show completed items")
-            }
-        }
-    }
-
+    @Environment(\.dismiss) private var dismiss
+    @State private var completedThisVisit: Set<String> = []
+    init(coordinator: AppCoordinator) { self.coordinator = coordinator; store = coordinator.notes }
+    private struct Group: Identifiable { let note: Note; let items: [ActionItem]; var id: UUID { note.id } }
     private var groups: [Group] {
         store.notes.sorted { $0.createdAt > $1.createdAt }.compactMap { note in
-            let items = ActionItem.parse(note.body).filter { (scope == .everyone || $0.isMine) && (showDone || !$0.done) }
+            let items = ActionItem.parse(note.body).filter {
+                $0.isMine && (!$0.done || completedThisVisit.contains(note.id.uuidString + $0.text))
+            }
             return items.isEmpty ? nil : Group(note: note, items: items)
         }
     }
-
-    private var hasAnyItems: Bool {
-        store.notes.contains { note in ActionItem.parse(note.body).contains { scope == .everyone || $0.isMine } }
-    }
-}
-
-private struct ActionItemRow: View {
-    let item: ActionItem
-    let showOwner: Bool
-    let onToggle: () -> Void
-
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Button(action: onToggle) {
-                Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(item.done ? Color.accentColor : .secondary)
-                    .imageScale(.large)
+        PressayPage {
+            Button {
+                dismiss()
+            } label: {
+                Label("Notetaker", systemImage: "chevron.left").font(.system(size: 11))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(item.done ? "Mark as not done" : "Mark as done")
-            Text(item.text)
-                .strikethrough(item.done)
-                .foregroundStyle(item.done ? .secondary : .primary)
-            Spacer()
-            if showOwner, let owner = item.owner {
-                Text(item.isMine ? "You" : owner)
-                    .font(.caption.weight(.medium))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(.quaternary))
+            .buttonStyle(.plain).foregroundStyle(PressayPalette.muted).padding(.bottom, 18)
+            PressayHeading(title: "Action items") { EmptyView() }
+            if groups.isEmpty {
+                PressayEmpty(title: "No open action items", detail: "Action items assigned to you in your meeting notes will appear here.", systemImage: "checkmark.circle", actionTitle: "Back to meetings", primaryAction: false, action: { dismiss() })
             }
-        }
-        .padding(.vertical, 3)
-        .hoverHighlight()
+            ForEach(groups) { group in
+                HStack {
+                    NavigationLink(group.note.title, value: NotetakerRoute.note(group.note.id)).buttonStyle(.plain)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(group.note.createdAt.formatted(.dateTime.month(.abbreviated).day())).font(.system(size: 11))
+                        .foregroundStyle(PressayPalette.muted)
+                    Spacer()
+                }.padding(.bottom, 12)
+                PressayGroup {
+                    ForEach(group.items, id: \.self) { item in
+                        HStack(spacing: 12) {
+                            Toggle(
+                                isOn: Binding(
+                                    get: { item.done },
+                                    set: { _ in
+                                        completedThisVisit.insert(group.note.id.uuidString + item.text);
+                                        coordinator.toggleActionItem(group.note.id, item: item)
+                                    })
+                            ) { Text(item.text) }
+                            .toggleStyle(ActionItemToggleStyle())
+                        }.padding(.horizontal, 18).padding(.vertical, 16)
+                            .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
+                            .contextMenu { NavigationLink("Open meeting", value: NotetakerRoute.note(group.note.id)) }
+                    }
+                }.padding(.bottom, 25)
+            }
+            if !groups.isEmpty {
+                HStack {
+                    Spacer()
+                    Button {
+                        Task {
+                            for group in groups {
+                                let items = group.items.filter { !$0.done && !$0.wasSent(group.note.sentToReminders) }
+                                if !items.isEmpty { _ = await coordinator.addToReminders(items, noteID: group.note.id) }
+                            }
+                        }
+                    } label: {
+                        Label("Add to Reminders", systemImage: "checklist")
+                    }
+                    .disabled(!coordinator.sendingToReminders.isEmpty)
+                }
+            }
+        }.navigationTitle("").navigationBarBackButtonHidden(true)
     }
 }
 
-/// A soft rounded wash under the pointer, for rows that open or act on click.
+private struct ActionItemToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            HStack(alignment: .center, spacing: 12) {
+                Circle().strokeBorder(
+                    configuration.isOn ? PressayPalette.accent : PressayPalette.strongLine, lineWidth: 1.3
+                )
+                .background(configuration.isOn ? PressayPalette.accentSurface : .clear, in: .circle)
+                .overlay {
+                    if configuration.isOn {
+                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(
+                            PressayPalette.accent)
+                    }
+                }
+                .frame(width: 17, height: 17)
+                configuration.label.font(.system(size: 12)).strikethrough(configuration.isOn).foregroundStyle(
+                    configuration.isOn ? PressayPalette.muted : PressayPalette.text)
+                Spacer()
+            }.contentShape(.rect)
+        }.buttonStyle(.plain).accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.checkbox)
+        }
+    }
+}
+
 struct HoverHighlight: ViewModifier {
     @State private var hovering = false
 

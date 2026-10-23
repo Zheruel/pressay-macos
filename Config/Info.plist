@@ -21,9 +21,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.11.0</string>
+	<string>1.12.0</string>
 	<key>CFBundleVersion</key>
-	<string>18</string>
+	<string>19</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>
@@ -39,7 +39,7 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 Pressay.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Pressay records only while you hold the dictation key so it can transcribe your prompt locally.</string>
+	<string>Pressay records while you hold the dictation key or record a meeting, so speech can be transcribed locally.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Pressay adds action items from your meetings to Reminders when you ask it to.</string>
 </dict>

@@ -10,11 +10,11 @@ final class AppSettings: ObservableObject {
         static let language = "language"
         static let asrModel = "asrModel"
         static let meetingASRModel = "meetingASRModel"
+        static let meetingLanguage = "meetingLanguage"
         static let structuredDictation = "structuredDictation"
         static let vocabulary = "vocabulary"
         static let onboardingComplete = "onboardingComplete"
         static let hasUsedDictation = "hasUsedDictation"
-        static let keepMicWarm = "keepMicWarm"
         static let inputDevice = "inputDeviceUID"
         static let claudeCleanup = "claudeCleanup"
         static let claudeCleanupModel = "claudeCleanupModel"
@@ -24,7 +24,6 @@ final class AppSettings: ObservableObject {
         static let learnFromEdits = "learnFromEdits"
         static let notesModel = "notesModel"
         static let snippets = "snippets"
-        static let matchAppStyle = "matchAppStyle"
         static let detectCalls = "detectCalls"
         static let stopWhenCallEnds = "stopWhenCallEnds"
         static let openNotepad = "openNotepad"
@@ -33,8 +32,7 @@ final class AppSettings: ObservableObject {
         static let notesUseAI = "notesUseAI"
         static let meetingSystemAudio = "meetingSystemAudio"
         static let separateVoices = "separateVoices"
-        /// Legacy keys from removed Vibe Mode; cleared once at init.
-        static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle"]
+        static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined"]
     }
 
     private let defaults: UserDefaults
@@ -44,11 +42,11 @@ final class AppSettings: ObservableObject {
     @Published var language: TranscriptionLanguage { didSet { defaults.set(language.rawValue, forKey: Key.language) } }
     @Published var asrModel: ASRModel { didSet { defaults.set(asrModel.rawValue, forKey: Key.asrModel) } }
     @Published var meetingASRModel: ASRModel { didSet { defaults.set(meetingASRModel.rawValue, forKey: Key.meetingASRModel) } }
+    @Published var meetingLanguage: TranscriptionLanguage { didSet { defaults.set(meetingLanguage.rawValue, forKey: Key.meetingLanguage) } }
     @Published var structuredDictation: Bool { didSet { defaults.set(structuredDictation, forKey: Key.structuredDictation) } }
     @Published var vocabularySource: String { didSet { defaults.set(vocabularySource, forKey: Key.vocabulary) } }
     @Published var onboardingComplete: Bool { didSet { defaults.set(onboardingComplete, forKey: Key.onboardingComplete) } }
     @Published var hasUsedDictation: Bool { didSet { defaults.set(hasUsedDictation, forKey: Key.hasUsedDictation) } }
-    @Published var keepMicWarm: Bool { didSet { defaults.set(keepMicWarm, forKey: Key.keepMicWarm) } }
     /// CoreAudio UID of the dictation input, or nil to follow the system default.
     @Published var inputDeviceUID: String? { didSet { defaults.set(inputDeviceUID, forKey: Key.inputDevice) } }
     /// On by default so saving a key is the single opt-in step.
@@ -67,7 +65,6 @@ final class AppSettings: ObservableObject {
     @Published var snippets: [Snippet] {
         didSet { defaults.set(try? JSONEncoder().encode(snippets), forKey: Key.snippets) }
     }
-    @Published var matchAppStyle: Bool { didSet { defaults.set(matchAppStyle, forKey: Key.matchAppStyle) } }
     /// A `NotesModel.id`; empty follows the AI Cleanup provider.
     @Published var notesModel: String { didSet { defaults.set(notesModel, forKey: Key.notesModel) } }
     @Published var detectCalls: Bool { didSet { defaults.set(detectCalls, forKey: Key.detectCalls) } }
@@ -86,9 +83,11 @@ final class AppSettings: ObservableObject {
 
     /// Tuner-derived rules, merged into every cleanup pass with the curated entries.
     let learnedVocabulary: LearnedVocabularyStore
-    let vocabularySuggestions: VocabularySuggestionStore
     @Published var launchAtLogin: Bool {
         didSet {
+            #if DEBUG
+            guard !DesignReview.enabled else { return }
+            #endif
             guard !isRollingBackLaunchAtLogin else { return }
             guard launchAtLogin != oldValue else { return }
             do {
@@ -110,11 +109,9 @@ final class AppSettings: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         learnedVocabulary = LearnedVocabularyStore(defaults: defaults)
-        vocabularySuggestions = VocabularySuggestionStore(defaults: defaults)
         learnFromEdits = defaults.object(forKey: Key.learnFromEdits) as? Bool ?? true
         notesModel = defaults.string(forKey: Key.notesModel) ?? ""
         snippets = defaults.data(forKey: Key.snippets).flatMap { try? JSONDecoder().decode([Snippet].self, from: $0) } ?? []
-        matchAppStyle = defaults.object(forKey: Key.matchAppStyle) as? Bool ?? true
         detectCalls = defaults.object(forKey: Key.detectCalls) as? Bool ?? true
         stopWhenCallEnds = defaults.object(forKey: Key.stopWhenCallEnds) as? Bool ?? true
         openNotepad = defaults.object(forKey: Key.openNotepad) as? Bool ?? true
@@ -128,9 +125,10 @@ final class AppSettings: ObservableObject {
         )
         let model = Self.readASRModel(defaults)
         asrModel = model
-        meetingASRModel = defaults.string(forKey: Key.meetingASRModel).flatMap(ASRModel.init(rawValue:)) ?? .defaultMeeting
-        // A language stored against a previous model may not exist on this one
-        // (Fun-ASR runs English only; Voxtral covers eight languages).
+        let meetingModel = defaults.string(forKey: Key.meetingASRModel).flatMap(ASRModel.init(rawValue:)) ?? .defaultMeeting
+        meetingASRModel = meetingModel
+        let storedMeetingLanguage = defaults.string(forKey: Key.meetingLanguage).flatMap(TranscriptionLanguage.init(rawValue:)) ?? .auto
+        meetingLanguage = meetingModel.supportedLanguages.contains(storedMeetingLanguage) ? storedMeetingLanguage : .auto
         let storedLanguage =
             TranscriptionLanguage(rawValue: defaults.string(forKey: Key.language) ?? "") ?? .auto
         language = model.supportedLanguages.contains(storedLanguage)
@@ -149,9 +147,6 @@ final class AppSettings: ObservableObject {
         }
         onboardingComplete = defaults.bool(forKey: Key.onboardingComplete)
         hasUsedDictation = defaults.bool(forKey: Key.hasUsedDictation)
-        // Default on: it removes the cold-start clipping that the window exists
-        // to fix, and it only holds the stream between back-to-back dictations.
-        keepMicWarm = defaults.object(forKey: Key.keepMicWarm) as? Bool ?? true
         inputDeviceUID = defaults.string(forKey: Key.inputDevice)
         claudeCleanup = defaults.object(forKey: Key.claudeCleanup) as? Bool ?? true
         claudeCleanupModel = ClaudeCleanupModel(
@@ -214,32 +209,18 @@ final class AppSettings: ObservableObject {
         vocabularyEntries.map(\.preferred)
     }
 
-    /// Every dictionary term and covered heard spelling, lowercased.
     var knownVocabularyFolds: Set<String> {
         Set(vocabularyEntries.flatMap { [$0.preferred] + $0.aliases }.map { $0.lowercased() })
     }
 
     func addVocabularyWord(_ preferred: String, aliases: [String] = []) {
+        learnedVocabulary.unblockPreferred(preferred)
         var line = preferred
         if !aliases.isEmpty { line += " <= " + aliases.joined(separator: ", ") }
         var source = vocabularySource.trimmingCharacters(in: .whitespacesAndNewlines)
         if !source.contains("# Custom") { source += "\n\n# Custom" }
         source += "\n" + line
         vocabularySource = source
-    }
-
-    /// An alias becomes a learned rule (lifting any earlier removal); a new word joins the list.
-    func accept(_ suggestion: VocabularySuggestion) {
-        if let heard = suggestion.heard {
-            learnedVocabulary.unblock(heard)
-            learnedVocabulary.mergeRules(
-                [LearnedRule(heard: heard, preferred: suggestion.preferred, count: suggestion.count, source: .suggestion)],
-                source: .suggestion
-            )
-        } else {
-            addVocabularyWord(suggestion.preferred)
-        }
-        vocabularySuggestions.remove(suggestion)
     }
 
     func restoreCuratedVocabulary() {
@@ -270,7 +251,6 @@ final class AppSettings: ObservableObject {
     }
 }
 
-/// Claude with the user's API key, or OpenAI billed to the user's ChatGPT plan.
 enum CleanupProvider: String, CaseIterable, Identifiable {
     case claude
     case chatgpt

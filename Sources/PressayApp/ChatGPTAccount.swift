@@ -17,13 +17,18 @@ final class ChatGPTAccount: ObservableObject {
     private let logger = Logger(subsystem: "dev.localflow.app", category: "chatgpt")
 
     init() {
+        #if DEBUG
+        guard !DesignReview.enabled else { return }
+        #endif
         credentials = store.load()
     }
 
     var isSignedIn: Bool { credentials?.planUsageGranted == true }
 
-    /// Reuses this Mac's registration when there is one.
     func signIn() async {
+        #if DEBUG
+        guard !DesignReview.enabled else { return }
+        #endif
         guard !signingIn else { return }
         signingIn = true
         lastError = nil
@@ -44,7 +49,7 @@ final class ChatGPTAccount: ObservableObject {
             )
             NSWorkspace.shared.open(url)
             let callback = try await listener.callback()
-            let signedIn = try await auth.complete(attempt: attempt, callback: callback)
+            let signedIn = try await auth.complete(attempt: attempt, callback: callback, expectedSubject: previous?.subject)
             try store.save(signedIn)
             credentials = signedIn
             NSApplication.shared.activate(ignoringOtherApps: true)
