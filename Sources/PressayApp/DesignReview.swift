@@ -69,6 +69,7 @@
                             speaker: .others, start: 4, text: "I think we should keep the setup to a few simple steps."),
                     ], duration: 1920)
                 note.participants = ["Alex", "Maya"]
+                note.speakerNames = ["Alex"]
                 note.myNotes = "Review the setup flow before Thursday.\n\nKeep the first step simple."
                 coordinator.notes.add(note)
             }

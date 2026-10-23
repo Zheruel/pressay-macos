@@ -887,7 +887,12 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         if DesignReview.enabled {
             guard liveSession == nil, let note = notes.notes.first,
                   let session = try? LiveSession(noteID: note.id, kind: .meeting, offset: 0,
-                    transcriber: transcriber, vocabulary: [], inputUID: nil, captureSystemAudio: false, startedAt: .now.addingTimeInterval(-754)) else { return }
+                    transcriber: transcriber, vocabulary: [], inputUID: nil, captureSystemAudio: false, startedAt: .now.addingTimeInterval(ProcessInfo.processInfo.environment["PRESSAY_REVIEW_MEETING_STATE"] == "listening" ? -8 : -754)) else { return }
+            notes.modify(note.id, keepOrder: true) {
+                $0.title = "Meeting"
+                if ProcessInfo.processInfo.environment["PRESSAY_REVIEW_MEETING_STATE"] == "listening" { $0.myNotes = "" }
+            }
+            engineModel = settings.meetingASRModel
             liveSession = session
             notepad.show(session: session)
             return

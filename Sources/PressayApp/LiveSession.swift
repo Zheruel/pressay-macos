@@ -97,9 +97,24 @@ final class LiveSession: ObservableObject {
         mic.onSamples = { [pipeline] in pipeline.append($0, from: .me) }
         #if DEBUG
         if DesignReview.enabled {
-            lines = [.init(speaker: .me, start: 0, text: "Let’s start with the first-time experience."),
-                     .init(speaker: .others, start: 4, text: "I think we should keep the setup to a few simple steps.")]
-            micLevel = 0.7
+            let state = ProcessInfo.processInfo.environment["PRESSAY_REVIEW_MEETING_STATE"] ?? "recording"
+            if state != "listening" {
+                lines = [
+                    .init(speaker: .me, start: 706, text: "Let’s start with the first-time experience. I think we can make setup feel a lot simpler."),
+                    .init(speaker: .others, start: 715, text: "Agreed. Keep the permissions together, make the talk key easy to find, and leave the advanced options in settings.", voice: 1),
+                    .init(speaker: .me, start: 728, text: "I’ll work through that today and share the updated flow before Thursday."),
+                    .init(speaker: .others, start: 741, text: "Great. Let’s review it together, then check the empty states in both light and dark mode.", voice: 1),
+                    .init(speaker: .me, start: 754, text: "And we can keep the first step simple.")
+                ]
+                micLevel = 1
+            }
+            if state == "long" {
+                lines = (0..<8).flatMap { part in lines.map { line in
+                    TranscriptLine(speaker: line.speaker, start: Double(part * 90) + line.start - 706,
+                                   text: line.text, voice: line.voice)
+                } }
+            }
+            if state == "finishing" { stoppedAt = startedAt.addingTimeInterval(754); phase = .finishing }
             return
         }
         #endif

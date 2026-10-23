@@ -272,14 +272,19 @@ private struct NotePage: View {
     var body: some View {
         Group {
             if let session = coordinator.liveSession, session.noteID == id {
-                LiveRecordingView(
+                LiveMeetingView(
                     session: session,
+                    title: store.note(id)?.title ?? "Meeting",
                     earlierLines: store.note(id)?.lines.filter { $0.start < session.offset } ?? [],
+                    othersLabel: store.note(id)?.othersLabel ?? "Others",
+                    speakerNames: store.note(id)?.speakerNames ?? [],
+                    capturesOthers: coordinator.settings.meetingSystemAudio,
                     myNotes: myNotes(persist: false),
                     onStop: { coordinator.stopRecording() },
                     onDiscard: coordinator.discardRecording
                 )
-                .navigationTitle("Taking Notes")
+                .navigationTitle("")
+                .navigationBarBackButtonHidden(true)
             } else if let note = store.note(id) {
                 NoteDetailView(
                     coordinator: coordinator,
@@ -845,142 +850,6 @@ private struct AskBar: View {
 }
 
 // MARK: - Live
-
-private struct LiveRecordingView: View {
-    @ObservedObject var session: LiveSession
-    let earlierLines: [TranscriptLine]
-    @Binding var myNotes: String
-    let onStop: () -> Void
-    let onDiscard: () -> Void
-
-    @State private var confirmingDiscard = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if let notice = session.notice {
-                Label(notice, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .symbolRenderingMode(.multicolor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .glassEffect(.regular.tint(.yellow.opacity(0.12)), in: .rect(cornerRadius: 14))
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-            }
-            // An HStack, not HSplitView: the AppKit split view nudged the sidebar while recording.
-            HStack(spacing: 0) {
-                transcript
-                    .frame(minWidth: 300, maxWidth: .infinity)
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        LiveHeader(session: session)
-                            .padding(.top, 12)
-                    }
-                Divider()
-                myNotesEditor.frame(width: 300)
-            }
-        }
-        .toolbar { controls }
-        .confirmationDialog("Discard this recording?", isPresented: $confirmingDiscard) {
-            Button("Discard", role: .destructive, action: onDiscard)
-        } message: {
-            Text("What was transcribed in this recording will be deleted.")
-        }
-    }
-
-    private var allLines: [TranscriptLine] { earlierLines + session.lines }
-
-    private var transcript: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    if allLines.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Listening…").font(.system(size: 15, weight: .medium))
-                            Text("What you and the others say appears here after each pause.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else {
-                        TranscriptLinesView(lines: allLines, isMeeting: true)
-                    }
-                    if session.pending > 0 {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Transcribing…")
-                        }
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    }
-                    Color.clear.frame(height: 1).id("bottom")
-                }
-                .padding(.horizontal, 28)
-                .padding(.vertical, 20)
-            }
-            .onChange(of: session.lines.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-            .onChange(of: session.pending > 0) { _, transcribing in
-                if transcribing { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) } }
-            }
-        }
-    }
-
-    private var myNotesEditor: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("My Notes").font(.headline)
-            Text("Jot anything. Pressay folds your notes into the summary when you stop.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            MyNotesEditor(text: $myNotes)
-        }
-        .padding(16)
-    }
-
-    @ToolbarContentBuilder
-    private var controls: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            if session.phase == .finishing {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Finishing…").foregroundStyle(.secondary)
-                }
-            } else {
-                Button("Discard…") { confirmingDiscard = true }
-                    .help("Delete this recording")
-                Button(action: onStop) {
-                    Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon)
-                }
-                .buttonStyle(.glassProminent)
-                .tint(.red)
-                .keyboardShortcut(.return, modifiers: .command)
-                .help("Stop and write up the notes (⌘↩)")
-            }
-        }
-    }
-}
-
-private struct LiveHeader: View {
-    @ObservedObject var session: LiveSession
-
-    var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                RecordingDot(active: session.phase == .recording)
-                TimelineView(.periodic(from: session.startedAt, by: 1)) { context in
-                    Text(TranscriptLine.timestamp(session.offset + context.date.timeIntervalSince(session.startedAt)))
-                        .monospacedDigit()
-                        .fontWeight(.semibold)
-                }
-            }
-            LevelMeter(label: "You", level: session.micLevel, tint: .accentColor)
-            LevelMeter(label: "Others", level: session.othersLevel, tint: .orange)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: .capsule)
-    }
-}
 
 struct MyNotesEditor: View {
     @Binding var text: String

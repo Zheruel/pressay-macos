@@ -210,22 +210,23 @@ struct SettingsRootView: View {
                 Spacer(minLength: 20)
                 VStack(alignment: .leading, spacing: 6) {
                     Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.bottom, 9)
-                    HStack(spacing: 7) {
-                        Circle().fill(
-                            coordinator.liveSession != nil
-                                ? PressayPalette.danger
-                                : coordinator.modelReady && permissions.allGranted
+                    if let session = coordinator.liveSession {
+                        MeetingRecordingStatus(session: session)
+                    } else {
+                        HStack(spacing: 7) {
+                            Circle().fill(
+                                coordinator.modelReady && permissions.allGranted
                                     ? PressayPalette.success : PressayPalette.warning
-                        ).frame(width: 5, height: 5)
-                        Text(
-                            coordinator.liveSession != nil
-                                ? "Recording meeting"
-                                : !permissions.allGranted
+                            ).frame(width: 5, height: 5)
+                            Text(
+                                !permissions.allGranted
                                     ? "Needs permission"
                                     : coordinator.modelReady
                                         ? "Ready to dictate"
                                         : coordinator.modelPreparing ? "Preparing model…" : "Needs attention"
-                        ).font(.system(size: 11))
+                            )
+                            .font(.system(size: 11))
+                        }
                     }
                     Text("On-device · \(coordinator.activeSpeechModelName)").font(.system(size: 10)).foregroundStyle(
                         PressayPalette.muted)
@@ -1368,5 +1369,17 @@ private struct HistoryRow: View {
                 ? record.createdAt.formatted(.relative(presentation: .named))
                 : record.createdAt.formatted(date: .omitted, time: .shortened), "\(Int(record.duration.rounded())) sec",
         ].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+private struct MeetingRecordingStatus: View {
+    @ObservedObject var session: LiveSession
+    var body: some View {
+        HStack(spacing: 7) {
+            Circle().fill(session.phase == .finishing ? PressayPalette.muted : PressayPalette.danger)
+                .frame(width: 5, height: 5)
+            Text(session.phase == .finishing ? "Finishing meeting" : "Recording meeting")
+                .font(.system(size: 11))
+        }
     }
 }

@@ -1,10 +1,10 @@
 # Graphite redesign
 
-The native SwiftUI/AppKit implementation follows the approved Graphite canvas in both appearances. The canonical reference is [`designs/pressay-macos/project`](../designs/pressay-macos/project); [`review.html`](../designs/pressay-macos/review.html) provides an offline screen browser. The canvas contains 39 dark screens and their 39 light counterparts.
+The native SwiftUI/AppKit implementation follows the approved Graphite canvas in both appearances. The canonical reference is [`designs/pressay-macos/project`](../designs/pressay-macos/project); [`review.html`](../designs/pressay-macos/review.html) provides an offline screen browser. The canvas contains 42 dark screens and their 42 light counterparts.
 
 Shared tokens, controls and spacing live in `PressayDesign.swift`. The main window starts at 1080 × 740, with a 216-point text sidebar. Content, editors, confirmations, onboarding, menu bar and the floating meeting widget use the same palette. Real app icons come from the existing cached `NSWorkspace` lookup.
 
-The note reader, summary/transcript rendering and live note content are byte-identical to the original protected region. `OverlayPanel.swift`, including the transcription notch animation, is unchanged.
+The saved note reader and summary/transcript rendering are byte-identical to the original protected region. The live recording workspace follows the subsequently approved live meeting artboards. `OverlayPanel.swift`, including the transcription notch animation, is unchanged.
 
 ## Product changes
 
@@ -26,8 +26,8 @@ All speech models default to automatic detection. Fixed language choices are ava
 - `make app`: release build and bundled native ASR runtime succeeded; signed with the existing local signing identity.
 - 20 synthetic speech checks: English and German through all nine models, Japanese through Qwen 1.7B and Whisper. All completed successfully with automatic language detection. [Outputs](assets/redesign/asr-smoke.json) are smoke evidence, not an accuracy ranking.
 - Native interaction checks: navigation; history search using ⌘F; dictionary validation/save; Add/Edit snippet forms; personal task completion and undo; ranked model menu; Whisper language list and Japanese selection; switching to Qwen resets to Automatic; onboarding permission progression and completion; meeting widget Open navigation; empty state.
-- Native screenshots use isolated synthetic content. Both appearances, the menu bar, onboarding and recording widget were inspected against the canvas. System menus, scrollbars, traffic lights and focus rendering follow macOS preferences.
-- Protected note reader checked byte-for-byte; `git diff --check` and the 78-artboard design validator passed.
+- Native screenshots use isolated synthetic content. Both appearances, the menu bar, onboarding, live meeting workspace and recording widget were inspected against the canvas. System menus, scrollbars, traffic lights and focus rendering follow macOS preferences.
+- Saved note reader checked byte-for-byte; `git diff --check` and the 84-artboard design validator passed.
 
 **Live microphone/Bluetooth capture, insertion into other apps, provider-account requests and Reminders writes were not exercised during this review.** Review mode deliberately bypasses hardware, account access and system permission changes; synthetic speech checks exercised the real bundled transcription runtimes separately.
 
@@ -42,6 +42,18 @@ All speech models default to automatic detection. Fixed language choices are ava
 | --- | --- | --- |
 | ![Menu](assets/redesign/native-menu-dark.png) | ![Widget](assets/redesign/native-widget-dark.png) | ![Onboarding](assets/redesign/native-onboarding-dark.png) |
 
+## Live meeting workspace
+
+The live view uses a plain speaker/timestamp transcript and a separate notes panel. Recording status, elapsed time, actual source levels and Stop sit in the content header. Discard is in the More menu and requires confirmation. The transcript follows new turns until the user scrolls back; Latest returns to the end. The timer freezes, controls disable and notes become read-only while transcription finishes. Saved-note rendering is preserved.
+
+Listening uses a subtle five-bar waiting animation rather than a simulated audio level. Reduce Motion pauses it on a static waveform and disables animated jumps to the latest transcript. The canvas has matching dark/light recording, listening and finishing artboards.
+
+| Recording | Listening |
+| --- | --- |
+| ![Native live meeting](assets/redesign/native-live-meeting-dark.png) | ![Native listening state](assets/redesign/native-live-listening-dark.png) |
+
+![Native live meeting, light](assets/redesign/native-live-meeting-light.png)
+
 ## Reproduce the native visual review
 
 Build a debug app with `CONFIGURATION=debug scripts/build-app.sh`. Run its executable in a separate review bundle/identity to avoid colliding with an installed Pressay instance:
@@ -55,4 +67,4 @@ open -n /path/to/Pressay-Review.app \
   --env PRESSAY_NO_KEYCHAIN=1
 ```
 
-Review mode is compiled only in DEBUG. It uses an isolated defaults suite, in-memory history, temporary meeting notes and synthetic fixtures. It skips hotkeys, model loading, provider credentials, login registration and system permission requests. Use `PRESSAY_REVIEW_APPEARANCE=light`, `PRESSAY_REVIEW_EMPTY=1`, or `PRESSAY_REVIEW_PERMISSIONS=missing` for variants; `PRESSAY_DEMO` also accepts `menu`, `onboarding`, `notepad` and `call`.
+Review mode is compiled only in DEBUG. It uses an isolated defaults suite, in-memory history, temporary meeting notes and synthetic fixtures. It skips hotkeys, model loading, provider credentials, login registration and system permission requests. Use `PRESSAY_REVIEW_APPEARANCE=light`, `PRESSAY_REVIEW_EMPTY=1`, or `PRESSAY_REVIEW_PERMISSIONS=missing` for variants; `PRESSAY_DEMO` also accepts `menu`, `onboarding`, `notepad` and `call`. With `notepad`, use `PRESSAY_REVIEW_MEETING_STATE=listening|recording|finishing|long` to inspect live states; `PRESSAY_REVIEW_REDUCE_MOTION=1` renders a static listening waveform without changing macOS settings.

@@ -7,7 +7,7 @@
   "title": "Pressay · Graphite",
   "launch": {
     "view": "focused",
-    "file": "Home.dc.html"
+    "file": "Live-Meeting.dc.html"
   },
   "boards": {
     "Home.dc.html": {
@@ -711,6 +711,60 @@
       "title": "Delete Snippet · Light",
       "is_interactive": true,
       "page": "light"
+    },
+    "Live-Meeting.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Live meeting",
+      "is_interactive": true,
+      "page": "recording"
+    },
+    "Live-Meeting-Empty.dc.html": {
+      "x": 1180,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Live meeting · Listening",
+      "is_interactive": true,
+      "page": "recording"
+    },
+    "Live-Meeting-Finishing.dc.html": {
+      "x": 2360,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Live meeting · Finishing",
+      "is_interactive": true,
+      "page": "recording"
+    },
+    "Live-Meeting-Light.dc.html": {
+      "x": 2360,
+      "y": 11050,
+      "w": 1080,
+      "h": 740,
+      "title": "Live meeting · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Live-Meeting-Empty-Light.dc.html": {
+      "x": 0,
+      "y": 11900,
+      "w": 1080,
+      "h": 740,
+      "title": "Live meeting · Listening · Light",
+      "is_interactive": true,
+      "page": "light"
+    },
+    "Live-Meeting-Finishing-Light.dc.html": {
+      "x": 1180,
+      "y": 11900,
+      "w": 1080,
+      "h": 740,
+      "title": "Live meeting · Finishing · Light",
+      "is_interactive": true,
+      "page": "light"
     }
   },
   "order": [
@@ -791,7 +845,13 @@
     "Delete-History.dc.html",
     "Restore-Dictionary.dc.html",
     "Remove-Key.dc.html",
-    "Delete-Snippet.dc.html"
+    "Delete-Snippet.dc.html",
+    "Live-Meeting.dc.html",
+    "Live-Meeting-Empty.dc.html",
+    "Live-Meeting-Finishing.dc.html",
+    "Live-Meeting-Light.dc.html",
+    "Live-Meeting-Empty-Light.dc.html",
+    "Live-Meeting-Finishing-Light.dc.html"
   ],
   "notes": {},
   "pages": [
@@ -822,6 +882,10 @@
     {
       "id": "confirm",
       "name": "07 · Confirmations"
+    },
+    {
+      "id": "recording",
+      "name": "08 · Live meeting"
     }
   ],
   "designSystems": []
