@@ -8,7 +8,6 @@ struct LiveMeetingView: View {
     let earlierLines: [TranscriptLine]
     let othersLabel: String
     let speakerNames: [String]
-    let capturesOthers: Bool
     @Binding var myNotes: String
     let onStop: () -> Void
     let onDiscard: () -> Void
@@ -92,11 +91,7 @@ struct LiveMeetingView: View {
                 TimelineView(.periodic(from: session.startedAt, by: 1)) { context in
                     Text(elapsedText(at: context.date)).monospacedDigit().fontWeight(.medium)
                 }
-                if !finishing {
-                    Rectangle().fill(PressayPalette.line).frame(width: 1, height: 12).padding(.horizontal, 6)
-                    source("You", level: session.micLevel)
-                    if capturesOthers { source("Others", level: session.othersLevel).padding(.leading, 9) }
-                }
+
             }.font(.system(size: 12)).frame(height: 18)
         }
     }
@@ -106,19 +101,6 @@ struct LiveMeetingView: View {
         guard elapsed < 3600 else { return TranscriptLine.timestamp(elapsed) }
         let seconds = max(0, Int(elapsed))
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
-    }
-
-    private func source(_ label: String, level: Float) -> some View {
-        HStack(spacing: 7) {
-            Text(label).font(.system(size: 10)).foregroundStyle(PressayPalette.muted)
-            HStack(spacing: 2) {
-                ForEach(0..<7) { index in
-                    Capsule().fill(level > 0.03 ? PressayPalette.accent : PressayPalette.muted.opacity(0.5))
-                        .frame(width: 2, height: max(3, CGFloat(level) * [5, 9, 13, 7, 15, 11, 6][index]))
-                }
-            }.frame(height: 15)
-        }.accessibilityElement(children: .ignore).accessibilityLabel(label)
-            .accessibilityValue(level > 0.03 ? "Audio detected" : "Listening")
     }
 
     private func panel<Content: View>(

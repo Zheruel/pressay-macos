@@ -278,7 +278,6 @@ private struct NotePage: View {
                     earlierLines: store.note(id)?.lines.filter { $0.start < session.offset } ?? [],
                     othersLabel: store.note(id)?.othersLabel ?? "Others",
                     speakerNames: store.note(id)?.speakerNames ?? [],
-                    capturesOthers: coordinator.settings.meetingSystemAudio,
                     myNotes: myNotes(persist: false),
                     onStop: { coordinator.stopRecording() },
                     onDiscard: coordinator.discardRecording

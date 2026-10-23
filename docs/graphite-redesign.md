@@ -44,7 +44,7 @@ All speech models default to automatic detection. Fixed language choices are ava
 
 ## Live meeting workspace
 
-The live view uses a plain speaker/timestamp transcript and a separate notes panel. Recording status, elapsed time, actual source levels and Stop sit in the content header. Discard is in the More menu and requires confirmation. The transcript follows new turns until the user scrolls back; Latest returns to the end. The timer freezes, controls disable and notes become read-only while transcription finishes. Saved-note rendering is preserved.
+The live view uses a plain speaker/timestamp transcript and a separate notes panel. Recording status, elapsed time and Stop sit in the content header. Discard is in the More menu and requires confirmation. The transcript follows new turns until the user scrolls back; Latest returns to the end. The timer freezes, controls disable and notes become read-only while transcription finishes. Saved-note rendering is preserved.
 
 Listening uses a subtle five-bar waiting animation rather than a simulated audio level. Reduce Motion pauses it on a static waveform and disables animated jumps to the latest transcript. The canvas has matching dark/light recording, listening and finishing artboards.
 
