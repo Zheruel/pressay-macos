@@ -1,5 +1,4 @@
 #!/bin/bash
-# Download a prebuilt release. Later updates run inside Pressay through Sparkle.
 set -euo pipefail
 
 fail() { printf 'Pressay: %s\n' "$*" >&2; exit 1; }

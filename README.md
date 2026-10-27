@@ -136,7 +136,7 @@ The installer checks the release checksum and app signature before replacing any
 
 Pressay asks for Microphone, Accessibility, and Input Monitoring permissions on first launch. It downloads the speech model on first use. Meeting recording also needs System Audio Recording permission.
 
-When an update is available, a notice appears in Pressay’s sidebar and menu bar. Click **Install and Restart** to download, verify, and install it. Pressay waits for active dictation, processing, or meeting recording to finish before restarting. You can also choose **Check for Updates…**, or turn off automatic checks under **General › App updates**. Checks contact GitHub; no telemetry is sent.
+When an update is available, a notice appears in Pressay’s sidebar and menu bar. Click **Update and restart** to download, verify, and install it. Pressay waits for active dictation, processing, or meeting recording to finish before restarting. You can also choose **Check for Updates…**, or turn off automatic checks under **General › App updates**. Checks contact GitHub; no telemetry is sent.
 
 The [DMG download](https://github.com/Zheruel/pressay-macos/releases/latest) is also available. These builds are not Apple-notarized: a browser download may require **System Settings › Privacy & Security › Open Anyway** after the first launch attempt. Free ad-hoc signing can also require regranting Accessibility or Input Monitoring after an update. Automatic updates do not remove those macOS requirements. If insertion or the hold key stops working, remove and re-add Pressay under the affected permission in System Settings, then reopen it.
 

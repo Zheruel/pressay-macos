@@ -1,6 +1,5 @@
 name: Release
 
-# Release archives use free ad-hoc Apple signing and Sparkle's Ed25519 update signature.
 on:
   push:
     tags: ["v*"]

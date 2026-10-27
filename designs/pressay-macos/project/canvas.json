@@ -864,6 +864,51 @@
       "title": "Update · Available-Light",
       "is_interactive": true,
       "page": "updates"
+    },
+    "Update-Control.dc.html": {
+      "x": 3064,
+      "y": 860,
+      "w": 192,
+      "h": 44,
+      "title": "Update · Control",
+      "page": "updates",
+      "is_interactive": true
+    },
+    "Update-Review.dc.html": {
+      "x": 2360,
+      "y": 860,
+      "w": 584,
+      "h": 924,
+      "title": "Update · All states",
+      "page": "updates",
+      "is_interactive": true
+    },
+    "Update-Menu.dc.html": {
+      "x": 3064,
+      "y": 1024,
+      "w": 348,
+      "h": 672,
+      "title": "Update · Menu dark",
+      "page": "updates",
+      "is_interactive": true
+    },
+    "Update-Menu-Light.dc.html": {
+      "x": 3512,
+      "y": 1024,
+      "w": 348,
+      "h": 672,
+      "title": "Update · Menu light",
+      "page": "updates",
+      "is_interactive": true
+    },
+    "Update-Downloading-Light.dc.html": {
+      "x": 0,
+      "y": 1840,
+      "w": 1080,
+      "h": 740,
+      "title": "Update · Downloading light",
+      "page": "updates",
+      "is_interactive": true
     }
   },
   "order": [
@@ -961,7 +1006,12 @@
     "Update-Downloading.dc.html",
     "Update-Waiting.dc.html",
     "Update-Error.dc.html",
-    "Update-Available-Light.dc.html"
+    "Update-Available-Light.dc.html",
+    "Update-Control.dc.html",
+    "Update-Review.dc.html",
+    "Update-Menu.dc.html",
+    "Update-Menu-Light.dc.html",
+    "Update-Downloading-Light.dc.html"
   ],
   "notes": {},
   "pages": [

@@ -80,6 +80,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     /// A hand-edited note waiting for the user to confirm a rewrite.
     @Published var rewriteRequest: UUID?
     private var callSettingsWatch: AnyCancellable?
+    private var noteUpdateWatch: AnyCancellable?
     private var finishTask: Task<Void, Never>? { didSet { updateActivityChanged() } }
 
     private func updateActivityChanged() {
@@ -130,6 +131,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         updates.isBusy = { [weak self] in
             guard let self else { return false }
             return stateMachine.phase != .idle || liveSession != nil || meetingStarting || finishTask != nil
+                || notes.notes.contains(where: \.formatting)
+        }
+        noteUpdateWatch = notes.$notes.map { $0.contains(where: \.formatting) }.removeDuplicates().sink { [weak self] _ in
+            self?.updateActivityChanged()
         }
         updates.showInApp = { [weak self] in self?.showSettings() }
         updates.willRelaunch = { [weak self] in
