@@ -57,9 +57,12 @@ final class PermissionController: ObservableObject {
         #if DEBUG
         if DesignReview.enabled {
             let allowed = ProcessInfo.processInfo.environment["PRESSAY_REVIEW_PERMISSIONS"] != "missing"
-            microphoneGranted = allowed || reviewPermissions.contains(.microphone)
-            accessibilityGranted = allowed || reviewPermissions.contains(.accessibility)
-            inputMonitoringGranted = allowed || reviewPermissions.contains(.inputMonitoring)
+            let microphone = allowed || reviewPermissions.contains(.microphone)
+            let accessibility = allowed || reviewPermissions.contains(.accessibility)
+            let inputMonitoring = allowed || reviewPermissions.contains(.inputMonitoring)
+            if microphoneGranted != microphone { microphoneGranted = microphone }
+            if accessibilityGranted != accessibility { accessibilityGranted = accessibility }
+            if inputMonitoringGranted != inputMonitoring { inputMonitoringGranted = inputMonitoring }
             return
         }
         #endif
@@ -70,9 +73,9 @@ final class PermissionController: ObservableObject {
         let changed = microphone != microphoneGranted
             || accessibility != accessibilityGranted
             || inputMonitoring != inputMonitoringGranted
-        microphoneGranted = microphone
-        accessibilityGranted = accessibility
-        inputMonitoringGranted = inputMonitoring
+        if microphoneGranted != microphone { microphoneGranted = microphone }
+        if accessibilityGranted != accessibility { accessibilityGranted = accessibility }
+        if inputMonitoringGranted != inputMonitoring { inputMonitoringGranted = inputMonitoring }
         if changed { onStatusChange?() }
     }
 

@@ -111,6 +111,8 @@ struct Note: Codable, Identifiable, Equatable {
 @MainActor
 final class NotesStore: ObservableObject {
     @Published private(set) var notes: [Note] = []
+    private var actionItemsByNote: [UUID: [ActionItem]] = [:]
+    private(set) var openActionItemCount = 0
     private let url: URL
     private let logger = Logger(subsystem: "dev.localflow.app", category: "notes")
 
@@ -120,6 +122,7 @@ final class NotesStore: ObservableObject {
         guard let data = try? Data(contentsOf: url) else { return }
         do {
             notes = try JSONDecoder.notes.decode([Note].self, from: data).sorted { $0.updatedAt > $1.updatedAt }
+            for note in notes { updateActionItems(for: note) }
         } catch {
             // Keep the unreadable file rather than overwrite it with an empty list on the next save.
             let backup = directory.appending(path: "Notes.corrupt-\(Int(Date().timeIntervalSince1970)).json")
@@ -130,14 +133,27 @@ final class NotesStore: ObservableObject {
 
     func note(_ id: UUID) -> Note? { notes.first { $0.id == id } }
 
+    func actionItems(for id: UUID) -> [ActionItem] { actionItemsByNote[id] ?? [] }
+
+    private func updateActionItems(for note: Note) {
+        openActionItemCount -= actionItems(for: note.id).filter { $0.isMine && !$0.done }.count
+        let items = note.body.isEmpty ? [] : ActionItem.parse(note.body)
+        actionItemsByNote[note.id] = items
+        openActionItemCount += items.filter { $0.isMine && !$0.done }.count
+    }
+
     func add(_ note: Note) {
+        updateActionItems(for: note)
         notes.insert(note, at: 0)
         flush()
     }
 
     func modify(_ id: UUID, persist: Bool = true, keepOrder: Bool = false, _ change: (inout Note) -> Void) {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        let previousBody = notes[index].body
         change(&notes[index])
+        // Live transcript and title changes don't invalidate the parsed summary.
+        if notes[index].body != previousBody { updateActionItems(for: notes[index]) }
         guard persist else { return }
         if !keepOrder {
             notes[index].updatedAt = .now
@@ -165,6 +181,8 @@ final class NotesStore: ObservableObject {
     }
 
     func delete(_ id: UUID) {
+        openActionItemCount -= actionItems(for: id).filter { $0.isMine && !$0.done }.count
+        actionItemsByNote[id] = nil
         notes.removeAll { $0.id == id }
         flush()
     }

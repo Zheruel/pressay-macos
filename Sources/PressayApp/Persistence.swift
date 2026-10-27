@@ -59,12 +59,17 @@ final class DictationRecord: Identifiable {
 @MainActor
 final class HistoryStore: ObservableObject {
     @Published private(set) var records: [DictationRecord] = []
+    private var wordCounts: [UUID: (text: String, count: Int)] = [:]
+    private var statsEntries: [DictationStats.Entry] = []
 
     private let container: ModelContainer
     private let context: ModelContext
     private let retention = RetentionPolicy()
+    private let managesAudioFiles: Bool
 
     init(inMemory: Bool = false) throws {
+        // Preview and test history must never delete recordings from the installed app.
+        managesAudioFiles = !inMemory
         // Explicit store URL in our own directory: the shared Application Support
         // default.store collided with another app's store, forcing in-memory history.
         let configuration: ModelConfiguration
@@ -103,7 +108,7 @@ final class HistoryStore: ObservableObject {
     }
 
     func delete(_ record: DictationRecord) throws {
-        if let audioPath = record.audioPath { try? FileManager.default.removeItem(atPath: audioPath) }
+        if managesAudioFiles, let audioPath = record.audioPath { try? FileManager.default.removeItem(atPath: audioPath) }
         context.delete(record)
         try context.save()
         try refresh()
@@ -111,11 +116,15 @@ final class HistoryStore: ObservableObject {
 
     func deleteAll() throws {
         for record in try fetchAllRecords() {
-            if let audioPath = record.audioPath { try? FileManager.default.removeItem(atPath: audioPath) }
+            if managesAudioFiles, let audioPath = record.audioPath { try? FileManager.default.removeItem(atPath: audioPath) }
             context.delete(record)
         }
         try context.save()
         try refresh()
+    }
+
+    func stats(now: Date = .now, calendar: Calendar = .current) -> DictationStats {
+        DictationStats(entries: statsEntries, now: now, calendar: calendar)
     }
 
     /// One-time fixup after the LocalFlow→Pressay Application Support rename (stored audio
@@ -140,7 +149,7 @@ final class HistoryStore: ObservableObject {
         for record in allRecords {
             if let path = record.audioPath,
                retention.shouldDeleteAudio(createdAt: record.createdAt, isPinned: record.isRetained, now: now) {
-                try? FileManager.default.removeItem(atPath: path)
+                if managesAudioFiles { try? FileManager.default.removeItem(atPath: path) }
                 record.audioPath = nil
             }
             if retention.shouldDeleteText(createdAt: record.createdAt, isPinned: record.isRetained, now: now) {
@@ -162,7 +171,22 @@ final class HistoryStore: ObservableObject {
             sortBy: [SortDescriptor(\DictationRecord.createdAt, order: .reverse)]
         )
         descriptor.fetchLimit = 500
-        records = try context.fetch(descriptor)
+        let fetched = try context.fetch(descriptor)
+        var updatedCounts: [UUID: (text: String, count: Int)] = [:]
+        statsEntries = fetched.map { record in
+            let text = record.referenceText
+            let count: Int
+            if let cached = wordCounts[record.id], cached.text == text {
+                count = cached.count
+            } else {
+                count = DictationStats.wordCount(text)
+            }
+            updatedCounts[record.id] = (text, count)
+            return .init(date: record.createdAt, words: count, duration: record.duration)
+        }
+        // Prune deleted and expired records along with the visible history.
+        wordCounts = updatedCounts
+        records = fetched
     }
 
     private func fetchAllRecords() throws -> [DictationRecord] {
@@ -173,6 +197,7 @@ final class HistoryStore: ObservableObject {
     /// directory migration with not-yet-rewritten stored paths can never make
     /// referenced audio look orphaned.
     private func removeExpiredOrphanedAudio(referencedNames: Set<String>, now: Date) throws {
+        guard managesAudioFiles else { return }
         let directory = AudioFileStore.directory
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
         let urls = try FileManager.default.contentsOfDirectory(

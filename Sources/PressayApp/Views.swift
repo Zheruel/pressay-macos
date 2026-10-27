@@ -186,13 +186,11 @@ enum SettingsSection: String {
 
 struct SettingsRootView: View {
     @ObservedObject var coordinator: AppCoordinator
-    @ObservedObject private var settings: AppSettings
     @ObservedObject private var permissions: PermissionController
     @State private var selection =
         ProcessInfo.processInfo.environment["PRESSAY_PANE"].flatMap(SettingsSection.init(rawValue:)) ?? .home
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
-        settings = coordinator.settings
         permissions = coordinator.permissions
     }
     var body: some View {
@@ -303,13 +301,8 @@ private struct HomeView: View {
         settings = coordinator.settings
         self.open = open
     }
-    private var stats: DictationStats {
-        DictationStats(
-            entries: history.records.map {
-                .init(date: $0.createdAt, words: DictationStats.wordCount($0.referenceText), duration: $0.duration)
-            })
-    }
     var body: some View {
+        let stats = history.stats()
         PressayPage {
             HStack(alignment: .top, spacing: 24) {
                 HStack(alignment: .top, spacing: 0) {
@@ -384,7 +377,7 @@ enum AppInfo {
         let name = url.map {
             FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "")
         }
-        names[bundleID] = name
+        names[bundleID] = .some(name)
         return name
     }
 
@@ -393,7 +386,7 @@ enum AppInfo {
         if let cached = icons[bundleID] { return cached }
         let icon = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
             .map { NSWorkspace.shared.icon(forFile: $0.path) }
-        icons[bundleID] = icon
+        icons[bundleID] = .some(icon)
         return icon
     }
 }
@@ -421,11 +414,14 @@ private struct GeneralSettingsView: View {
             }
             if coordinator.notetakerSettingsSelected { meetingSettings } else { dictationSettings }
         }
-        .onAppear {
+        .task {
             permissions.startMonitoring()
-            settings.refreshLaunchAtLogin()
-            inputDevices = AudioDeviceMonitor.inputDevices()
-            defaultInputName = AudioDeviceMonitor.defaultInputName
+            let inputs = await Task.detached(priority: .userInitiated) {
+                (AudioDeviceMonitor.inputDevices(), AudioDeviceMonitor.defaultInputName)
+            }.value
+            guard !Task.isCancelled else { return }
+            inputDevices = inputs.0
+            defaultInputName = inputs.1
         }
     }
     private func tab(_ title: String, meetings: Bool) -> some View {
@@ -963,7 +959,6 @@ private struct DictionaryWord: Identifiable {
     let preferred: String
     let collection: String
     let line: String?
-    let learned: [LearnedVocabularyStore.Record]
     var id: String { preferred.lowercased() }
 }
 
@@ -989,27 +984,22 @@ private struct DictionarySettingsView: View {
                 collection = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
             } else if let entry = VocabularyParser.parse(line).first, seen.insert(entry.preferred.lowercased()).inserted
             {
-                result.append(.init(preferred: entry.preferred, collection: collection, line: line, learned: []))
+                result.append(.init(preferred: entry.preferred, collection: collection, line: line))
             }
         }
         for record in learned.records where seen.insert(record.preferred.lowercased()).inserted {
             result.append(
-                .init(
-                    preferred: record.preferred, collection: "Learned", line: nil,
-                    learned: learned.records.filter {
-                        $0.preferred.caseInsensitiveCompare(record.preferred) == .orderedSame
-                    }))
+                .init(preferred: record.preferred, collection: "Learned", line: nil))
         }
         return result
     }
-    private var filtered: [DictionaryWord] {
-        words.filter {
+    var body: some View {
+        let words = words
+        let filtered = words.filter {
             search.isEmpty || $0.preferred.localizedCaseInsensitiveContains(search)
                 || $0.collection.localizedCaseInsensitiveContains(search)
         }
-    }
-    var body: some View {
-        PressayPage {
+        PressayPage(lazy: true) {
             PressayHeading(title: "Dictionary", subtitle: "Set the spelling of names and terms.") {
                 Button {
                     adding = true
@@ -1032,7 +1022,7 @@ private struct DictionarySettingsView: View {
                     systemImage: search.isEmpty ? "character.book.closed" : "magnifyingglass",
                     actionTitle: words.isEmpty ? "Add your first word" : nil, action: { adding = true })
             } else {
-                PressayGroup {
+                PressayGroup(lazy: true) {
                     HStack {
                         Text("SPELLING")
                         Spacer()
@@ -1129,7 +1119,7 @@ private struct SnippetsSettingsView: View {
         Set(settings.snippets.filter { $0.id != id }.map { SnippetExpander.normalized($0.trigger) })
     }
     var body: some View {
-        PressayPage {
+        PressayPage(lazy: true) {
             PressayHeading(title: "Snippets", subtitle: "Expand spoken phrases into saved text.") {
                 Button {
                     adding = true
@@ -1143,7 +1133,7 @@ private struct SnippetsSettingsView: View {
                     detail: "Turn a phrase into your booking link, an address, or your usual sign-off.",
                     systemImage: "text.quote", actionTitle: "Create your first snippet", action: { adding = true })
             } else {
-                PressayGroup {
+                PressayGroup(lazy: true) {
                     ForEach(settings.snippets) { snippet in
                         Button {
                             editing = snippet
@@ -1256,7 +1246,8 @@ private struct HistoryView: View {
         history = coordinator.history
     }
     var body: some View {
-        PressayPage {
+        let groups = groups
+        PressayPage(lazy: true) {
             PressayHeading(title: "History") {
                 Button("Clear history…") { showingDeleteAll = true }.disabled(history.records.isEmpty).buttonStyle(
                     PressayButtonStyle(kind: .quiet))
@@ -1275,7 +1266,7 @@ private struct HistoryView: View {
             }
             ForEach(groups, id: \.title) { group in
                 PressaySection(title: group.title) {
-                    PressayGroup { ForEach(group.records) { HistoryRow(record: $0, coordinator: coordinator) } }
+                    PressayGroup(lazy: true) { ForEach(group.records) { HistoryRow(record: $0, coordinator: coordinator) } }
                 }
             }
             if !history.records.isEmpty {

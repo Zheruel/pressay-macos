@@ -86,10 +86,17 @@ struct PressaySwitchStyle: ToggleStyle {
 }
 
 struct PressayPage<Content: View>: View {
+    var lazy = false
     @ViewBuilder var content: Content
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) { content }
+            Group {
+                if lazy {
+                    LazyVStack(alignment: .leading, spacing: 0) { content }
+                } else {
+                    VStack(alignment: .leading, spacing: 0) { content }
+                }
+            }
                 .frame(maxWidth: 800, alignment: .leading)
                 .padding(.horizontal, 34).padding(.top, 52).padding(.bottom, 32)
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -116,9 +123,16 @@ struct PressayHeading<Actions: View>: View {
 }
 
 struct PressayGroup<Content: View>: View {
+    var lazy = false
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(spacing: 0) { content }
+        Group {
+            if lazy {
+                LazyVStack(spacing: 0) { content }
+            } else {
+                VStack(spacing: 0) { content }
+            }
+        }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(PressayPalette.surface)
             .clipShape(.rect(cornerRadius: 11))
