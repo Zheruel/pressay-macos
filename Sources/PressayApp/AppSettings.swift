@@ -173,7 +173,8 @@ final class AppSettings: ObservableObject {
             launchAtLogin = enabled
             isRollingBackLaunchAtLogin = false
         }
-        launchAtLoginError = Self.launchAtLoginMessage(for: status)
+        let message = Self.launchAtLoginMessage(for: status)
+        if launchAtLoginError != message { launchAtLoginError = message }
     }
 
     func openLoginItemsSettings() {

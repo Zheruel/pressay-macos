@@ -95,7 +95,8 @@ struct NotetakerPage: View {
     // MARK: Home
 
     private var home: some View {
-        PressayPage {
+        let openItemCount = store.openActionItemCount
+        return PressayPage(lazy: true) {
             PressayHeading(title: "Notetaker") {
                 HStack(spacing: 8) {
                     StartNotetakerButton(coordinator: coordinator, prominent: true)
@@ -134,7 +135,7 @@ struct NotetakerPage: View {
                     Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.bottom, 24)
                 }
                 PressaySection(title: "Recent meetings") {
-                    PressayGroup {
+                    PressayGroup(lazy: true) {
                         ForEach(store.notes.sorted { $0.createdAt > $1.createdAt }) { note in
                             NavigationLink(value: NotetakerRoute.note(note.id)) {
                                 HStack(spacing: 12) {
@@ -176,12 +177,6 @@ struct NotetakerPage: View {
                 }
             }
         }.navigationTitle("")
-    }
-
-    private var openItemCount: Int {
-        store.notes.reduce(0) { count, note in
-            count + ActionItem.parse(note.body).filter { $0.isMine && !$0.done }.count
-        }
     }
 
 
@@ -670,6 +665,7 @@ struct TranscriptLinesView: View {
     }
 
     var body: some View {
+        let visibleTurns = visibleTurns
         LazyVStack(alignment: .leading, spacing: 14) {
             ForEach(visibleTurns) { turn in
                 if isMeeting {
@@ -1236,14 +1232,15 @@ private struct ActionItemsPage: View {
     private struct Group: Identifiable { let note: Note; let items: [ActionItem]; var id: UUID { note.id } }
     private var groups: [Group] {
         store.notes.sorted { $0.createdAt > $1.createdAt }.compactMap { note in
-            let items = ActionItem.parse(note.body).filter {
+            let items = store.actionItems(for: note.id).filter {
                 $0.isMine && (!$0.done || completedThisVisit.contains(note.id.uuidString + $0.text))
             }
             return items.isEmpty ? nil : Group(note: note, items: items)
         }
     }
     var body: some View {
-        PressayPage {
+        let groups = groups
+        PressayPage(lazy: true) {
             Button {
                 dismiss()
             } label: {
@@ -1262,7 +1259,7 @@ private struct ActionItemsPage: View {
                         .foregroundStyle(PressayPalette.muted)
                     Spacer()
                 }.padding(.bottom, 12)
-                PressayGroup {
+                PressayGroup(lazy: true) {
                     ForEach(group.items, id: \.self) { item in
                         HStack(spacing: 12) {
                             Toggle(
