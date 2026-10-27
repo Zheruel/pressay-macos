@@ -1,8 +1,5 @@
 name: Release
 
-# Pushing a version tag (v1.2.0) tests, packages, and publishes the DMG as a
-# GitHub release. Runner keychains have no signing identity, so the artifact
-# is ad-hoc signed — same caveat as building from source (see README).
 on:
   push:
     tags: ["v*"]
@@ -24,7 +21,13 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Verify tag matches the app version
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
+          if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
+            echo 'Configure SPARKLE_PRIVATE_KEY before publishing an updatable release.' >&2
+            exit 1
+          fi
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Config/Info.plist)"
           if [[ "${GITHUB_REF_NAME}" != "v${VERSION}" ]]; then
             echo "Tag ${GITHUB_REF_NAME} does not match Info.plist version ${VERSION}" >&2
@@ -35,11 +38,32 @@ jobs:
         run: xcrun swift test --disable-sandbox
 
       - name: Package DMG
+        env:
+          SIGNING_IDENTITY: '-'
         run: |
           if ! xcrun metal --version >/dev/null 2>&1; then
             xcodebuild -downloadComponent MetalToolchain
           fi
           ./scripts/package-dmg.sh
+
+      - name: Sign update and generate feed
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          SPARKLE_VERSION='2.10.1'
+          SPARKLE_ARCHIVE="$RUNNER_TEMP/Sparkle.tar.xz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz" \
+            --output "$SPARKLE_ARCHIVE"
+          echo "1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27  $SPARKLE_ARCHIVE" | shasum -a 256 --check
+          mkdir "$RUNNER_TEMP/sparkle"
+          tar -xJf "$SPARKLE_ARCHIVE" -C "$RUNNER_TEMP/sparkle"
+          umask 077
+          export SPARKLE_KEY_FILE="$RUNNER_TEMP/sparkle-private-key"
+          trap 'rm -f "$SPARKLE_KEY_FILE"' EXIT
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$SPARKLE_KEY_FILE"
+          export SPARKLE_TOOLS_DIR="$RUNNER_TEMP/sparkle/bin"
+          ./scripts/package-update.sh
 
       - name: Publish GitHub release
         env:
@@ -48,4 +72,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             --title "Pressay ${GITHUB_REF_NAME#v}" \
             --generate-notes \
-            .build/Pressay-*.dmg
+            .build/Pressay-*.dmg \
+            .build/updates/Pressay-macos-arm64.zip \
+            .build/updates/SHA256SUMS \
+            .build/updates/appcast.xml

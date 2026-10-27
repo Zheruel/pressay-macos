@@ -70,6 +70,10 @@ else
     ln -sfn Versions/Current/Resources "$FRAMEWORK/Resources"
 fi
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$CONTENTS/MacOS/Pressay" 2>/dev/null || true
+SPARKLE="$CONTENTS/Frameworks/Sparkle.framework"
+ditto "$ROOT/.build/$CONFIGURATION/Sparkle.framework" "$SPARKLE"
+mkdir -p "$CONTENTS/Resources/licenses"
+cp "$ROOT/Config/Sparkle-LICENSE.txt" "$CONTENTS/Resources/licenses/Sparkle.txt"
 if [[ -d "$ROOT/Config/Sounds" ]]; then
     mkdir -p "$CONTENTS/Resources/Sounds"
     cp "$ROOT"/Config/Sounds/*.wav "$CONTENTS/Resources/Sounds/"
@@ -92,6 +96,21 @@ if [[ -z "$SIGNING_IDENTITY" ]]; then
         SIGNING_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development:.*\)"/\1/p' | head -n 1)"
     fi
 fi
+
+SPARKLE_IDENTITY="${SIGNING_IDENTITY:--}"
+SPARKLE_TIMESTAMP="--timestamp=none"
+[[ "$SPARKLE_IDENTITY" == Developer\ ID\ Application:* ]] && SPARKLE_TIMESTAMP="--timestamp"
+# Sign inside out, preserving only the Downloader service's own entitlements.
+# https://sparkle-project.org/documentation/sandboxing/#code-signing
+codesign --force --sign "$SPARKLE_IDENTITY" --options runtime "$SPARKLE_TIMESTAMP" \
+    "$SPARKLE/Versions/Current/XPCServices/Installer.xpc"
+codesign --force --sign "$SPARKLE_IDENTITY" --options runtime "$SPARKLE_TIMESTAMP" \
+    --preserve-metadata=entitlements "$SPARKLE/Versions/Current/XPCServices/Downloader.xpc"
+for helper in Autoupdate Updater.app; do
+    codesign --force --sign "$SPARKLE_IDENTITY" --options runtime "$SPARKLE_TIMESTAMP" \
+        "$SPARKLE/Versions/Current/$helper"
+done
+codesign --force --sign "$SPARKLE_IDENTITY" --options runtime "$SPARKLE_TIMESTAMP" "$SPARKLE"
 
 if [[ -n "$SIGNING_IDENTITY" ]]; then
     TIMESTAMP_ARGUMENT="--timestamp=none"

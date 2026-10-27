@@ -10,6 +10,7 @@ import OSLog
 @MainActor
 final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     static let shared = AppCoordinator()
+    private static let reopenAfterUpdateKey = "reopenWindowAfterUpdate"
 
     @Published private(set) var modelStatus = "Not loaded"
     @Published private(set) var modelReady = false
@@ -26,6 +27,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     let permissions = PermissionController()
     let history: HistoryStore
     let tunerRunner = VocabularyTunerRunner()
+    let updates = AppUpdater()
 
     private let recorder = AudioRecorder()
     private let hotkey = HotkeyMonitor()
@@ -37,9 +39,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private var engineModel: ASRModel
     private var modelChangeTask: Task<Void, Never>?
     private var meetingStartTask: Task<Void, Never>?
-    @Published private(set) var meetingStarting = false
+    @Published private(set) var meetingStarting = false { didSet { updateActivityChanged() } }
     private let logger = Logger(subsystem: "dev.localflow.app", category: "pipeline")
-    private var stateMachine = DictationStateMachine()
+    private var stateMachine = DictationStateMachine() { didSet { updateActivityChanged() } }
     private var target: CapturedTarget?
     private var processingTask: Task<Void, Never>?
     /// Only this monitor's release/cancel may end the session.
@@ -63,7 +65,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     #else
     let notes = NotesStore()
     #endif
-    @Published private(set) var liveSession: LiveSession?
+    @Published private(set) var liveSession: LiveSession? { didSet { updateActivityChanged() } }
     @Published var recordingError: String?
     private var chatGPTForward: AnyCancellable?
     /// Cached so the CGEventTap callback never makes a keychain IPC.
@@ -78,7 +80,13 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     /// A hand-edited note waiting for the user to confirm a rewrite.
     @Published var rewriteRequest: UUID?
     private var callSettingsWatch: AnyCancellable?
-    private var finishTask: Task<Void, Never>?
+    private var noteUpdateWatch: AnyCancellable?
+    private var finishTask: Task<Void, Never>? { didSet { updateActivityChanged() } }
+
+    private func updateActivityChanged() {
+        // Let the current callback finish saving its note or inserting its dictation before relaunching.
+        Task { @MainActor [weak self] in self?.updates.resumeIfIdle() }
+    }
 
     private init() {
         // Before the history store opens: its retention pass must see audio at its final location.
@@ -120,6 +128,20 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func start() {
+        updates.isBusy = { [weak self] in
+            guard let self else { return false }
+            return stateMachine.phase != .idle || liveSession != nil || meetingStarting || finishTask != nil
+                || notes.notes.contains(where: \.formatting)
+        }
+        noteUpdateWatch = notes.$notes.map { $0.contains(where: \.formatting) }.removeDuplicates().sink { [weak self] _ in
+            self?.updateActivityChanged()
+        }
+        updates.showInApp = { [weak self] in self?.showSettings() }
+        updates.willRelaunch = { [weak self] in
+            UserDefaults.standard.set(self?.settingsWindow.window?.isVisible == true, forKey: Self.reopenAfterUpdateKey)
+            // applicationWillTerminate uses _exit, so flush this one-shot flag before quitting.
+            UserDefaults.standard.synchronize()
+        }
         #if DEBUG
         if DesignReview.enabled {
             NSApp.appearance = DesignReview.appearance
@@ -128,10 +150,13 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             modelStatus = "Ready"
             claudeAPIKey = "sk-ant-design-fixture-1234"
             DesignReview.populate(self)
+            if let state = ProcessInfo.processInfo.environment["PRESSAY_REVIEW_UPDATE"] { updates.preview(state) }
             runDesignDemo()
             return
         }
         #endif
+
+        updates.start()
 
         chatGPTForward = chatGPT.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         if chatGPT.isSignedIn { Task { await chatGPT.loadModels() } }
@@ -148,7 +173,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         Task { @MainActor in tunerRunner.scheduleIfNeeded(history: history, settings: settings) }
         if !settings.onboardingComplete {
             showOnboarding()
+        } else if UserDefaults.standard.bool(forKey: Self.reopenAfterUpdateKey) {
+            showSettings()
         }
+        UserDefaults.standard.removeObject(forKey: Self.reopenAfterUpdateKey)
         #if DEBUG
         runDesignDemo()
         #endif
@@ -520,6 +548,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func holdKeyPressed(_ monitor: HotkeyMonitor) {
+        guard !updates.isInstalling else { return }
         // No synchronous TCC refresh inside the CGEventTap callback; startMonitoring() keeps these current.
         guard permissions.microphoneGranted, permissions.accessibilityGranted else {
             overlay.showError("Finish setup in Pressay")
@@ -876,6 +905,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     func startMeeting() {
+        guard !updates.isInstalling else { return }
         #if DEBUG
         if DesignReview.enabled {
             guard liveSession == nil, let note = notes.notes.first,

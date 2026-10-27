@@ -25,7 +25,7 @@ No account, no telemetry, no subscription. Audio never leaves the Mac.
 </p>
 
 > [!IMPORTANT]
-> Requires an Apple Silicon Mac on macOS 26 or newer. Builds are not notarized yet, so building from source is the most reliable install.
+> Requires an Apple Silicon Mac on macOS 26 or newer. Releases use free signing and are not Apple-notarized.
 
 ## Features
 
@@ -124,7 +124,23 @@ The speech model downloads once from Hugging Face. After that, dictation works o
 
 **Keep the microphone ready** keeps the audio stream open for 45 s after a dictation, so macOS shows the orange mic indicator during that time. Only a half-second ring buffer is kept, and it is overwritten continuously. The mic closes on sleep and screen lock, is never kept open on Bluetooth headphones (an open mic switches them to call audio), and the feature can be turned off in Settings.
 
-## Install from source
+## Install
+
+Run this in Terminal to install the latest prebuilt release. No Xcode or Homebrew is needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Zheruel/pressay-macos/main/scripts/install.sh | bash
+```
+
+The installer checks the release checksum and app signature before replacing anything. It installs into `~/Applications`, or updates `/Applications/Pressay.app` if that installation exists. Quit Pressay first; the installer will not interrupt a recording. To choose another writable folder, download and inspect the script, then run it with `PRESSAY_INSTALL_DIR` set to that folder.
+
+Pressay asks for Microphone, Accessibility, and Input Monitoring permissions on first launch. It downloads the speech model on first use. Meeting recording also needs System Audio Recording permission.
+
+When an update is available, a notice appears in Pressay’s sidebar and menu bar. Click **Update and restart** to download, verify, and install it. Pressay waits for active dictation, processing, or meeting recording to finish before restarting. You can also choose **Check for Updates…**, or turn off automatic checks under **General › App updates**. Checks contact GitHub; no telemetry is sent.
+
+The [DMG download](https://github.com/Zheruel/pressay-macos/releases/latest) is also available. These builds are not Apple-notarized: a browser download may require **System Settings › Privacy & Security › Open Anyway** after the first launch attempt. Free ad-hoc signing can also require regranting Accessibility or Input Monitoring after an update. Automatic updates do not remove those macOS requirements. If insertion or the hold key stops working, remove and re-add Pressay under the affected permission in System Settings, then reopen it.
+
+### Build from source
 
 Requirements: Apple Silicon, macOS 26+, Xcode 26+, CMake, the Xcode Metal Toolchain, and at least 8 GB of free space for builds and model caches. Orukeet needs about 715 MB; the optional Mega-ASR download is much larger.
 
@@ -173,7 +189,7 @@ Sources/
 └── TranscribeCpp/          Vendored Swift wrapper for the native runtime
 ```
 
-CI runs the tests and a full app build on every pull request. Pushing a `vX.Y.Z` tag that matches `Config/Info.plist` publishes a DMG release. The bundle identifier stays `dev.localflow.app` so permission grants from earlier builds carry over.
+CI runs the tests and a full app build on every pull request. Pushing a `vX.Y.Z` tag that matches `Config/Info.plist` publishes the DMG, installer ZIP, checksums, and signed update feed. Increment `CFBundleVersion` for every release so Sparkle can order updates. The release workflow requires `SPARKLE_PRIVATE_KEY`; see [release setup](docs/releases.md). The bundle identifier stays `dev.localflow.app`; ad-hoc signing may still require regranting permissions.
 
 The separate `Runtime/` Swift package builds the bundled speech worker. Model data stays in Application Support; executable runtimes ship inside the signed app.
 

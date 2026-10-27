@@ -5,6 +5,7 @@ import SwiftUI
 struct PressayApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var coordinator = AppCoordinator.shared
+    @StateObject private var updates = AppCoordinator.shared.updates
 
     var body: some Scene {
         MenuBarExtra {
@@ -12,9 +13,17 @@ struct PressayApp: App {
         } label: {
             Image("MenuBarIcon")
                 .renderingMode(.template)
-                .accessibilityLabel("Pressay")
+                .overlay(alignment: .topTrailing) {
+                    if updates.hasUpdate {
+                        Circle().fill(PressayPalette.accent).frame(width: 5, height: 5)
+                    }
+                }
+                .accessibilityLabel(updates.hasUpdate ? "Pressay, update available" : "Pressay")
         }
         .menuBarExtraStyle(.window)
+        .commands {
+            CommandGroup(after: .appInfo) { CheckForUpdatesButton(updater: updates) }
+        }
     }
 }
 

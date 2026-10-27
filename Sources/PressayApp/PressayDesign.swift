@@ -20,6 +20,9 @@ enum PressayPalette {
     static let successSurface = adaptive(0x293c34, 0xeaf5ef)
     static let warning = adaptive(0xecc48d, 0x825716)
     static let warningSurface = adaptive(0x393227, 0xfaf1df)
+    static let updateTrack = adaptive(0x292b31, 0xdfe0e7)
+    static let updateFill = adaptive(0x454851, 0xc3c6d1)
+    static let updateSecondary = adaptive(0xbfc1cb, 0x4f515d)
     static let danger = adaptive(0xf4a0a2, 0xb63c43)
 
     private static func adaptive(_ dark: UInt32, _ light: UInt32) -> Color {

@@ -2,6 +2,15 @@
 
 Pressay source code is MIT-licensed. The following components and downloaded assets keep their own licenses.
 
+## Sparkle
+
+- Project: [sparkle-project/Sparkle](https://github.com/sparkle-project/Sparkle)
+- Use: signed update checking, download, installation, and relaunch
+- Version: `2.10.1`
+- License: MIT, with bundled third-party notices in [`Config/Sparkle-LICENSE.txt`](Config/Sparkle-LICENSE.txt)
+
+The app bundles the complete notice under `Contents/Resources/licenses/Sparkle.txt`.
+
 ## transcribe.cpp and Swift bindings
 
 - Project: [handy-computer/transcribe.cpp](https://github.com/handy-computer/transcribe.cpp)

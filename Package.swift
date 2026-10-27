@@ -13,6 +13,7 @@ let package = Package(
         .executable(name: "PressayBench", targets: ["PressayBench"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
         // Apache-2.0. On-device speaker diarization for the other side of calls.
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.7"),
     ],
@@ -62,6 +63,7 @@ let package = Package(
         .executableTarget(
             name: "PressayApp",
             dependencies: [
+                .product(name: "Sparkle", package: "Sparkle"),
                 "PressayCore",
                 "PressayObjCShim",
                 "PressayTranscription",
