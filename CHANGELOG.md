@@ -2,6 +2,14 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.12.2] - 2026-10-27
+
+### Fixed
+
+- Reduce delays when switching sections by rendering visible list rows and reusing action-item counts and Home word counts.
+- Keep microphone discovery from delaying the General page, and avoid redraws when permission and login status have not changed.
+- Prevent preview and in-memory test history from deleting saved dictation audio.
+
 ## [1.11.0] - 2026-10-22
 
 ### Added

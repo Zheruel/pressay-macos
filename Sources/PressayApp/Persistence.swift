@@ -184,7 +184,6 @@ final class HistoryStore: ObservableObject {
             updatedCounts[record.id] = (text, count)
             return .init(date: record.createdAt, words: count, duration: record.duration)
         }
-        // Prune deleted and expired records along with the visible history.
         wordCounts = updatedCounts
         records = fetched
     }

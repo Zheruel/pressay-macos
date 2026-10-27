@@ -152,7 +152,6 @@ final class NotesStore: ObservableObject {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
         let previousBody = notes[index].body
         change(&notes[index])
-        // Live transcript and title changes don't invalidate the parsed summary.
         if notes[index].body != previousBody { updateActionItems(for: notes[index]) }
         guard persist else { return }
         if !keepOrder {
