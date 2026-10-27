@@ -24,6 +24,7 @@ struct MenuContentView: View {
                         ? PressayPalette.success : PressayPalette.warning
                 ).frame(width: 6, height: 6)
             }.padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 18)
+            UpdateNoticeView(updater: coordinator.updates)
             if !settings.onboardingComplete {
                 Text("Three permissions, then you’re ready.").font(.system(size: 12)).foregroundStyle(
                     PressayPalette.muted
@@ -101,6 +102,9 @@ struct MenuContentView: View {
                 }.keyboardShortcut(",", modifiers: .command)
             }
             menuDivider.padding(.top, 10).padding(.bottom, 5)
+            CheckForUpdatesButton(updater: coordinator.updates)
+                .buttonStyle(.plain).font(.system(size: 12))
+                .padding(.horizontal, 11).frame(height: 38)
             MenuRow(title: "Quit Pressay", shortcut: "⌘Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut(
                 "q", modifiers: .command)
         }
@@ -205,7 +209,8 @@ struct SettingsRootView: View {
                 navGroup([.dictionary, .snippets])
                 Spacer().frame(height: 20)
                 navGroup([.general, .claude])
-                Spacer(minLength: 20)
+                Spacer(minLength: 12)
+                UpdateNoticeView(updater: coordinator.updates)
                 VStack(alignment: .leading, spacing: 6) {
                     Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.bottom, 9)
                     if let session = coordinator.liveSession {
@@ -519,6 +524,9 @@ private struct GeneralSettingsView: View {
                         }
                     }
                 }
+            }
+            PressaySection(title: "App updates") {
+                UpdatePreferencesView(updater: coordinator.updates)
             }
             if let error = coordinator.lastError {
                 Text(error).font(.system(size: 12)).foregroundStyle(PressayPalette.danger).padding(.top, 18)

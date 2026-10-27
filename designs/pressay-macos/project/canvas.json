@@ -819,6 +819,51 @@
       "title": "Saved note · My Notes · Light",
       "page": "saved-notes",
       "is_interactive": true
+    },
+    "Update-Available.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Update · Available",
+      "is_interactive": true,
+      "page": "updates"
+    },
+    "Update-Downloading.dc.html": {
+      "x": 1180,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Update · Downloading",
+      "is_interactive": true,
+      "page": "updates"
+    },
+    "Update-Waiting.dc.html": {
+      "x": 2360,
+      "y": 0,
+      "w": 1080,
+      "h": 740,
+      "title": "Update · Waiting",
+      "is_interactive": true,
+      "page": "updates"
+    },
+    "Update-Error.dc.html": {
+      "x": 0,
+      "y": 860,
+      "w": 1080,
+      "h": 740,
+      "title": "Update · Error",
+      "is_interactive": true,
+      "page": "updates"
+    },
+    "Update-Available-Light.dc.html": {
+      "x": 1180,
+      "y": 860,
+      "w": 1080,
+      "h": 740,
+      "title": "Update · Available-Light",
+      "is_interactive": true,
+      "page": "updates"
     }
   },
   "order": [
@@ -911,7 +956,12 @@
     "Saved-Note-My-Notes.dc.html",
     "Saved-Note-Summary-Light.dc.html",
     "Saved-Note-Transcript-Light.dc.html",
-    "Saved-Note-My-Notes-Light.dc.html"
+    "Saved-Note-My-Notes-Light.dc.html",
+    "Update-Available.dc.html",
+    "Update-Downloading.dc.html",
+    "Update-Waiting.dc.html",
+    "Update-Error.dc.html",
+    "Update-Available-Light.dc.html"
   ],
   "notes": {},
   "pages": [
@@ -950,6 +1000,10 @@
     {
       "id": "saved-notes",
       "name": "09 · Saved notes"
+    },
+    {
+      "id": "updates",
+      "name": "App updates"
     }
   ],
   "designSystems": []
