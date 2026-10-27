@@ -193,31 +193,71 @@ final class AppUpdater: NSObject, ObservableObject, SPUUserDriver, SPUUpdaterDel
 
 struct UpdateNoticeView: View {
     @ObservedObject var updater: AppUpdater
+    @State private var hovering = false
+    @FocusState private var focused: Bool
 
     var body: some View {
         if updater.showsNotice {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.system(size: 12, weight: .semibold))
-                Text(detail).font(.system(size: 11)).foregroundStyle(PressayPalette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                if [.checking, .downloading, .preparing, .installing].contains(updater.phase) {
-                    ProgressView(value: updater.progress).progressViewStyle(.linear)
-                        .accessibilityLabel(title)
-                }
-                if let action {
-                    Button { updater.performAction() } label: {
-                        Text(action).frame(maxWidth: .infinity)
-                    }
-                        .buttonStyle(PressayButtonStyle(kind: updater.phase == .waiting ? .standard : .primary))
+            Group {
+                if action != nil {
+                    Button { updater.performAction() } label: { content }
+                        .buttonStyle(.plain)
+                        .focused($focused)
+                        .onHover { hovering = $0 }
+                        .background(hovering ? PressayPalette.hover : .clear, in: .rect(cornerRadius: 7))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7)
+                                .strokeBorder(focused ? PressayPalette.accent : .clear, lineWidth: 1.5)
+                        }
+                } else {
+                    content
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(PressayPalette.surface, in: .rect(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(PressayPalette.line))
-            .padding(.bottom, 14)
-            .help(updater.phase == .failed ? updater.errorDetail : "")
+            .padding(.bottom, 8)
+            .help(updater.phase == .failed ? updater.errorDetail : detail)
+            .onChange(of: updater.phase) { hovering = false }
         }
+    }
+
+    private var working: Bool { [.checking, .downloading, .preparing, .installing].contains(updater.phase) }
+
+    private var content: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Group {
+                if working {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: updater.phase == .failed ? "exclamationmark.triangle"
+                          : updater.phase == .current ? "checkmark.circle" : "arrow.down.circle")
+                        .font(.system(size: 14))
+                }
+            }
+            .frame(width: 16, height: 16)
+            .foregroundStyle(updater.phase == .failed ? PressayPalette.danger : PressayPalette.muted)
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(title).font(.system(size: 12, weight: .medium))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    if updater.phase == .downloading, let progress = updater.progress {
+                        Text(progress.formatted(.percent.precision(.fractionLength(0))))
+                            .font(.system(size: 10)).monospacedDigit().foregroundStyle(PressayPalette.muted)
+                            .accessibilityHidden(true)
+                    }
+                }
+                if let action {
+                    Text(action).font(.system(size: 11)).foregroundStyle(PressayPalette.muted)
+                } else if working, let progress = updater.progress {
+                    ProgressView(value: progress).progressViewStyle(.linear).tint(PressayPalette.muted)
+                        .accessibilityLabel(title)
+                }
+            }
+        }
+        .foregroundStyle(PressayPalette.text)
+        .padding(.horizontal, 10).padding(.vertical, 9)
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .contentShape(.rect(cornerRadius: 7))
     }
 
     private var title: String {
@@ -225,12 +265,12 @@ struct UpdateNoticeView: View {
         case .idle: ""
         case .checking: "Checking for updates…"
         case .available: "Update available"
-        case .downloading: "Downloading update…"
+        case .downloading: "Downloading…"
         case .preparing: "Preparing update…"
         case .waiting: "Update after recording"
         case .installing: "Restarting Pressay…"
         case .current: "You’re up to date"
-        case .failed: "Update couldn’t finish"
+        case .failed: "Update failed"
         }
     }
     private var detail: String {
