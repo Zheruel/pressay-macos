@@ -210,7 +210,7 @@ public struct ActionItem: Hashable, Sendable {
 
     public static func parse(_ markdown: String) -> [ActionItem] {
         markdown.components(separatedBy: "\n").enumerated().compactMap { index, raw in
-            guard let match = raw.firstMatch(of: pattern) else { return nil }
+            guard raw.contains("["), let match = raw.firstMatch(of: pattern) else { return nil }
             var text = String(match.4)
             var owner: String?
             if let tail = text.firstMatch(of: /\s*\(([^()]+)\)$/), isOwner(String(tail.1)) {
