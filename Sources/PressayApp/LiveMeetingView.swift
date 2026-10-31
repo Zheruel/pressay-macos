@@ -68,7 +68,8 @@ struct LiveMeetingView: View {
                     Image(systemName: "ellipsis").font(.system(size: 16)).frame(width: 32, height: 32)
                         .foregroundStyle(PressayPalette.muted)
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().disabled(finishing)
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .pressayInteraction().disabled(finishing)
                 .accessibilityLabel("More meeting actions").help("More meeting actions")
                 Button(action: onStop) {
                     HStack(spacing: 8) {

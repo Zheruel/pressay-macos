@@ -8,7 +8,6 @@ let package = Package(
     products: [
         .library(name: "PressayCore", targets: ["PressayCore"]),
         .library(name: "PressayTranscription", targets: ["PressayTranscription"]),
-        .library(name: "PressayPostProcessing", targets: ["PressayPostProcessing"]),
         .executable(name: "Pressay", targets: ["PressayApp"]),
         .executable(name: "PressayBench", targets: ["PressayBench"]),
     ],
@@ -47,16 +46,11 @@ let package = Package(
                 "TranscribeCpp",
             ]
         ),
-        .target(
-            name: "PressayPostProcessing",
-            dependencies: ["PressayCore"]
-        ),
         .executableTarget(
             name: "PressayBench",
             dependencies: [
                 "PressayCore",
                 "PressayTranscription",
-                "PressayPostProcessing",
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ]
         ),

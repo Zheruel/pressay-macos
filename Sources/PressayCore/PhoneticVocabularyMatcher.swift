@@ -59,15 +59,14 @@ public enum PhoneticVocabularyMatcher {
         // All-caps tokens are acronyms the speaker spelled out on purpose.
         guard !known.contains(fold),
               word != word.uppercased(),
-              VocabularyTuner.isCandidateTerm(word) else { return nil }
+              VocabularyMatchSafety.isCandidateTerm(word) else { return nil }
         let key = PhoneticKey.key(word)
         guard key.count >= minimumKeyLength else { return nil }
-        let tolerance = min(VocabularyTuner.tolerance(forKeyLength: key.count), maximumDistance)
         var best: (anchor: Anchor, distance: Int)?
         var tied = false
-        for anchor in anchors where VocabularyTuner.spellingAgrees(heard: word, anchor: anchor.term) {
+        for anchor in anchors where VocabularyMatchSafety.spellingAgrees(heard: word, anchor: anchor.term) {
             let distance = PhoneticKey.distance(key, anchor.key)
-            guard distance <= (anchor.exactOnly ? 0 : tolerance) else { continue }
+            guard distance <= (anchor.exactOnly ? 0 : maximumDistance) else { continue }
             if let current = best {
                 if distance < current.distance {
                     best = (anchor, distance)
@@ -88,5 +87,65 @@ public enum PhoneticVocabularyMatcher {
             return best.anchor.term + "s"
         }
         return best.anchor.term
+    }
+}
+
+/// Safety gates for correcting a single word against vocabulary the user supplied.
+enum VocabularyMatchSafety {
+    static func spellingAgrees(heard: String, anchor: String) -> Bool {
+        let heardLetters = heard.lowercased().filter(\.isLetter)
+        let anchorLetters = anchor.lowercased().filter(\.isLetter)
+        return onset(heardLetters) == onset(anchorLetters)
+            && abs(heardLetters.count - anchorLetters.count) <= 2
+    }
+
+    /// First two letters, with a silent "h" after the first dropped
+    /// ("whisper" ~ "Wispr") and any leading vowel treated alike
+    /// ("entropic" ~ "Anthropic").
+    static func onset(_ letters: String) -> String {
+        var chars = Array(letters)
+        if chars.count > 2, chars[1] == "h", chars[0] == "w" { chars.remove(at: 1) }
+        guard let first = chars.first else { return "" }
+        let head: Character = "aeiou".contains(first) ? "*" : first
+        return String(head) + (chars.count > 1 ? String(chars[1]) : "")
+    }
+
+    static func isCandidateTerm(_ word: String) -> Bool {
+        guard word.count >= 3 else { return false }
+        let fold = word.lowercased()
+        return !EnglishWordList.contains(fold) && !hasEnglishStem(fold)
+    }
+
+    /// The word list stores base forms; "darker" and "cloned" must count as
+    /// English or they become phonetic-match candidates ("Docker", "Claude").
+    static func hasEnglishStem(_ fold: String) -> Bool {
+        if hasEnglishSuffixStem(fold) { return true }
+        // "redeploy", "mispriced", "preset": a prefix on an English word.
+        for prefix in ["re", "un", "pre", "mis", "over", "under", "sub", "non", "de"]
+        where fold.hasPrefix(prefix) && fold.count - prefix.count >= 3 {
+            let stem = String(fold.dropFirst(prefix.count))
+            if EnglishWordList.contains(stem) || hasEnglishSuffixStem(stem) { return true }
+        }
+        return false
+    }
+
+    private static func hasEnglishSuffixStem(_ fold: String) -> Bool {
+        for suffix in ["s", "es", "d", "ed", "ing", "er", "est", "ly"] {
+            guard fold.hasSuffix(suffix), fold.count - suffix.count >= 3 else { continue }
+            let stem = String(fold.dropLast(suffix.count))
+            if EnglishWordList.contains(stem) || EnglishWordList.contains(stem + "e") {
+                return true
+            }
+            if stem.count >= 4, stem.last == stem.dropLast().last,
+               EnglishWordList.contains(String(stem.dropLast())) {
+                return true
+            }
+        }
+        for suffix in ["ies", "ied"] where fold.hasSuffix(suffix) && fold.count - suffix.count >= 2 {
+            if EnglishWordList.contains(String(fold.dropLast(suffix.count)) + "y") {
+                return true
+            }
+        }
+        return false
     }
 }

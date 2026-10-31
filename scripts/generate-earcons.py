@@ -96,8 +96,8 @@ def write(name, channels):
     print(f"wrote {path} ({len(left) / RATE * 1000:.0f} ms)")
 
 
-E5, A5, C6S, E6 = 659.26, 880.0, 1108.73, 1318.51
-D5, B4, G4 = 587.33, 493.88, 392.0
+E5, A5 = 659.26, 880.0
+D5, B4 = 587.33, 493.88
 
 # Durations must match DictationSoundPlayer.Cue.duration.
 write("dictation-begin", render(
@@ -108,5 +108,3 @@ write("dictation-cancel", render(
     [note(D5, 0.0, 1.0, partials=SOFT_BAR, tick=0.03)], 0.09, -29.0))
 write("dictation-error", render(
     [note(D5, 0.0, 1.0, partials=SOFT_BAR), note(B4, 0.07, 1.0, partials=SOFT_BAR)], 0.2, -26.5))
-write("dictation-learned", render(
-    [note(E5, 0.0, 0.7), note(A5, 0.055, 0.8), note(E6, 0.11, 0.75)], 0.3, -28.0))

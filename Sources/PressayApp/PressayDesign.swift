@@ -37,6 +37,42 @@ enum PressayPalette {
     }
 }
 
+private struct PressayInteraction: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovering = false
+    var cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(PressayPalette.text.opacity(isEnabled && hovering ? 0.08 : 0))
+                    .allowsHitTesting(false)
+            }
+            .pointerStyle(isEnabled ? .link : nil)
+            .onHover { hovering = $0 }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isEnabled && hovering)
+    }
+}
+
+extension View {
+    func pressayInteraction(cornerRadius: CGFloat = 6) -> some View {
+        modifier(PressayInteraction(cornerRadius: cornerRadius))
+    }
+}
+
+struct PressayPlainButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(.rect)
+            .pressayInteraction()
+            .opacity(!isEnabled ? 0.45 : configuration.isPressed ? 0.7 : 1)
+    }
+}
+
 struct PressayButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     enum Kind { case standard, primary, quiet, danger }
@@ -60,6 +96,7 @@ struct PressayButtonStyle: ButtonStyle {
             )
             .opacity(!isEnabled ? 0.45 : configuration.isPressed ? 0.7 : 1)
             .contentShape(.rect(cornerRadius: 6))
+            .pressayInteraction()
     }
 }
 
@@ -80,7 +117,7 @@ struct PressaySwitchStyle: ToggleStyle {
                     }
                     .frame(width: 32, height: 18)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressayPlainButtonStyle())
         }
         .accessibilityRepresentation {
             Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.switch)
@@ -301,6 +338,7 @@ struct PressayPicker<Selection: Hashable>: View {
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(PressayPalette.strongLine))
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).tint(PressayPalette.text)
+        .pressayInteraction()
         .accessibilityLabel(label).accessibilityValue(value)
     }
 }

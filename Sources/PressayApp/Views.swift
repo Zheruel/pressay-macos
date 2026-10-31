@@ -49,7 +49,7 @@ struct MenuContentView: View {
                         .font(.system(size: 11)).foregroundStyle(PressayPalette.warning)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(11)
                         .background(PressayPalette.warningSurface, in: .rect(cornerRadius: 9))
-                    }.buttonStyle(.plain).padding(.bottom, 12)
+                    }.buttonStyle(PressayPlainButtonStyle()).padding(.bottom, 12)
                 }
                 HStack {
                     Text("Hold to talk").font(.system(size: 12))
@@ -103,7 +103,7 @@ struct MenuContentView: View {
             }
             menuDivider.padding(.top, 10).padding(.bottom, 5)
             CheckForUpdatesButton(updater: coordinator.updates)
-                .buttonStyle(.plain).font(.system(size: 12))
+                .buttonStyle(PressayPlainButtonStyle()).font(.system(size: 12))
                 .padding(.horizontal, 11).frame(height: 38)
             MenuRow(title: "Quit Pressay", shortcut: "⌘Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut(
                 "q", modifiers: .command)
@@ -120,7 +120,6 @@ private struct MenuRow: View {
     var icon: String? = nil
     var shortcut: String? = nil
     let action: () -> Void
-    @State private var hovering = false
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
@@ -129,8 +128,8 @@ private struct MenuRow: View {
                 Spacer()
                 if let shortcut { Text(shortcut).font(.system(size: 10)).foregroundStyle(PressayPalette.muted) }
             }.font(.system(size: 12)).padding(.horizontal, 11).frame(height: 38)
-                .background(hovering ? PressayPalette.hover : .clear, in: .rect(cornerRadius: 7)).contentShape(.rect)
-        }.buttonStyle(.plain).onHover { hovering = $0 }
+                .contentShape(.rect)
+        }.buttonStyle(PressayPlainButtonStyle())
     }
 }
 
@@ -162,7 +161,7 @@ private struct CompactHistoryRow: View {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12)).frame(
                     width: 24, height: 28)
             }
-            .buttonStyle(.plain).foregroundStyle(PressayPalette.muted).help("Copy dictation").accessibilityLabel(
+            .buttonStyle(PressayPlainButtonStyle()).foregroundStyle(PressayPalette.muted).help("Copy dictation").accessibilityLabel(
                 "Copy dictation")
         }.padding(.vertical, 12).padding(.horizontal, 11)
             .contextMenu {
@@ -273,7 +272,7 @@ struct SettingsRootView: View {
                 .padding(.horizontal, 12).frame(height: 38)
                 .background(selection == section ? PressayPalette.selected : .clear, in: .rect(cornerRadius: 7))
                 .contentShape(.rect)
-            }.buttonStyle(.plain).accessibilityAddTraits(selection == section ? .isSelected : [])
+            }.buttonStyle(PressayPlainButtonStyle()).accessibilityAddTraits(selection == section ? .isSelected : [])
         }
     }
 }
@@ -336,7 +335,7 @@ private struct HomeView: View {
                 Text("Recent dictations").font(.system(size: 15, weight: .semibold)).frame(height: 22)
                 Spacer()
                 if !history.records.isEmpty {
-                    Button("View history") { open(.history) }.buttonStyle(.plain).foregroundStyle(PressayPalette.accent)
+                    Button("View history") { open(.history) }.buttonStyle(PressayPlainButtonStyle()).foregroundStyle(PressayPalette.accent)
                         .font(.system(size: 12))
                 }
             }.padding(.bottom, 12)
@@ -437,7 +436,7 @@ private struct GeneralSettingsView: View {
                 .background(
                     coordinator.notetakerSettingsSelected == meetings ? PressayPalette.selected : .clear,
                     in: .rect(cornerRadius: 5))
-        }.buttonStyle(.plain).accessibilityAddTraits(
+        }.buttonStyle(PressayPlainButtonStyle()).accessibilityAddTraits(
             coordinator.notetakerSettingsSelected == meetings ? .isSelected : [])
     }
     private var dictationSettings: some View {
@@ -561,7 +560,7 @@ private struct GeneralSettingsView: View {
                         ).frame(width: 32).disabled(coordinator.notesModelOptions.isEmpty)
                     }
                     if coordinator.notesModelOptions.isEmpty {
-                        PressaySetting(title: "Connect a provider") {
+                        PressaySetting(title: "Connect meeting AI", detail: "Requires an Anthropic API key or a ChatGPT subscription.") {
                             Button("Set up AI Cleanup") { coordinator.settingsPaneRequest = "claude" }
                         }
                     } else {
@@ -688,7 +687,21 @@ private struct ClaudeCleanupSettingsView: View {
         settings = coordinator.settings
     }
     private var account: ChatGPTAccount { coordinator.chatGPT }
-    private var keyConfigured: Bool { coordinator.claudeAPIKey != nil }
+    private var selectedKey: String? {
+        settings.cleanupProvider == .claude ? coordinator.claudeAPIKey : coordinator.openAIAPIKey
+    }
+    private var keyConfigured: Bool { selectedKey != nil }
+    private var connection: CleanupConnection {
+        settings.cleanupProvider == .claude ? settings.claudeConnection : settings.openAIConnection
+    }
+    private var connectionBinding: Binding<CleanupConnection> {
+        Binding(get: { connection }, set: {
+            keyDraft = ""
+            keyStatus = nil
+            if settings.cleanupProvider == .claude { settings.claudeConnection = $0 }
+            else { settings.openAIConnection = $0 }
+        })
+    }
     var body: some View {
         PressayPage {
             PressayHeading(title: "AI Cleanup", subtitle: "Correct dictations before they’re typed.") { EmptyView() }
@@ -704,28 +717,21 @@ private struct ClaudeCleanupSettingsView: View {
                     PressaySetting(title: "Provider", detail: "Choose how Pressay polishes your words.") {
                         HStack(spacing: 2) {
                             provider("Claude", .claude)
-                            provider("ChatGPT", .chatgpt)
+                            provider("OpenAI", .chatgpt)
                         }.padding(3).background(PressayPalette.base, in: .rect(cornerRadius: 7))
                             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(PressayPalette.line))
                     }
-                    if settings.cleanupProvider == .claude {
-                        PressaySetting(title: "Model", detail: "A fast finish for everyday dictation.") {
-                            PressayPicker(
-                                label: "Cleanup model",
-                                value: settings.claudeCleanupModel == .sonnet55
-                                    ? "1. Sonnet 5.5 · Best quality" : "2. Haiku 5.5 · Faster",
-                                selection: $settings.claudeCleanupModel,
-                                items: [
-                                    .choice("1. Sonnet 5.5 · Best quality", .sonnet55),
-                                    .choice("2. Haiku 5.5 · Faster", .haiku55),
-                                ]
-                            ).labelsHidden().frame(width: 230)
-                        }
+                    PressaySetting(title: "Connection") {
+                        Picker("Connection", selection: connectionBinding) {
+                            ForEach(CleanupConnection.allCases) { Text($0.title).tag($0) }
+                        }.labelsHidden().pickerStyle(.segmented).frame(width: 230)
+                    }
+                    if connection == .apiKey {
                         PressaySetting(
                             title: "API key",
                             detail: keyConfigured
-                                ? "•••• •••• \(coordinator.claudeAPIKey.map { String($0.suffix(4)) } ?? "") · Connected"
-                                : "Connect your Anthropic account."
+                                ? "•••• •••• \(selectedKey.map { String($0.suffix(4)) } ?? "") · Connected"
+                                : "Uses your API account."
                         ) {
                             if keyConfigured {
                                 HStack(spacing: 8) {
@@ -735,7 +741,7 @@ private struct ClaudeCleanupSettingsView: View {
                                 }
                             } else {
                                 HStack(spacing: 8) {
-                                    SecureField("sk-ant-…", text: $keyDraft).textFieldStyle(.roundedBorder).frame(
+                                    SecureField(settings.cleanupProvider == .claude ? "sk-ant-…" : "sk-…", text: $keyDraft).textFieldStyle(.roundedBorder).frame(
                                         width: 170
                                     ).onSubmit(saveKey).accessibilityLabel("API key")
                                     Button("Save", action: saveKey).disabled(
@@ -743,22 +749,42 @@ private struct ClaudeCleanupSettingsView: View {
                                 }
                             }
                         }
-                    } else {
-                        Group {
-                            PressaySetting(title: "Model") {
-                                PressayPicker(
-                                    label: "Cleanup model",
-                                    value: ChatGPTModelOption(
-                                        slug: settings.chatGPTModel,
-                                        name: ChatGPTCleanupModel.displayName(for: settings.chatGPTModel)
-                                    ).title, selection: $settings.chatGPTModel, items: chatGPTPickerItems
-                                ).labelsHidden().frame(width: 230)
+
+                    } else if settings.cleanupProvider == .claude {
+                        PressaySetting(
+                            title: "Claude Code",
+                            detail: coordinator.claudeCode.isSignedIn
+                                ? "Connected through Claude Code. Uses your plan’s limits."
+                                : "Sign in through Claude Code with your Claude subscription."
+                        ) {
+                            if coordinator.claudeCode.signingIn {
+                                HStack {
+                                    ProgressView().controlSize(.small)
+                                    Button("Cancel") { coordinator.claudeCode.cancelSignIn() }
+                                }
+                            } else {
+                                Button(coordinator.claudeCode.isSignedIn ? "Refresh status" : "Continue with Claude") {
+                                    Task {
+                                        if coordinator.claudeCode.isSignedIn { await coordinator.claudeCode.refreshStatus() }
+                                        else {
+                                            await coordinator.claudeCode.signIn()
+                                            if coordinator.claudeCode.isSignedIn { settings.claudeCleanup = true }
+                                        }
+                                    }
+                                }.disabled(!coordinator.claudeCode.isAvailable)
                             }
                         }
+                        if !coordinator.claudeCode.isAvailable {
+                            HStack {
+                                Link("Install Claude Code", destination: URL(string: "https://code.claude.com/docs/en/overview")!)
+                                Button("Check again") { Task { await coordinator.claudeCode.refreshStatus() } }
+                            }.font(.system(size: 11)).foregroundStyle(PressayPalette.muted).padding(12)
+                        }
+                    } else {
                         PressaySetting(
                             title: "Account",
                             detail: account.isSignedIn
-                                ? account.credentials?.email : "Use the ChatGPT plan you already have."
+                                ? account.credentials?.email : "Use an eligible ChatGPT plan. Cleanup uses plan limits or credits."
                         ) {
                             if account.isSignedIn {
                                 Button("Sign out") { confirmingSignOut = true }
@@ -774,13 +800,17 @@ private struct ClaudeCleanupSettingsView: View {
                         }
                     }
                 }
-                if let keyStatus {
+                if let keyStatus, connection == .apiKey {
                     Text(keyStatus).font(.system(size: 11)).foregroundStyle(
                         keyStatusIsError ? PressayPalette.danger : PressayPalette.success)
                 }
-                if let error = account.lastError, settings.cleanupProvider == .chatgpt {
+                if let error = account.lastError, settings.cleanupProvider == .chatgpt, connection == .subscription {
                     Text(error).font(.system(size: 11)).foregroundStyle(PressayPalette.danger)
                 }
+            }
+            if let error = coordinator.claudeCode.lastError,
+                settings.cleanupProvider == .claude, connection == .subscription {
+                Text(error).font(.system(size: 11)).foregroundStyle(PressayPalette.danger)
             }
             PressaySection(title: "Example") {
                 PressayGroup {
@@ -797,7 +827,7 @@ private struct ClaudeCleanupSettingsView: View {
         }
         .sheet(isPresented: $confirmingRemove) {
             PressayConfirmation(
-                title: "Remove API key?", detail: "AI Cleanup will stop working until you add another key.",
+                title: "Remove API key?", detail: "API cleanup will stop until you add another key or change the connection.",
                 action: "Remove key", destructive: true
             ) {
                 removeKey()
@@ -811,18 +841,20 @@ private struct ClaudeCleanupSettingsView: View {
             Button("Got it") { settings.chatGPTWelcomeShown = true }
         } message: {
             Text(
-                "Cleanup counts toward your ChatGPT plan’s usage limits, which are shared with other apps. Pressay never sees your password."
+                "Cleanup uses your eligible ChatGPT plan’s limits or credits, shared with other apps. Pressay never sees your password."
             )
         }
     }
     private func provider(_ title: String, _ provider: CleanupProvider) -> some View {
         Button {
+            keyDraft = ""
+            keyStatus = nil
             settings.cleanupProvider = provider
         } label: {
             Text(title).font(.system(size: 11, weight: .medium)).padding(.horizontal, 13).frame(height: 25)
                 .background(
                     settings.cleanupProvider == provider ? PressayPalette.button : .clear, in: .rect(cornerRadius: 5))
-        }.buttonStyle(.plain).accessibilityAddTraits(settings.cleanupProvider == provider ? .isSelected : [])
+        }.buttonStyle(PressayPlainButtonStyle()).accessibilityAddTraits(settings.cleanupProvider == provider ? .isSelected : [])
     }
     private func example(_ label: String, _ text: String, accent: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -831,44 +863,11 @@ private struct ClaudeCleanupSettingsView: View {
                 accent ? PressayPalette.text : PressayPalette.muted)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(18)
     }
-    /// Always includes the current choice so the picker is never blank while loading.
-    private var chatGPTModelChoices: [(slug: String, name: String)] {
-        var choices =
-            account.models.isEmpty
-            ? [
-                (
-                    slug: ChatGPTCleanupModel.defaultSlug,
-                    name: ChatGPTCleanupModel.displayName(for: ChatGPTCleanupModel.defaultSlug)
-                ), (slug: "gpt-6-luna", name: ChatGPTCleanupModel.displayName(for: "gpt-6-luna")),
-            ] : account.models
-        if !choices.contains(where: { $0.slug == settings.chatGPTModel }) {
-            choices.insert((settings.chatGPTModel, ChatGPTCleanupModel.displayName(for: settings.chatGPTModel)), at: 0)
-        }
-        return choices.sorted {
-            let left = ChatGPTModelOption.rank($0.slug)
-            let right = ChatGPTModelOption.rank($1.slug)
-            return left == right ? $0.name.localizedStandardCompare($1.name) == .orderedAscending : left < right
-        }
-    }
-
-    private var chatGPTPickerItems: [PressayPickerItem<String>] {
-        let ranked = chatGPTModelChoices.filter { ChatGPTModelOption.rank($0.slug) < 2 }
-        let untested = chatGPTModelChoices.filter { ChatGPTModelOption.rank($0.slug) == 2 }
-        return ranked.map {
-            .choice(
-                ChatGPTModelOption(slug: $0.slug, name: ChatGPTCleanupModel.displayName(for: $0.slug)).title, $0.slug)
-        }
-            + (untested.isEmpty ? [] : [.heading("Untested")] + untested.map { .choice($0.name, $0.slug) })
-    }
-
     private func signIn() {
         Task {
             await account.signIn()
             guard account.isSignedIn else { return }
             settings.claudeCleanup = true
-            if !account.models.isEmpty, !account.models.contains(where: { $0.slug == settings.chatGPTModel }) {
-                settings.chatGPTModel = account.models[0].slug
-            }
             if !settings.chatGPTWelcomeShown { showingPlanWelcome = true }
         }
     }
@@ -882,9 +881,14 @@ private struct ClaudeCleanupSettingsView: View {
         #if DEBUG
             guard !DesignReview.enabled else { return }
         #endif
-        ClaudeAPIKeyStore.clear()
+        if settings.cleanupProvider == .claude {
+            ClaudeAPIKeyStore.clear()
+            coordinator.reloadClaudeKey()
+        } else {
+            OpenAIAPIKeyStore.clear()
+            coordinator.reloadOpenAIKey()
+        }
         setStatus(nil, error: false)
-        coordinator.reloadClaudeKey()
     }
 
     private func saveKey() {
@@ -896,9 +900,15 @@ private struct ClaudeCleanupSettingsView: View {
         #endif
         let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
-        let saved = ClaudeAPIKeyStore.save(key)
+        let saved: Bool
+        if settings.cleanupProvider == .claude {
+            saved = ClaudeAPIKeyStore.save(key)
+            coordinator.reloadClaudeKey()
+        } else {
+            saved = OpenAIAPIKeyStore.save(key)
+            coordinator.reloadOpenAIKey()
+        }
         keyDraft = ""
-        coordinator.reloadClaudeKey()
         if saved {
             settings.claudeCleanup = true
             testConnection()
@@ -914,32 +924,28 @@ private struct ClaudeCleanupSettingsView: View {
                 return
             }
         #endif
-        guard let key = coordinator.claudeAPIKey else { return }
+        guard let key = selectedKey else { return }
+        let provider = settings.cleanupProvider
         testing = true
         keyStatus = nil
         Task {
             do {
-                let status = try await ClaudeCleaner().warmUp(apiKey: key)
-                switch status {
-                case 200: setStatus("Verified", error: false)
-                case 401: setStatus("Key rejected", error: true)
-                default: setStatus("Error \(status)", error: true)
+                if provider == .chatgpt {
+                    try await coordinator.verifyOpenAIKey(key)
+                    if settings.cleanupProvider == provider, selectedKey == key { setStatus("Verified", error: false) }
+                    testing = false
+                    return
                 }
+                _ = try await ClaudeCleaner().clean(
+                    "Please run all the tests and tell me which ones failed, but do not deploy anything yet.",
+                    targetBundleID: nil, vocabulary: [], model: .haiku55, apiKey: key, timeout: 12)
+                if settings.cleanupProvider == provider, selectedKey == key { setStatus("Verified", error: false) }
+
             } catch {
-                setStatus("Can’t reach Anthropic", error: true)
+                if settings.cleanupProvider == provider, selectedKey == key { setStatus(error.localizedDescription, error: true) }
             }
             testing = false
         }
-    }
-}
-
-private struct ChatGPTModelOption {
-    let slug: String
-    let name: String
-    static let recommended = ChatGPTCleanupModel.defaultSlug
-    static func rank(_ slug: String) -> Int { slug == recommended ? 0 : slug == "gpt-6-luna" ? 1 : 2 }
-    var title: String {
-        slug == Self.recommended ? "1. \(name) · Recommended" : slug == "gpt-6-luna" ? "2. \(name) · Faster" : name
     }
 }
 
@@ -966,21 +972,18 @@ struct PressayConfirmation: View {
 private struct DictionaryWord: Identifiable {
     let preferred: String
     let collection: String
-    let line: String?
+    let line: String
     var id: String { preferred.lowercased() }
 }
 
 private struct DictionarySettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings
-    @ObservedObject private var learned: LearnedVocabularyStore
     @State private var search = ""
     @State private var adding = false
-    @State private var restoring = false
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         settings = coordinator.settings
-        learned = coordinator.settings.learnedVocabulary
     }
     private var words: [DictionaryWord] {
         var result: [DictionaryWord] = []
@@ -994,10 +997,6 @@ private struct DictionarySettingsView: View {
             {
                 result.append(.init(preferred: entry.preferred, collection: collection, line: line))
             }
-        }
-        for record in learned.records where seen.insert(record.preferred.lowercased()).inserted {
-            result.append(
-                .init(preferred: record.preferred, collection: "Learned", line: nil))
         }
         return result
     }
@@ -1026,7 +1025,7 @@ private struct DictionarySettingsView: View {
                 PressayEmpty(
                     title: search.isEmpty ? "No words yet" : "No words found",
                     detail: search.isEmpty
-                        ? "Add a word or let Pressay learn from your corrections." : "Try a different search.",
+                        ? "Add names and terms you want Pressay to spell correctly." : "Try a different search.",
                     systemImage: search.isEmpty ? "character.book.closed" : "magnifyingglass",
                     actionTitle: words.isEmpty ? "Add your first word" : nil, action: { adding = true })
             } else {
@@ -1052,34 +1051,12 @@ private struct DictionarySettingsView: View {
                     }
                 }
             }
-            HStack(spacing: 11) {
-                Toggle("Learn from corrections", isOn: $settings.learnFromEdits).fixedSize()
-                Spacer()
-                if !words.isEmpty {
-                    Button("Restore defaults…") { restoring = true }.buttonStyle(.plain).foregroundStyle(
-                        PressayPalette.accent
-                    ).font(.system(size: 12))
-                }
-            }.padding(.top, 28).padding(.horizontal, 2)
         }
         .sheet(isPresented: $adding) { AddDictionaryEntrySheet { settings.addVocabularyWord($0) } }
-        .sheet(isPresented: $restoring) {
-            PressayConfirmation(
-                title: "Restore dictionary defaults?",
-                detail: "This replaces your added words with the default dictionary.", action: "Restore defaults",
-                destructive: true
-            ) {
-                settings.restoreCuratedVocabulary()
-                restoring = false
-            }
-        }
     }
     private func remove(_ word: DictionaryWord) {
-        if let line = word.line {
-            settings.vocabularySource = settings.vocabularySource.split(whereSeparator: \.isNewline).map(String.init)
-                .filter { $0.trimmingCharacters(in: .whitespaces) != line }.joined(separator: "\n")
-        }
-        learned.block(preferred: word.preferred)
+        settings.vocabularySource = settings.vocabularySource.split(whereSeparator: \.isNewline).map(String.init)
+            .filter { $0.trimmingCharacters(in: .whitespaces) != word.line }.joined(separator: "\n")
     }
 }
 
@@ -1157,7 +1134,7 @@ private struct SnippetsSettingsView: View {
                                 Image(systemName: "pencil").font(.system(size: 13)).frame(width: 20, height: 28)
                                     .foregroundStyle(PressayPalette.muted).accessibilityHidden(true)
                             }.padding(.horizontal, 20).padding(.vertical, 17).frame(minHeight: 72)
-                        }.buttonStyle(.plain).help("Edit snippet").accessibilityLabel("Edit \(snippet.trigger)")
+                        }.buttonStyle(PressayPlainButtonStyle()).help("Edit snippet").accessibilityLabel("Edit \(snippet.trigger)")
                             .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
                             .contextMenu {
                                 Button("Edit…") { editing = snippet }
@@ -1343,7 +1320,7 @@ private struct HistoryRow: View {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 13)).frame(
                     width: 28, height: 28)
             }
-            .buttonStyle(.plain).foregroundStyle(PressayPalette.muted).help("Copy dictation").accessibilityLabel(
+            .buttonStyle(PressayPlainButtonStyle()).foregroundStyle(PressayPalette.muted).help("Copy dictation").accessibilityLabel(
                 "Copy dictation")
         }.padding(.horizontal, 17).padding(.vertical, 12)
             .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }

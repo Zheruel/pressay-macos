@@ -131,7 +131,7 @@ struct NotetakerPage: View {
                             Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(
                                 PressayPalette.muted)
                         }.contentShape(.rect)
-                    }.buttonStyle(.plain).padding(.bottom, 20)
+                    }.buttonStyle(PressayPlainButtonStyle()).padding(.bottom, 20)
                     Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.bottom, 24)
                 }
                 PressaySection(title: "Recent meetings") {
@@ -166,7 +166,7 @@ struct NotetakerPage: View {
                                         note.body.isEmpty ? PressayPalette.button : PressayPalette.successSurface,
                                         in: .capsule)
                                 }.padding(.horizontal, 18).padding(.vertical, 15).contentShape(.rect)
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(PressayPlainButtonStyle())
                                 .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
                                 .contextMenu {
                                     NoteMenuItems(
@@ -325,7 +325,7 @@ private struct NotePage: View {
                     .font(.system(size: 13))
                     .frame(width: 26, height: 30)
             }
-            .buttonStyle(.plain).foregroundStyle(PressayPalette.muted)
+            .buttonStyle(PressayPlainButtonStyle()).foregroundStyle(PressayPalette.muted)
             .help("Back to Notetaker").accessibilityLabel("Back to Notetaker")
             Rectangle().fill(PressayPalette.line).frame(width: 1, height: 16)
             HStack(spacing: 22) {
@@ -344,7 +344,7 @@ private struct NotePage: View {
                                 }
                             }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressayPlainButtonStyle())
                     .accessibilityAddTraits(tab == choice ? .isSelected : [])
                 }
             }
@@ -366,6 +366,7 @@ private struct NotePage: View {
                     Image(systemName: "ellipsis").frame(width: 14, height: 30)
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .pressayInteraction()
                 .foregroundStyle(PressayPalette.muted)
                 .help("More meeting actions").accessibilityLabel("More meeting actions")
             }
@@ -434,7 +435,7 @@ private struct NoteDetailView: View {
                     Text("·")
                     Text(speakerChips.joined(separator: ", "))
                     Button(note.hasNames ? "Edit names" : "Add names") { editingNames = true }
-                        .buttonStyle(.link)
+                        .buttonStyle(.link).pressayInteraction()
                         .help("Who else was on the call")
                         .popover(isPresented: $editingNames, arrowEdge: .bottom) {
                             if note.voices.isEmpty {
@@ -521,7 +522,7 @@ private struct NoteDetailView: View {
     private var emptySummary: some View {
         VStack(alignment: .leading, spacing: 10) {
             if coordinator.notesModel == nil {
-                Text("Set up AI to have this meeting written up into a summary, decisions and action items. The full transcript is in the Transcript tab.")
+                Text("Connect an Anthropic API key or a ChatGPT subscription to write a summary, decisions and action items. The full transcript is in the Transcript tab.")
                 Button("Set Up AI…") { coordinator.settingsPaneRequest = "claude"; coordinator.showSettings() }
             } else if !coordinator.settings.notesUseAI {
                 Text("AI notes are off. The full transcript is in the Transcript tab.")
@@ -794,13 +795,13 @@ private struct AskBar: View {
                 } label: {
                     Image(systemName: expanded ? "chevron.down" : "chevron.up")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.borderless).pressayInteraction()
                 .help(expanded ? "Hide answers" : "Show answers")
             }
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill").font(.title2)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.borderless).pressayInteraction()
             .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || busy)
         }
         .padding(.leading, 14)
@@ -970,7 +971,7 @@ struct MarkdownNoteBody: View {
                         .foregroundStyle(item.done ? Color.accentColor : .secondary)
                         .imageScale(.large)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressayPlainButtonStyle())
                 .accessibilityLabel(item.done ? "Mark as not done" : "Mark as done")
                 Text("\(Text(inline(item.text)).strikethrough(item.done))\(ownerText(item))")
                     .foregroundStyle(item.done ? .secondary : .primary)
@@ -1054,7 +1055,7 @@ struct RemindersButton: View {
                 Button(unsent.count == open.count ? "Add to Reminders" : "Add \(unsent.count) to Reminders") {
                     Task { await coordinator.addToReminders(unsent, noteID: note.id) }
                 }
-                .buttonStyle(.link)
+                .buttonStyle(.link).pressayInteraction()
                 .disabled(coordinator.sendingToReminders.contains(note.id))
             }
         }
@@ -1246,14 +1247,14 @@ private struct ActionItemsPage: View {
             } label: {
                 Label("Notetaker", systemImage: "chevron.left").font(.system(size: 11))
             }
-            .buttonStyle(.plain).foregroundStyle(PressayPalette.muted).padding(.bottom, 18)
+            .buttonStyle(PressayPlainButtonStyle()).foregroundStyle(PressayPalette.muted).padding(.bottom, 18)
             PressayHeading(title: "Action items") { EmptyView() }
             if groups.isEmpty {
                 PressayEmpty(title: "No open action items", detail: "Action items assigned to you in your meeting notes will appear here.", systemImage: "checkmark.circle", actionTitle: "Back to meetings", primaryAction: false, action: { dismiss() })
             }
             ForEach(groups) { group in
                 HStack {
-                    NavigationLink(group.note.title, value: NotetakerRoute.note(group.note.id)).buttonStyle(.plain)
+                    NavigationLink(group.note.title, value: NotetakerRoute.note(group.note.id)).buttonStyle(PressayPlainButtonStyle())
                         .font(.system(size: 13, weight: .semibold))
                     Text(group.note.createdAt.formatted(.dateTime.month(.abbreviated).day())).font(.system(size: 11))
                         .foregroundStyle(PressayPalette.muted)
@@ -1318,7 +1319,7 @@ private struct ActionItemToggleStyle: ToggleStyle {
                     configuration.isOn ? PressayPalette.muted : PressayPalette.text)
                 Spacer()
             }.contentShape(.rect)
-        }.buttonStyle(.plain).accessibilityRepresentation {
+        }.buttonStyle(PressayPlainButtonStyle()).accessibilityRepresentation {
             Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.checkbox)
         }
     }

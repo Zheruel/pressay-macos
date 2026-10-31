@@ -1,9 +1,8 @@
 import Foundation
 
-/// Defaults for agent-driven software work, seeded with audited mishearings. Common words with
-/// technical meanings (Go, React, REST, Linear, Terminal) are omitted: global rewriting would corrupt ordinary messages.
-package enum CuratedVocabulary {
-    package static let source = """
+/// Retires the old bundled dictionary without deleting user-added vocabulary.
+package enum VocabularyMigration {
+    private static let lastBundledSource = """
     # Communication and AI agents
     Slack
     Kimi Code <= kimi code
@@ -48,8 +47,8 @@ package enum CuratedVocabulary {
     AGENTS.md <= agents md
     """
 
-    /// Exact stock defaults from earlier builds; only these are migrated.
-    package static let replaceableDefaults: Set<String> = [
+    package static let bundledSources: [String] = [
+        lastBundledSource,
         """
         SwiftUI
         SwiftData
@@ -184,4 +183,40 @@ package enum CuratedVocabulary {
         tsconfig.json <= ts config json
         """,
     ]
+
+    /// Remove recognizable stock content; custom sections and edited entries stay intact.
+    /// Call once per installation so subsequently added user entries are never migrated.
+    package static func manualSource(from stored: String?) -> String {
+        guard let stored else { return "" }
+        let source = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        for bundled in bundledSources.sorted(by: { $0.count > $1.count }) {
+            if source == bundled { return "" }
+            if source.hasPrefix(bundled + "\n") {
+                return String(source.dropFirst(bundled.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        let stockLines = Set(bundledSources.flatMap { $0.components(separatedBy: "\n") })
+        let stockHeaders = stockLines.filter { $0.hasPrefix("#") }
+        // A standalone manually entered term can equal a former default. Only remove
+        // stock lines inside recognizable bundled sections, never arbitrary user lists.
+        guard let first = source.components(separatedBy: "\n").first,
+              stockHeaders.contains(first) else { return stored }
+        var result: [String] = []
+        var header: String?
+        var stockSection = false
+        for line in source.components(separatedBy: "\n") {
+            if line.hasPrefix("#") {
+                header = line
+                stockSection = stockHeaders.contains(line)
+                continue
+            }
+            if stockSection && (line.isEmpty || stockLines.contains(line)) { continue }
+            if let pending = header {
+                result.append(pending)
+                header = nil
+            }
+            result.append(line)
+        }
+        return result.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }

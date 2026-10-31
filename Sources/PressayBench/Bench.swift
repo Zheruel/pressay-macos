@@ -1,11 +1,10 @@
 import AVFoundation
 import Foundation
 import PressayCore
-import PressayPostProcessing
 import PressayTranscription
 
 // PressayBench — dev-only evaluation harness.
-// Subcommands: asr | post | structure | overhead | vocab | tune | tune-eval |
+// Subcommands: asr | asr-tune | post | structure | overhead | vocab | meeting | incremental |
 // manifest-from-audio (see the usage errors of each for options).
 
 struct ManifestEntry: Codable {
@@ -44,13 +43,6 @@ struct StructureRow: Codable {
     let error: String?
 }
 
-struct TimelineEntry: Codable {
-    let id: String
-    let ts: TimeInterval
-    let duration: TimeInterval
-    let text: String
-}
-
 enum BenchError: Error, CustomStringConvertible {
     case usage(String)
     var description: String {
@@ -66,7 +58,7 @@ struct Bench {
         setvbuf(stdout, nil, _IOLBF, 0)
         let args = Array(CommandLine.arguments.dropFirst())
         guard let command = args.first else {
-            throw BenchError.usage("expected subcommand: asr | post | structure | overhead | vocab | tune | tune-eval | manifest-from-audio")
+            throw BenchError.usage("expected subcommand: asr | asr-tune | post | structure | overhead | vocab | meeting | incremental | manifest-from-audio")
         }
         let options = parseOptions(Array(args.dropFirst()))
         let manifestURL = URL(fileURLWithPath: options["manifest"] ?? ".build/bench/manifest.json")
@@ -87,40 +79,17 @@ struct Bench {
         case "overhead":
             try runOverhead(entries: entries(), outDir: outDir)
         case "vocab":
-            try runVocab(entries: entries(), outDir: outDir)
-        case "tune":
-            try await runTune(options: options)
-        case "tune-eval":
-            try await runTuneEval(options: options, outDir: outDir)
+            try runVocab(entries: entries(), options: options, outDir: outDir)
         case "manifest-from-audio":
             try runManifestFromAudio(options: options, manifestURL: manifestURL)
         case "post":
-            try await runPost(options: options)
-        case "discover":
-            try runDiscover(options: options)
+            try runPost(options: options)
         case "meeting":
             try await runMeeting(options: options)
         case "incremental":
             try await runIncremental(options: options)
         default:
             throw BenchError.usage("unknown subcommand \(command)")
-        }
-    }
-
-    /// Dictionary suggestions mined from `[{raw, polished, date, lm}]`.
-    static func runDiscover(options: [String: String]) throws {
-        guard let input = options["input"] else {
-            throw BenchError.usage("discover needs --input dictations.json [--vocabulary vocab.txt]")
-        }
-        struct Row: Decodable { let raw: String; let polished: String; let date: Double; let lm: Bool }
-        let rows = try JSONDecoder().decode([Row].self, from: Data(contentsOf: URL(fileURLWithPath: input)))
-        let source = try options["vocabulary"].map { try String(contentsOfFile: $0, encoding: .utf8) } ?? CuratedVocabulary.source
-        let known = Set(VocabularyParser.parse(source).flatMap { [$0.preferred] + $0.aliases }.map { $0.lowercased() })
-        let dictations = rows.map {
-            VocabularyDiscovery.Dictation(raw: $0.raw, polished: $0.polished, date: Date(timeIntervalSince1970: $0.date), usedLanguageModel: $0.lm)
-        }
-        for suggestion in VocabularyDiscovery.suggestions(from: dictations, known: known) {
-            print("\(suggestion.origin.rawValue)\t\(suggestion.count)\t\(suggestion.heard ?? "-") → \(suggestion.preferred)\t\(suggestion.example)")
         }
     }
 
@@ -270,48 +239,21 @@ struct Bench {
     // MARK: - Post-processing replay
 
     /// Runs the post-ASR text candidates over `--input` ({id: rawTranscript}):
-    /// the shipping rules, rules + structuring, and the on-device Apple model
-    /// in `--modes` (comma-separated PolisherMode values). Writes
+    /// the shipping rules and rules + structuring. Writes
     /// `--output` as {candidate: {id: text}}.
-    static func runPost(options: [String: String]) async throws {
+    static func runPost(options: [String: String]) throws {
         guard let input = options["input"], let output = options["output"] else {
             throw BenchError.usage(
-                "post needs --input raw.json --output post.json [--vocabulary vocab.txt] [--modes light,structure]")
+                "post needs --input raw.json --output post.json [--vocabulary vocab.txt]")
         }
         let raw = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: URL(fileURLWithPath: input)))
         let vocabularySource = try options["vocabulary"].map { try String(contentsOfFile: $0, encoding: .utf8) }
-        let entries = VocabularyParser.parse(vocabularySource ?? CuratedVocabulary.source)
+        let entries = VocabularyParser.parse(vocabularySource ?? "")
         var results: [String: [String: String]] = ["rules": [:], "rules+structure": [:]]
         for (id, text) in raw {
             let cleaned = DeterministicPromptCleaner.clean(text, vocabulary: entries)
             results["rules"]![id] = cleaned
             results["rules+structure"]![id] = TranscriptStructurer.structure(cleaned)
-        }
-        let modes = try (options["modes"] ?? "").split(separator: ",").map { name in
-            guard let mode = PolisherMode(rawValue: String(name)) else {
-                throw BenchError.usage("unknown --modes value \(name)")
-            }
-            return mode
-        }
-        for mode in modes {
-            let polisher = ApplePromptPolisher(mode: mode)
-            var out: [String: String] = [:]
-            var latencies: [TimeInterval] = []
-            for (id, text) in raw.sorted(by: { $0.key < $1.key }) where !text.isEmpty {
-                let cleaned = results["rules"]![id]!
-                let started = ContinuousClock.now
-                do {
-                    out[id] = try await polisher.polish(cleaned, context: DictationContext(
-                        targetBundleID: nil, vocabulary: entries.map(\.preferred)))
-                } catch {
-                    out[id] = cleaned
-                    print("  \(id) apple-\(mode.rawValue) failed: \(error)")
-                }
-                latencies.append(started.duration(to: .now).seconds)
-            }
-            results["apple-\(mode.rawValue)"] = out
-            let sorted = latencies.sorted()
-            print("apple-\(mode.rawValue): median \(sorted.isEmpty ? 0 : sorted[sorted.count / 2])s")
         }
         try JSONEncoder.bench.encode(results, to: URL(fileURLWithPath: output))
         print("wrote \(output)")
@@ -351,18 +293,15 @@ struct Bench {
         print("wrote \(manifestURL.path): \(entries.count) clips from \(audioDir.path)")
     }
 
-    // MARK: - Structuring bake-off
+    // MARK: - Structuring evaluation
 
-    /// Runs the structuring candidates side by side over the corpus: "rules"
-    /// (TranscriptStructurer, always) and "apple" (on-device FoundationModels
-    /// formatter, `--with-apple 1`). Transcripts come from the manifest's
+    /// Evaluates deterministic structuring over the corpus. Transcripts come from the manifest's
     /// stored rawTranscript or, when empty, from transcribing the clip once
     /// into structure-transcripts.json so iteration on the rules is instant.
     /// Output: review.md (side-by-side blocks) + structure-results.json.
     static func runStructure(entries: [ManifestEntry], options: [String: String], outDir: URL) async throws {
         let minDuration = TimeInterval(options["min-duration"] ?? "0") ?? 0
         let maxClips = Int(options["max-clips"] ?? "0") ?? 0
-        let withApple = options["with-apple"] == "1"
         let showAll = options["all"] == "1"
         let language = options["language"] ?? "en"
 
@@ -397,18 +336,14 @@ struct Bench {
                 print(String(format: "  %5.1fs  %@", clip.duration, String(clip.id.prefix(8))))
             }
         }
-        print("structure bake-off: \(texts.count) transcripts (\(withApple ? "rules + apple" : "rules only"))")
+        print("structure evaluation: \(texts.count) transcripts")
 
-        let vocabulary = VocabularyParser.parse(CuratedVocabulary.source)
+        let vocabularySource = try options["vocabulary"].map { try String(contentsOfFile: $0, encoding: .utf8) }
+        let vocabulary = VocabularyParser.parse(vocabularySource ?? "")
         let terms = vocabulary.map(\.preferred)
         let validator = ProtectedTokenValidator()
-        let polisher = withApple ? ApplePromptPolisher(mode: .structure) : nil
-        if let polisher {
-            print("apple availability: \(await polisher.availabilityDescription)")
-        }
-
         var rows: [StructureRow] = []
-        var review = "# Structuring bake-off review\n"
+        var review = "# Structuring review\n"
         for (clip, raw) in texts {
             let cleaned = DeterministicPromptCleaner.clean(raw, vocabulary: vocabulary)
 
@@ -416,19 +351,6 @@ struct Bench {
             let rulesStarted = ContinuousClock.now
             let ruled = TranscriptStructurer.structure(cleaned)
             outputs.append(("rules", ruled, rulesStarted.duration(to: .now).seconds, nil))
-
-            if let polisher {
-                await polisher.prewarm()
-                let started = ContinuousClock.now
-                do {
-                    let candidate = try await polisher.polish(
-                        cleaned, context: DictationContext(targetBundleID: nil, vocabulary: terms)
-                    )
-                    outputs.append(("apple", candidate, started.duration(to: .now).seconds, nil))
-                } catch {
-                    outputs.append(("apple", cleaned, 0, String(describing: error)))
-                }
-            }
 
             var anyChanged = false
             for output in outputs {
@@ -487,136 +409,14 @@ struct Bench {
         print("wrote \(reviewURL.path) and \(resultsURL.path)")
     }
 
-    // MARK: - Tuner variant evaluation
-
-    /// Replays the corpus through the tuner variants so their proposals can be
-    /// hand-labeled and compared:
-    ///   det-legacy   the pre-fix deterministic matcher (regression witness)
-    ///   det-fixed    the shipping matcher (DetConfig.fixed)
-    /// Texts come from --asr-results (rep-1 rows), --timeline, or the
-    /// structure cache; --include-seen 1 adds the app's seenCandidates.
-    /// --labels file.tsv ("heard<TAB>good|bad") prints per-variant precision.
-    static func runTuneEval(options: [String: String], outDir: URL) async throws {
-        var texts: [String] = []
-        if let path = options["asr-results"] {
-            let rows = try JSONDecoder().decode([ASRRow].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
-            texts += rows.filter { $0.rep == 1 && $0.error == nil }.map(\.text)
-        }
-        if let path = options["timeline"] {
-            let rows = try JSONDecoder().decode([TimelineEntry].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
-            texts += rows.map(\.text)
-        }
-        if options["use-structure-cache"] == "1" {
-            let cacheURL = outDir.appending(path: "structure-transcripts.json")
-            let cache = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: cacheURL))
-            texts += cache.values
-        }
-        guard !texts.isEmpty else {
-            throw BenchError.usage("tune-eval needs texts: --asr-results, --timeline, or --use-structure-cache 1")
-        }
-
-        let vocabularySource = try options["vocabulary"].map { try String(contentsOfFile: $0, encoding: .utf8) }
-        let anchors = VocabularyParser.parse(vocabularySource ?? CuratedVocabulary.source).map(\.preferred)
-        var candidates = VocabularyTuner.candidates(in: texts, minimumCount: 1, anchors: anchors)
-        if options["include-seen"] == "1" {
-            let seen = UserDefaults(suiteName: "dev.localflow.app")?
-                .stringArray(forKey: "vocabularyTuner.seenCandidates") ?? []
-            let known = Set(candidates.map { $0.term.lowercased() })
-            candidates += seen
-                .filter { !known.contains($0.lowercased()) }
-                .map { TunerCandidate(term: $0, count: 1, excerpt: "(seenCandidates)") }
-        }
-        print("tune-eval: \(texts.count) texts -> \(candidates.count) candidates")
-
-        // Full candidate dump for external judges: term, count, excerpt per line.
-        if let dumpPath = options["candidates-out"] {
-            struct CandidateDump: Codable {
-                let term: String
-                let count: Int
-                let excerpt: String
-            }
-            let dump = candidates.map { CandidateDump(term: $0.term, count: $0.count, excerpt: $0.excerpt) }
-            try JSONEncoder.bench.encode(dump, to: URL(fileURLWithPath: dumpPath))
-            print("wrote \(dumpPath) (\(dump.count) candidates)")
-        }
-
-        func ruleMap(_ rules: [LearnedRule]) -> [String: String] {
-            Dictionary(rules.map { ($0.heard.lowercased(), $0.preferred) }) { first, _ in first }
-        }
-        let legacy = ruleMap(VocabularyTuner.deterministicRules(
-            candidates: candidates, anchors: anchors, config: .legacy
-        ))
-        let fixed = ruleMap(VocabularyTuner.deterministicRules(
-            candidates: candidates, anchors: anchors, config: .fixed
-        ))
-
-        // Review artifact: every candidate any variant proposed a rule for.
-        var lines = ["heard\tproposed\tcount\texcerpt\tdet-legacy\tdet-fixed"]
-        var proposedTerms: [String] = []
-        for candidate in candidates {
-            let fold = candidate.term.lowercased()
-            let proposals = [legacy[fold], fixed[fold]]
-            guard let proposed = proposals.compactMap({ $0 }).first else { continue }
-            proposedTerms.append(fold)
-            lines.append([
-                candidate.term,
-                proposed,
-                String(candidate.count),
-                candidate.excerpt.replacingOccurrences(of: "\t", with: " "),
-                legacy[fold] != nil ? "Y" : "N",
-                fixed[fold] != nil ? "Y" : "N",
-            ].joined(separator: "\t"))
-        }
-        let reviewURL = outDir.appending(path: "tune-eval-review.tsv")
-        try lines.joined(separator: "\n").write(to: reviewURL, atomically: true, encoding: .utf8)
-        print(lines.joined(separator: "\n"))
-        print("\nwrote \(reviewURL.path) (\(proposedTerms.count) proposed rules)")
-
-        if let labelsPath = options["labels"] {
-            let labelLines = try String(contentsOf: URL(fileURLWithPath: labelsPath), encoding: .utf8)
-                .split(separator: "\n")
-            var labels: [String: Bool] = [:]
-            for line in labelLines {
-                let parts = line.split(separator: "\t")
-                guard parts.count >= 2 else { continue }
-                labels[parts[0].lowercased()] = parts[1].trimmingCharacters(in: .whitespaces) == "good"
-            }
-            print("\nprecision over \(labels.count) labeled terms:")
-            for (name, variant) in [("det-legacy", legacy), ("det-fixed", fixed)] {
-                let judged = variant.keys.compactMap { labels[$0] }
-                guard !judged.isEmpty else {
-                    print("  \(name): no labeled proposals")
-                    continue
-                }
-                let good = judged.filter { $0 }.count
-                print(String(format: "  %-11@ %d/%d good (%.0f%%)", name as NSString, good, judged.count, 100 * Double(good) / Double(judged.count)))
-            }
-        }
-    }
-
-    // MARK: - Vocabulary tuner acceptance
-
-    /// Acceptance check: runs the production tuner over the record timeline.
-    static func runTune(options: [String: String]) async throws {
-        let timelineURL = URL(fileURLWithPath: options["timeline"] ?? ".build/bench/timeline.json")
-        let entries = try JSONDecoder().decode([TimelineEntry].self, from: Data(contentsOf: timelineURL))
-        let texts = entries.map(\.text)
-        let anchors = VocabularyParser.parse(CuratedVocabulary.source).map(\.preferred)
-        let candidates = VocabularyTuner.candidates(in: texts, minimumCount: 1, anchors: anchors)
-        print("tuner: \(texts.count) records -> \(candidates.count) candidates")
-
-        let rules = VocabularyTuner.deterministicRules(candidates: candidates, anchors: anchors)
-        print("\ndeterministic rules (\(rules.count)):")
-        for rule in rules {
-            print("  \(rule.heard) -> \(rule.preferred) (×\(rule.count))")
-        }
-    }
-
     // MARK: - Vocabulary audit
 
-    /// Per-term firing report for the curated vocabulary over the corpus.
-    static func runVocab(entries: [ManifestEntry], outDir: URL) throws {
-        let vocabulary = VocabularyParser.parse(CuratedVocabulary.source)
+    /// Per-term firing report for an explicitly supplied vocabulary over the corpus.
+    static func runVocab(entries: [ManifestEntry], options: [String: String], outDir: URL) throws {
+        guard let path = options["vocabulary"] else {
+            throw BenchError.usage("vocab needs --vocabulary vocab.txt")
+        }
+        let vocabulary = VocabularyParser.parse(try String(contentsOfFile: path, encoding: .utf8))
         struct TermStat: Codable {
             var fires = 0
             var contexts: [String] = []

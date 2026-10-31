@@ -16,7 +16,7 @@
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-7C3AED"></a>
 </p>
 
-Pressay is a native hold-to-talk dictation app for people who write to coding agents, chats and docs all day. Speech is transcribed on your Mac. Optional AI Cleanup, on your own Claude key or ChatGPT plan, turns the transcript into clean text. Pressay also records meetings: a live on-device transcript of you and the call, then a written-up note.
+Pressay is a native hold-to-talk dictation app for people who write to coding agents, chats and docs all day. Speech is transcribed on your Mac. Optional AI Cleanup, on your Claude or OpenAI subscription or API key, turns the transcript into clean text. Pressay also records meetings: a live on-device transcript of you and the call, then a written-up note.
 
 No account, no telemetry, no subscription. Audio never leaves the Mac.
 
@@ -31,10 +31,10 @@ No account, no telemetry, no subscription. Audio never leaves the Mac.
 
 - **Dictation anywhere.** Hold Right Option (configurable), speak, release. The text lands in the field that was focused when you started, in native, web and Electron apps. The clipboard is preserved.
 - **Local speech recognition for each task.** Orukeet is recommended for fast everyday dictation; MOSS for meeting accuracy. Ranked pickers also offer Parakeet Ultra, Qwen3-ASR 1.7B and Mega-ASR. All models use automatic language detection; fixed-language choices appear where the runtime supports them.
-- **AI Cleanup (optional).** Fixes misheard words, removes fillers and false starts, and formats lists and paragraphs, without changing what you said. Runs on your Anthropic API key or your ChatGPT Plus/Pro plan. Only text is sent.
+- **AI Cleanup (optional).** Fixes misheard words, removes fillers and false starts, and formats lists and paragraphs. Uses your Claude or OpenAI subscription or API key. Only text is sent.
 - **Snippets.** Say "my calendar link" and Pressay types the URL. Works inside any dictation.
 - **Notetaker.** Offers to take notes when a call starts. Records your mic as "You" and tells the other people on the call apart on-device (Speaker 1, Speaker 2, or their names), so it works with Zoom, Meet, Teams or Slack and no bot joins the call. When the call ends you get a titled note with a summary, decisions, action items with owners, and open questions. Ask anything about one meeting or all of them, and keep your action items in one list or send them to Reminders.
-- **A dictionary that learns.** Retype a word Pressay got wrong and it learns the spelling. Repeated, consistent corrections and recurring names are learned quietly; stale rules expire and removed words stay removed. Both the on-device rules and AI Cleanup use the dictionary.
+- **Your own dictionary.** Starts empty. Add names and terms yourself; Pressay never adds words automatically. Both the on-device rules and AI Cleanup use your entries.
 - **Microphone lifecycle.** The microphone opens when you hold the talk key and closes when you release or cancel. The start sound plays once real audio arrives.
 - **Graphite workspace.** A consistent dark and light interface with recent dictations, speaking pace, streak, personal action items, and combined Dictation/Notetaker settings under General.
 
@@ -66,17 +66,21 @@ We tested 27 models and reviewed 74 personal recordings before cleanup. MOSS led
   <img src="docs/assets/ai-cleanup.jpg" width="100%" alt="What you said: um so I think we should uh move the the standup to ten and also ping dana about the pricing doc. What Pressay types: I think we should move the standup to 10 and also ping Dana about the pricing doc.">
 </p>
 
-Choose a provider under **Settings › AI Cleanup**.
+Choose **Claude** or **OpenAI**, then **Subscription** or **API key**, under **Settings › AI Cleanup**. Pressay chooses the model and reasoning level.
 
-| Provider | Recommended option | Processing |
+| Provider | Fixed cleanup model | Subscription connection |
 | --- | --- | --- |
-| Anthropic API key | Claude Haiku 5.5 | Optional text-only cleanup; cached instructions |
-| ChatGPT Plus or Pro | GPT-6.1 Sol | Included in your plan’s usage limits |
-| None | On-device rules | Fully offline; no account required |
+| Claude | Haiku 5.5, low reasoning | Your installed Claude Code CLI |
+| OpenAI | GPT-6 Luna, medium reasoning, Fast | ChatGPT browser sign-in |
+| None | On-device formatting | No account required |
 
-Cleanup preserves meaning before improving grammar, including short instructions, permissions and conditional scope. The dictionary supplies contextual spellings after transcription, without biasing ASR with a full hotword list. Earlier cleanup model comparisons remain in [`docs/claude-cleanup/`](docs/claude-cleanup/README.md); they do not validate the new prompt or prove spoken accuracy.
+Cleanup uses [Hex’s default prompt](https://github.com/anomalyco/hex). The dictionary starts empty and supplies only spellings you add manually. A replay of 20 personal transcripts and six controls favored medium reasoning for Luna; Haiku’s medium setting showed no consistent fidelity benefit. These are text-fidelity checks, not verified speech accuracy. The short prompt can still drop qualifications or alter meaning.
 
-ChatGPT sign-in runs in your browser (OAuth with PKCE). Pressay never sees your password. Your API key is stored in the macOS keychain.
+OpenAI prepares its WebSocket during recording and reuses it for cleanup, with HTTP fallback. Claude subscription cleanup prepares a fresh, unmodified Claude Code worker during local transcription. The worker receives text only when cleanup is needed; unused workers are cancelled. There are no dummy inference requests or shared conversation history. If cleanup fails or times out, Pressay keeps the local transcript.
+
+API keys are stored in the macOS keychain. Subscription usage and API billing are separate.
+
+Earlier cleanup comparisons remain in [`docs/claude-cleanup/`](docs/claude-cleanup/README.md); they do not validate the current prompt.
 
 ## Meeting notes
 
@@ -92,7 +96,7 @@ When Zoom, Teams, Meet, FaceTime, Slack or another call app starts using the mic
 - Up to four other voices are told apart on the Mac. After the call, the AI names a speaker only when they introduced themselves or were addressed by name, and fixes misheard names and terms using your Dictionary. Rename speakers from the meeting header.
 - When the call ends (or you click **Stop**), the AI writes the note. Each meeting has **Summary**, **Transcript** and **My Notes** tabs, and an **Ask anything** box. Past meetings are grouped by day and searchable, and you can ask questions across all of them.
 - **Action items** collects your open tasks across meetings. Complete them with the circular control, or add them to Reminders. Other assignments remain in each meeting note.
-- Choose speech recognition, language, and the ranked notes model under **General › Notetaker**. Claude Sonnet 5.5 and GPT-6.1 Sol lead their provider lists. Only providers you have set up are listed.
+- Choose speech recognition, language, and the ranked notes model under **General › Notetaker**. Claude Sonnet 5.5 and GPT-6.1 Sol lead their provider lists. Meeting AI requires an Anthropic API key or a ChatGPT subscription connected in AI Cleanup; Claude Code subscriptions and OpenAI API keys currently support dictation cleanup only.
 - Audio is never saved. Only the transcript and your notes go to the AI provider, to write the note or answer a question.
 
 The meeting prompt was tuned over six blind-judged rounds on 12 meetings: [`docs/notes/meetings/`](docs/notes/meetings/README.md).
@@ -104,8 +108,7 @@ The meeting prompt was tuned over six blind-judged rounds on 12 meetings: [`docs
 | Speech recognition | On your Mac | Cloud |
 | Audio leaves your Mac | Never | Yes |
 | Account required | No | Yes |
-| Price | Free, MIT. AI Cleanup uses your own key or ChatGPT plan | Subscription |
-| Cleanup quality (102 dictations, 0–10) | 8.7 Haiku · 8.9 Sonnet | 7.7 |
+| Price | Free, MIT. AI Cleanup uses your subscription or API key | Subscription |
 | Meeting notes without a bot | Yes, on-device transcript | Yes |
 | Works offline | Yes, without AI Cleanup | No |
 | Platforms | macOS 26+, Apple Silicon | macOS, Windows, iOS |
@@ -170,7 +173,7 @@ Supabase
 myRepository <= my repository
 ```
 
-Learned words and suggestions appear in the same pane and can be removed at any time.
+The dictionary starts empty and only contains words you add. Pressay does not learn from corrections or scan your history for new entries. Remove words from their context menu at any time.
 
 ## Development
 
@@ -184,8 +187,7 @@ Sources/
 ├── PressayApp/             SwiftUI/AppKit app: audio, overlay, insertion, notes
 ├── PressayCore/            Cleanup, AI providers, vocabulary, prompts, retention
 ├── PressayTranscription/   Local worker lifecycle, model downloads, legacy ASR
-├── PressayPostProcessing/  Experimental on-device benchmark module
-├── PressayBench/           Corpus replay and tuning CLI
+├── PressayBench/           Transcription and cleanup benchmark CLI
 └── TranscribeCpp/          Vendored Swift wrapper for the native runtime
 ```
 

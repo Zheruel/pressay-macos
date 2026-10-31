@@ -5,7 +5,6 @@ final class DictationSoundPlayer {
     enum Cue: Hashable {
         case begin
         case release
-        case learned
         case cancel
         case error
 
@@ -14,7 +13,6 @@ final class DictationSoundPlayer {
             switch self {
             case .begin: 0.17
             case .release: 0.16
-            case .learned: 0.3
             case .cancel: 0.09
             case .error: 0.2
             }
@@ -24,7 +22,6 @@ final class DictationSoundPlayer {
             switch self {
             case .begin: "dictation-begin"
             case .release: "dictation-release"
-            case .learned: "dictation-learned"
             case .cancel: "dictation-cancel"
             case .error: "dictation-error"
             }
@@ -47,7 +44,7 @@ final class DictationSoundPlayer {
 
     init() {
         engine.attach(player)
-        for cue in [Cue.begin, .release, .learned, .cancel, .error] {
+        for cue in [Cue.begin, .release, .cancel, .error] {
             assetBuffers[cue] = loadBuffer(named: cue.assetName)
         }
         connectPlayer()
@@ -136,7 +133,6 @@ final class DictationSoundPlayer {
         let specification: (startFrequency: Double, endFrequency: Double, gain: Double) = switch cue {
         case .begin: (720, 890, 0.055)
         case .release: (790, 640, 0.045)
-        case .learned: (880, 1320, 0.035)
         case .cancel: (540, 470, 0.036)
         case .error: (430, 330, 0.042)
         }

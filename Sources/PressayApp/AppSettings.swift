@@ -17,11 +17,11 @@ final class AppSettings: ObservableObject {
         static let hasUsedDictation = "hasUsedDictation"
         static let inputDevice = "inputDeviceUID"
         static let claudeCleanup = "claudeCleanup"
-        static let claudeCleanupModel = "claudeCleanupModel"
+        static let claudeConnection = "claudeConnection"
         static let cleanupProvider = "cleanupProvider"
-        static let chatGPTModel = "chatGPTModel"
+        static let openAIConnection = "openAIConnection"
         static let chatGPTWelcomeShown = "chatGPTWelcomeShown"
-        static let learnFromEdits = "learnFromEdits"
+        static let manualVocabularyOnly = "manualVocabularyOnly"
         static let notesModel = "notesModel"
         static let snippets = "snippets"
         static let detectCalls = "detectCalls"
@@ -32,7 +32,10 @@ final class AppSettings: ObservableObject {
         static let notesUseAI = "notesUseAI"
         static let meetingSystemAudio = "meetingSystemAudio"
         static let separateVoices = "separateVoices"
-        static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined"]
+        static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
+            "learnFromEdits", "vocabularyTuner.rules", "vocabularyTuner.blocklist",
+            "vocabularyTuner.lastDetRun", "vocabularyTuner.lastK3Run",
+            "vocabularyTuner.seenCandidates", "vocabularyTuner.schemaVersion"]
     }
 
     private let defaults: UserDefaults
@@ -51,17 +54,18 @@ final class AppSettings: ObservableObject {
     @Published var inputDeviceUID: String? { didSet { defaults.set(inputDeviceUID, forKey: Key.inputDevice) } }
     /// On by default so saving a key is the single opt-in step.
     @Published var claudeCleanup: Bool { didSet { defaults.set(claudeCleanup, forKey: Key.claudeCleanup) } }
-    @Published var claudeCleanupModel: ClaudeCleanupModel {
-        didSet { defaults.set(claudeCleanupModel.rawValue, forKey: Key.claudeCleanupModel) }
+    @Published var claudeConnection: CleanupConnection {
+        didSet { defaults.set(claudeConnection.rawValue, forKey: Key.claudeConnection) }
     }
     @Published var cleanupProvider: CleanupProvider {
         didSet { defaults.set(cleanupProvider.rawValue, forKey: Key.cleanupProvider) }
     }
-    @Published var chatGPTModel: String { didSet { defaults.set(chatGPTModel, forKey: Key.chatGPTModel) } }
+    @Published var openAIConnection: CleanupConnection {
+        didSet { defaults.set(openAIConnection.rawValue, forKey: Key.openAIConnection) }
+    }
     @Published var chatGPTWelcomeShown: Bool {
         didSet { defaults.set(chatGPTWelcomeShown, forKey: Key.chatGPTWelcomeShown) }
     }
-    @Published var learnFromEdits: Bool { didSet { defaults.set(learnFromEdits, forKey: Key.learnFromEdits) } }
     @Published var snippets: [Snippet] {
         didSet { defaults.set(try? JSONEncoder().encode(snippets), forKey: Key.snippets) }
     }
@@ -81,8 +85,6 @@ final class AppSettings: ObservableObject {
     @Published var separateVoices: Bool { didSet { defaults.set(separateVoices, forKey: Key.separateVoices) } }
     @Published private(set) var launchAtLoginError: String?
 
-    /// Tuner-derived rules, merged into every cleanup pass with the curated entries.
-    let learnedVocabulary: LearnedVocabularyStore
     @Published var launchAtLogin: Bool {
         didSet {
             #if DEBUG
@@ -108,8 +110,6 @@ final class AppSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        learnedVocabulary = LearnedVocabularyStore(defaults: defaults)
-        learnFromEdits = defaults.object(forKey: Key.learnFromEdits) as? Bool ?? true
         notesModel = defaults.string(forKey: Key.notesModel) ?? ""
         snippets = defaults.data(forKey: Key.snippets).flatMap { try? JSONDecoder().decode([Snippet].self, from: $0) } ?? []
         detectCalls = defaults.object(forKey: Key.detectCalls) as? Bool ?? true
@@ -139,21 +139,21 @@ final class AppSettings: ObservableObject {
         structuredDictation = defaults.object(forKey: Key.structuredDictation) as? Bool ?? true
         for key in Key.retired { defaults.removeObject(forKey: key) }
         let storedVocabulary = defaults.string(forKey: Key.vocabulary)
-        if let storedVocabulary, CuratedVocabulary.replaceableDefaults.contains(storedVocabulary) {
-            vocabularySource = CuratedVocabulary.source
-            defaults.set(CuratedVocabulary.source, forKey: Key.vocabulary)
+        if defaults.bool(forKey: Key.manualVocabularyOnly) {
+            vocabularySource = storedVocabulary ?? ""
         } else {
-            vocabularySource = storedVocabulary ?? CuratedVocabulary.source
+            let manualVocabulary = VocabularyMigration.manualSource(from: storedVocabulary)
+            vocabularySource = manualVocabulary
+            defaults.set(manualVocabulary, forKey: Key.vocabulary)
+            defaults.set(true, forKey: Key.manualVocabularyOnly)
         }
         onboardingComplete = defaults.bool(forKey: Key.onboardingComplete)
         hasUsedDictation = defaults.bool(forKey: Key.hasUsedDictation)
         inputDeviceUID = defaults.string(forKey: Key.inputDevice)
         claudeCleanup = defaults.object(forKey: Key.claudeCleanup) as? Bool ?? true
-        claudeCleanupModel = ClaudeCleanupModel(
-            rawValue: defaults.string(forKey: Key.claudeCleanupModel) ?? ""
-        ) ?? .default
+        claudeConnection = CleanupConnection(rawValue: defaults.string(forKey: Key.claudeConnection) ?? "") ?? .apiKey
         cleanupProvider = CleanupProvider(rawValue: defaults.string(forKey: Key.cleanupProvider) ?? "") ?? .claude
-        chatGPTModel = defaults.string(forKey: Key.chatGPTModel) ?? ChatGPTCleanupModel.defaultSlug
+        openAIConnection = CleanupConnection(rawValue: defaults.string(forKey: Key.openAIConnection) ?? "") ?? .subscription
         chatGPTWelcomeShown = defaults.bool(forKey: Key.chatGPTWelcomeShown)
         let serviceStatus = SMAppService.mainApp.status
         launchAtLogin = Self.launchAtLoginIsOn(serviceStatus)
@@ -203,29 +203,19 @@ final class AppSettings: ObservableObject {
         if parsedVocabulary?.source != vocabularySource {
             parsedVocabulary = (vocabularySource, VocabularyParser.parse(vocabularySource))
         }
-        return parsedVocabulary!.entries + learnedVocabulary.entries
+        return parsedVocabulary!.entries
     }
 
     var vocabularyTerms: [String] {
         vocabularyEntries.map(\.preferred)
     }
 
-    var knownVocabularyFolds: Set<String> {
-        Set(vocabularyEntries.flatMap { [$0.preferred] + $0.aliases }.map { $0.lowercased() })
-    }
-
     func addVocabularyWord(_ preferred: String, aliases: [String] = []) {
-        learnedVocabulary.unblockPreferred(preferred)
-        var line = preferred
+        var line = preferred.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty else { return }
         if !aliases.isEmpty { line += " <= " + aliases.joined(separator: ", ") }
-        var source = vocabularySource.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !source.contains("# Custom") { source += "\n\n# Custom" }
-        source += "\n" + line
-        vocabularySource = source
-    }
-
-    func restoreCuratedVocabulary() {
-        vocabularySource = CuratedVocabulary.source
+        let source = vocabularySource.trimmingCharacters(in: .whitespacesAndNewlines)
+        vocabularySource = source.isEmpty ? line : source + "\n" + line
     }
 
     private static func readASRModel(_ defaults: UserDefaults) -> ASRModel {
@@ -260,14 +250,22 @@ enum CleanupProvider: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .claude: "Claude"
-        case .chatgpt: "ChatGPT"
+        case .chatgpt: "OpenAI"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .claude: "Your Anthropic API key. Fastest."
-        case .chatgpt: "Your Plus or Pro plan, at no extra cost."
+        case .claude: "Connect Claude Code or an Anthropic API key."
+        case .chatgpt: "Connect an eligible ChatGPT plan or an OpenAI API key."
         }
     }
+}
+
+enum CleanupConnection: String, CaseIterable, Identifiable {
+    case subscription
+    case apiKey
+
+    var id: Self { self }
+    var title: String { self == .subscription ? "Subscription" : "API key" }
 }

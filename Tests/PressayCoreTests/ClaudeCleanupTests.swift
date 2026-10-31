@@ -9,7 +9,7 @@ final class ClaudeCleanupTests: XCTestCase {
             .init(preferred: "GitHub"),
             .init(preferred: "Claude Code", aliases: ["clod code", "cloud code"]),
         ])
-        XCTAssertEqual(block, "Claude Code (often misheard as: cloud code, clod code)\nGitHub")
+        XCTAssertEqual(block, "Claude Code (may be transcribed as cloud code, clod code); GitHub")
     }
 
     func testRequestBodyCachesStableSystemPromptAndCarriesModelSettings() throws {
@@ -22,20 +22,20 @@ final class ClaudeCleanupTests: XCTestCase {
         let system = try XCTUnwrap((body["system"] as? [[String: Any]])?.first)
         XCTAssertEqual(system["cache_control"] as? [String: String], ["type": "ephemeral"])
         let text = try XCTUnwrap(system["text"] as? String)
-        XCTAssertTrue(text.hasSuffix("Telnyx (often misheard as: telnex)"))
+        XCTAssertTrue(text.hasSuffix("Telnyx (may be transcribed as telnex)"))
         XCTAssertFalse(text.contains("{vocab}"))
         // The transcript must stay out of the cached prefix.
         XCTAssertFalse(text.contains("use telnex"))
         let message = try XCTUnwrap((body["messages"] as? [[String: Any]])?.first)
         XCTAssertEqual(message["content"] as? String,
-                       "App: com.openai.codex\n\n<transcript>\nuse telnex\n</transcript>")
+                       "Foreground application: com.openai.codex\nBrowser host: none\n\nRaw transcript:\n<transcript>\nuse telnex\n</transcript>")
         XCTAssertEqual(body["thinking"] as? [String: String], ["type": "adaptive"])
         XCTAssertEqual(body["output_config"] as? [String: String], ["effort": "medium"])
 
         let haiku = ClaudeCleaner.requestBody(
             transcript: "x", targetBundleID: nil, vocabulary: vocabulary, model: .haiku55)
         XCTAssertEqual(haiku["model"] as? String, "claude-haiku-5-5")
-        XCTAssertEqual(haiku["output_config"] as? [String: String], ["effort": "medium"])
+        XCTAssertEqual(haiku["output_config"] as? [String: String], ["effort": "low"])
         XCTAssertEqual(ClaudeCleanupPrompt.system(vocabulary: vocabulary), text,
                        "system prompt must be byte-stable for caching")
     }

@@ -138,7 +138,7 @@ private struct NotepadView: View {
                 coordinator.showNotes()
             } label: {
                 Image(systemName: "arrow.up.forward.app").font(.system(size: 12)).frame(width: 26, height: 30)
-            }.buttonStyle(.plain).foregroundStyle(PressayPalette.muted).help("Open in Pressay").accessibilityLabel(
+            }.buttonStyle(PressayPlainButtonStyle()).foregroundStyle(PressayPalette.muted).help("Open in Pressay").accessibilityLabel(
                 "Open in Pressay")
             Button("Stop") { coordinator.stopRecording() }
                 .buttonStyle(PressayButtonStyle(kind: .danger)).disabled(session.phase == .finishing)

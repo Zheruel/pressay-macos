@@ -7,7 +7,6 @@ import PressayCore
 final class ChatGPTAccount: ObservableObject {
     @Published private(set) var credentials: ChatGPTCredentials?
     @Published private(set) var signingIn = false
-    @Published private(set) var models: [(slug: String, name: String)] = []
     @Published var lastError: String?
 
     private let store = ChatGPTCredentialStore()
@@ -53,7 +52,6 @@ final class ChatGPTAccount: ObservableObject {
             try store.save(signedIn)
             credentials = signedIn
             NSApplication.shared.activate(ignoringOtherApps: true)
-            await loadModels()
         } catch is CancellationError {
             return
         } catch {
@@ -74,7 +72,6 @@ final class ChatGPTAccount: ObservableObject {
         if !revoked { logger.notice("ChatGPT revocation not confirmed; cleared locally") }
         store.clear()
         self.credentials = nil
-        models = []
     }
 
     /// Refreshes are serialized because each one rotates the refresh token.
@@ -106,10 +103,7 @@ final class ChatGPTAccount: ObservableObject {
         }
     }
 
-    func loadModels() async {
-        guard isSignedIn, let token = try? await accessToken() else { return }
-        if let list = try? await ChatGPTCleaner().models(accessToken: token) { models = list }
-    }
+
 }
 
 /// One-shot 127.0.0.1 listener for the OAuth redirect; prefers the docs' port 1455.

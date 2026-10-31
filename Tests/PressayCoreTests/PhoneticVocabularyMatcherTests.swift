@@ -31,6 +31,20 @@ final class PhoneticVocabularyMatcherTests: XCTestCase {
         XCTAssertEqual(correct("ask codecs"), "ask Codex")
     }
 
+    func testEmptyVocabularyDoesNotCorrectNames() {
+        let text = "Superbase, Grockpot, and DeepGrim"
+        XCTAssertEqual(PhoneticVocabularyMatcher.correct(text, entries: []), text)
+    }
+
+    func testOrdinaryEnglishWordsAndInflectionsAreNotCandidates() {
+        for word in [
+            "mix", "mockups", "mockup", "correction", "colleagues", "darker", "cloned", "running",
+            "redeploy", "preset",
+        ] {
+            XCTAssertFalse(VocabularyMatchSafety.isCandidateTerm(word), "\(word) is ordinary English")
+        }
+    }
+
     func testLeavesNearbyRealWordsAlone() {
         // Each matched a term under looser gates.
         for text in [

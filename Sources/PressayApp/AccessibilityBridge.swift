@@ -11,16 +11,13 @@ final class CapturedTarget: @unchecked Sendable {
     let context: DictationContext
     /// The focused window's title, which tells a Gmail tab from a Slack tab in a browser.
     let windowTitle: String?
-    /// Empty when Accessibility reports no selection; nil when the app doesn't expose it.
-    let selectedText: String?
 
-    init(pid: pid_t, bundleID: String?, element: AXUIElement?, context: DictationContext, windowTitle: String? = nil, selectedText: String? = nil) {
+    init(pid: pid_t, bundleID: String?, element: AXUIElement?, context: DictationContext, windowTitle: String? = nil) {
         self.pid = pid
         self.bundleID = bundleID
         self.element = element
         self.context = context
         self.windowTitle = windowTitle
-        self.selectedText = selectedText
     }
 }
 
@@ -53,7 +50,7 @@ final class AccessibilityBridge {
         )
         return CapturedTarget(
             pid: pid, bundleID: bundleID, element: element, context: context,
-            windowTitle: focusedWindowTitle(pid: pid), selectedText: element.flatMap(selectedText)
+            windowTitle: focusedWindowTitle(pid: pid)
         )
     }
 
@@ -65,44 +62,6 @@ final class AccessibilityBridge {
         var title: CFTypeRef?
         AXUIElementCopyAttributeValue(unsafeDowncast(window as AnyObject, to: AXUIElement.self), kAXTitleAttribute as CFString, &title)
         return title as? String
-    }
-
-    private func selectedText(_ element: AXUIElement) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextAttribute as CFString, &value) == .success,
-              let text = value as? String else { return nil }
-        return text
-    }
-
-    /// For editors that hide their selection from Accessibility: copy it, then put the clipboard back.
-    func copySelection(from target: CapturedTarget) async -> String? {
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == target.pid else { return nil }
-        let pasteboard = NSPasteboard.general
-        // Our last paste may still be on the clipboard; the user's own clipboard is the one to keep.
-        let pending = pendingRestore.flatMap { $0.insertedChangeCount == pasteboard.changeCount ? $0.snapshot : nil }
-        let snapshot = pending ?? PasteboardSnapshot(pasteboard)
-        restoreWorkItem?.cancel()
-        pendingRestore = nil
-        let before = pasteboard.changeCount
-        let source = CGEventSource(stateID: .combinedSessionState)
-        let keyC: CGKeyCode = 8
-        let down = CGEvent(keyboardEventSource: source, virtualKey: keyC, keyDown: true)
-        let up = CGEvent(keyboardEventSource: source, virtualKey: keyC, keyDown: false)
-        down?.flags = .maskCommand
-        up?.flags = .maskCommand
-        down?.post(tap: .cghidEventTap)
-        up?.post(tap: .cghidEventTap)
-        for _ in 0..<8 {
-            try? await Task.sleep(for: .milliseconds(30))
-            if pasteboard.changeCount != before { break }
-        }
-        guard pasteboard.changeCount != before else {
-            pending?.restore(to: pasteboard)
-            return nil
-        }
-        let text = pasteboard.string(forType: .string)
-        snapshot.restore(to: pasteboard)
-        return text?.isEmpty == false ? text : nil
     }
 
     /// Reacquires the editor at key release. Some Electron editors replace their
@@ -118,8 +77,7 @@ final class AccessibilityBridge {
             bundleID: target.bundleID,
             element: element,
             context: target.context,
-            windowTitle: target.windowTitle,
-            selectedText: element.flatMap(selectedText) ?? target.selectedText
+            windowTitle: target.windowTitle
         )
     }
 
