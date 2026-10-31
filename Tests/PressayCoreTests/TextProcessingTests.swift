@@ -2,36 +2,15 @@ import XCTest
 @testable import PressayCore
 
 final class TextProcessingTests: XCTestCase {
-    func testCuratedVocabularyRepairsCodingAndSlackTerms() {
-        let entries = VocabularyParser.parse(CuratedVocabulary.source)
-        let source = "Send a slack message with the git hub p r link. Use swift ui, swift data, core ml, and fluid audio on mac os. Update package json."
-
-        XCTAssertEqual(
-            VocabularyParser.normalize(source, entries: entries),
-            "Send a Slack message with the GitHub PR link. Use SwiftUI, SwiftData, Core ML, and FluidAudio on macOS. Update package.json."
-        )
-    }
-
-    func testCuratedVocabularyFixesAuditedMishearingsOnly() {
-        let entries = VocabularyParser.parse(CuratedVocabulary.source)
-        XCTAssertEqual(
-            VocabularyParser.normalize("kimmy says the cloud code docs changed", entries: entries),
-            "Kimi says the Claude Code docs changed"
-        )
-        XCTAssertEqual(
-            VocabularyParser.normalize("he is actually jewish", entries: entries),
-            "he is actually jewish"
-        )
-    }
-
-    func testCuratedVocabularyIsUniqueAndExcludesAmbiguousEnglishWords() {
-        let entries = VocabularyParser.parse(CuratedVocabulary.source)
-        let preferred = entries.map { $0.preferred.lowercased() }
-
-        XCTAssertGreaterThan(entries.count, 20)
-        XCTAssertEqual(Set(preferred).count, preferred.count)
-        for unsafe in ["go", "react", "rest", "bun", "yarn", "linear", "terminal"] {
-            XCTAssertFalse(preferred.contains(unsafe))
+    func testEmptyVocabularyPreservesWordsThatCollidedWithBundledTerms() {
+        for source in [
+            "Explain the entropic force.",
+            "Cloud code runs remotely.",
+            "Kimmy is coming tomorrow.",
+            "Send a slack message with the git hub link.",
+        ] {
+            XCTAssertEqual(VocabularyParser.normalize(source, entries: []), source)
+            XCTAssertEqual(DeterministicPromptCleaner.clean(source), source)
         }
     }
 

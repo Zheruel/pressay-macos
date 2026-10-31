@@ -20,10 +20,12 @@ public enum ChatGPTPlan {
 }
 
 public enum ChatGPTCleanupModel {
-    /// Best score in the 102-dictation replay (7.96 vs Sonnet 7.85, Haiku 7.67) at ~3.3 s.
+    /// Fixed low-latency dictation route; notes retain their own defaults.
+    public static let dictationSlug = "gpt-6-luna"
+    public static let dictationEffort = "medium"
+
     public static let defaultSlug = "gpt-6.1-sol"
 
-    /// Medium beat low on Luna and matched it on Sol, at equal latency on both.
     public static let effort = "medium"
 
     public static func displayName(for slug: String) -> String {

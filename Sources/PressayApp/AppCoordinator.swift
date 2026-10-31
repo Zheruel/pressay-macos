@@ -26,7 +26,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     #endif
     let permissions = PermissionController()
     let history: HistoryStore
-    let tunerRunner = VocabularyTunerRunner()
     let updates = AppUpdater()
 
     private let recorder = AudioRecorder()
@@ -44,6 +43,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private var stateMachine = DictationStateMachine() { didSet { updateActivityChanged() } }
     private var target: CapturedTarget?
     private var processingTask: Task<Void, Never>?
+    private var cleanupConnectionPreparation: Task<Void, Never>?
     /// Only this monitor's release/cancel may end the session.
     private var activeMonitor: HotkeyMonitor?
     /// Captured at key press so a mid-session model swap can't hand the clip to an unprepared engine.
@@ -57,7 +57,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private var keyPressedAt = Date.distantPast
     private let cleaner = ClaudeCleaner()
     private let chatGPTCleaner = ChatGPTCleaner()
-    private let editWatcher = EditWatcher()
+    private let openAICleaner = OpenAICleaner()
+    // Resolve the CLI again after installation or an update without restarting Pressay.
+    private var claudeCodeCleaner: ClaudeCodeCleaner { ClaudeCodeCleaner() }
+    let claudeCode = ClaudeCodeAccount()
     let chatGPT = ChatGPTAccount()
     #if DEBUG
     let notes = ProcessInfo.processInfo.environment["PRESSAY_NOTES_DIR"]
@@ -68,8 +71,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     @Published private(set) var liveSession: LiveSession? { didSet { updateActivityChanged() } }
     @Published var recordingError: String?
     private var chatGPTForward: AnyCancellable?
+    private var claudeCodeForward: AnyCancellable?
     /// Cached so the CGEventTap callback never makes a keychain IPC.
     @Published private(set) var claudeAPIKey: String?
+    @Published private(set) var openAIAPIKey: String?
     private lazy var onboardingWindow = OnboardingWindowController(coordinator: self)
     private lazy var settingsWindow = SettingsWindowController(coordinator: self)
     private lazy var notepad = NotepadPanelController(coordinator: self)
@@ -159,18 +164,18 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         updates.start()
 
         chatGPTForward = chatGPT.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
-        if chatGPT.isSignedIn { Task { await chatGPT.loadModels() } }
+        claudeCodeForward = claudeCode.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
         try? history.rewriteAudioPaths(from: "/LocalFlow/", to: "/Pressay/")
         permissions.startMonitoring()
         settings.refreshLaunchAtLogin()
         applyTranscriptionLanguage()
         try? history.applyRetention()
         reloadClaudeKey()
+        reloadOpenAIKey()
         callDetector.onEvent = { [weak self] in self?.handleCall($0) }
         callSettingsWatch = settings.$detectCalls.sink { [weak self] in self?.applyCallDetection($0) }
         for note in notes.notes where note.needsWriteUp { writeUpNote(note.id, review: true) }
         Task { await prepareModel() }
-        Task { @MainActor in tunerRunner.scheduleIfNeeded(history: history, settings: settings) }
         if !settings.onboardingComplete {
             showOnboarding()
         } else if UserDefaults.standard.bool(forKey: Self.reopenAfterUpdateKey) {
@@ -303,8 +308,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                     try? await Task.sleep(for: .seconds(3))
                     overlay.showError("Microphone unavailable")
                     try? await Task.sleep(for: .seconds(4))
-                    overlay.showLearnedToast("Learned “Kimi”")
-                    try? await Task.sleep(for: .seconds(4))
                 }
             }
         case let mode? where mode.hasPrefix("overlay-"):
@@ -318,7 +321,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 case "polishing": show = { overlay.showProcessing(); overlay.showPolishing() }
                 case "success": show = { overlay.showSuccess() }
                 case "error": show = { overlay.showError("Microphone unavailable") }
-                default: show = { overlay.showLearnedToast("Learned “Kimi”") }
+                default: return
                 }
                 show()
                 var t: Float = 0
@@ -340,10 +343,29 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         claudeAPIKey = ClaudeAPIKeyStore.read()
     }
 
+    func reloadOpenAIKey() {
+        guard ProcessInfo.processInfo.environment["PRESSAY_NO_KEYCHAIN"] != "1" else { return }
+        openAIAPIKey = OpenAIAPIKeyStore.read()
+        Task { await openAICleaner.invalidate() }
+    }
+
+    func verifyOpenAIKey(_ key: String) async throws {
+        let verifier = OpenAICleaner()
+        do {
+            _ = try await verifier.clean(
+                "Please run all the tests and then tell me which ones failed, but do not deploy anything yet.",
+                targetBundleID: nil, vocabulary: [], credential: key, timeout: 15)
+            await verifier.invalidate()
+        } catch {
+            await verifier.invalidate()
+            throw error
+        }
+    }
+
     var cleanupConfigured: Bool {
         switch settings.cleanupProvider {
-        case .claude: claudeAPIKey != nil
-        case .chatgpt: chatGPT.isSignedIn
+        case .claude: settings.claudeConnection == .subscription ? claudeCode.isSignedIn : claudeAPIKey != nil
+        case .chatgpt: settings.openAIConnection == .subscription ? chatGPT.isSignedIn : openAIAPIKey != nil
         }
     }
 
@@ -355,44 +377,60 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         _ raw: String,
         targetBundleID: String?,
         vocabulary: [VocabularyParser.Entry],
-        timeout: TimeInterval
+        timeout: TimeInterval,
+        preparation: ClaudeCodePreparation? = nil
     ) async throws -> String {
         switch settings.cleanupProvider {
         case .claude:
+            if settings.claudeConnection == .subscription {
+                return try await claudeCodeCleaner.clean(raw, targetBundleID: targetBundleID, vocabulary: vocabulary, effort: ClaudeCleanupModel.dictationEffort, timeout: timeout, preparation: preparation)
+            }
             guard let apiKey = claudeAPIKey else { throw CancellationError() }
             return try await cleaner.clean(
                 raw,
                 targetBundleID: targetBundleID,
                 vocabulary: vocabulary,
-                model: settings.claudeCleanupModel,
+                model: .haiku55,
                 apiKey: apiKey,
                 timeout: timeout
             )
         case .chatgpt:
-            let token = try await chatGPT.accessToken()
-            return try await chatGPTCleaner.clean(
-                raw,
-                targetBundleID: targetBundleID,
-                vocabulary: vocabulary,
-                model: settings.chatGPTModel,
-                effort: ChatGPTCleanupModel.effort,
-                accessToken: token,
-                timeout: timeout
-            )
+            let credential = try await openAICredential()
+            return try await openAICleaner.clean(
+                raw, targetBundleID: targetBundleID, vocabulary: vocabulary,
+                credential: credential, timeout: timeout)
+
         }
     }
 
-    private func warmCleanupConnection() {
-        guard cleanupActive else { return }
-        switch settings.cleanupProvider {
-        case .claude:
-            guard let key = claudeAPIKey else { return }
-            let cleaner = cleaner
-            Task.detached(priority: .utility) { _ = try? await cleaner.warmUp(apiKey: key) }
-        case .chatgpt:
-            // Also refreshes a nearly expired token before the user lets go.
-            Task { _ = try? await chatGPT.accessToken() }
+    private func openAICredential() async throws -> String {
+        if settings.openAIConnection == .subscription { return try await chatGPT.accessToken() }
+        guard let key = openAIAPIKey else { throw CancellationError() }
+        return key
+    }
+
+    private func cleanupTimeout(for text: String) -> TimeInterval {
+        if settings.cleanupProvider == .claude, settings.claudeConnection == .subscription {
+            // The subscription route launches the user's Claude Code process for each edit.
+            return min(15, 8 + Double(text.split(whereSeparator: \.isWhitespace).count) * 0.01)
         }
+        return ClaudeCleanupPolicy.timeout(for: text)
+    }
+
+    private func prepareCleanupConnection() {
+        cancelCleanupConnectionPreparation()
+        guard cleanupActive, settings.cleanupProvider == .chatgpt,
+              !DeterministicPromptCleaner.terminalBundleIDs.contains(target?.bundleID ?? "") else { return }
+        // Prepare transport only for an actual recording. No inference or dummy API request.
+        cleanupConnectionPreparation = Task { [weak self] in
+            guard let self, let credential = try? await openAICredential(), !Task.isCancelled else { return }
+            await openAICleaner.warmUp(credential: credential)
+        }
+    }
+
+    private func cancelCleanupConnectionPreparation() {
+        cleanupConnectionPreparation?.cancel()
+        cleanupConnectionPreparation = nil
     }
 
     /// Stored audio paths are rewritten separately in start().
@@ -585,7 +623,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             target = accessibility.capture(vocabulary: settings.vocabularyTerms)
             settings.hasUsedDictation = true
             startArmingTimeout()
-            warmCleanupConnection()
         } catch {
             stateMachine.fail(error.localizedDescription)
             overlay.showError(error.localizedDescription)
@@ -598,6 +635,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         armingTimeoutTask?.cancel()
         armingTimeoutTask = nil
         stateMachine.begin()
+        prepareCleanupConnection()
         sounds.play(.begin)
         recorder.markEarcon(duration: sounds.beginCaptureDelay)
         overlay.showRecording()
@@ -658,6 +696,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         self.streamer = nil
         Task { await streamer?.cancel() }
         processingTask?.cancel()
+        cancelCleanupConnectionPreparation()
         stateMachine.cancel()
         target = nil
         overlay.hide()
@@ -670,6 +709,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         armingTimeoutTask = nil
         recorder.forceClose()
         if stateMachine.phase == .recording || stateMachine.phase == .arming {
+            cancelCleanupConnectionPreparation()
             stateMachine.cancel()
             target = nil
             overlay.hide()
@@ -707,6 +747,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         engine: any SpeechTranscriber,
         streamer: DictationStreamer? = nil
     ) async {
+        defer { cancelCleanupConnectionPreparation() }
         let releasedAt = Date()
         let recordID = UUID()
         var audioURL: URL?
@@ -725,6 +766,15 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             }.value
             // Save before inference so failures stay diagnosable; unreferenced files expire after 7 days.
             audioURL = try? AudioFileStore.save(clip, id: recordID)
+            let isTerminal = target.bundleID.map {
+                DeterministicPromptCleaner.terminalBundleIDs.contains($0)
+            } ?? false
+            // Prepare a fresh CLI worker alongside real ASR work, without supplying a prompt.
+            // Cleanup rechecks authentication and discards a worker prepared for another account.
+            let preparation = cleanupActive && !isTerminal && settings.cleanupProvider == .claude
+                && settings.claudeConnection == .subscription
+                ? claudeCodeCleaner.prepare(vocabulary: settings.vocabularyEntries, effort: ClaudeCleanupModel.dictationEffort) : nil
+            defer { preparation?.cancel() }
             let asrTimeout = DictationProcessingPolicy.asrTimeout(duration: clip.duration)
             logger.info("Transcribing \(clip.duration, privacy: .public)s clip with \(asrTimeout, privacy: .public)s budget")
             let engineName = await engine.engineName
@@ -738,12 +788,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             }
 
             let englishRules = SpeechLanguage.usesEnglishRules(transcript.text, hint: settings.language)
-            if englishRules { _ = tunerRunner.learnImmediately(from: transcript.text, settings: settings) }
 
             // Shell commands are case-sensitive; never auto-capitalize into a terminal.
-            let isTerminal = target.bundleID.map {
-                DeterministicPromptCleaner.terminalBundleIDs.contains($0)
-            } ?? false
             let deterministic = DeterministicPromptCleaner.clean(
                 transcript.text,
                 vocabulary: settings.vocabularyEntries,
@@ -764,18 +810,17 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 // Raw transcript: the rules' phonetic rewrites would only hand Claude errors to undo.
                 let raw = transcript.text
                 let vocabulary = settings.vocabularyEntries
-                let timeout = ClaudeCleanupPolicy.timeout(for: raw)
+                let timeout = cleanupTimeout(for: raw)
                 overlay.showPolishing()
                 do {
                     finalText = try await Timeout.run(for: .seconds(timeout)) { [self] in
-                        try await runCleanup(raw, targetBundleID: target.bundleID, vocabulary: vocabulary, timeout: timeout)
+                        try await runCleanup(raw, targetBundleID: target.bundleID, vocabulary: vocabulary, timeout: timeout, preparation: preparation)
                     }
                     usedLanguageModel = true
                 } catch ChatGPTCleaner.CleanupError.usageLimit {
                     logger.notice("ChatGPT usage limit reached; inserted the on-device result")
                     chatGPT.lastError = "You've reached your ChatGPT usage limit. Dictations use on-device cleanup until it resets."
                 } catch {
-                    // Never block a dictation on the network.
                     logger.error("AI cleanup fell back to rules: \(error.localizedDescription, privacy: .public)")
                 }
             }
@@ -814,15 +859,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             }
             stateMachine.succeed()
             showInsertionOutcome(insertion)
-            if settings.learnFromEdits, !isTerminal, insertion != .copied {
-                editWatcher.watch(pid: target.pid, inserted: finalText) { [weak self] corrections in
-                    self?.learnFromEdits(corrections)
-                }
-            }
             // The overlay's success beat yields if a new press arrives.
             stateMachine.reset()
             self.target = nil
-            tunerRunner.scheduleIfNeeded(history: history, settings: settings)
         } catch PressayError.recordingTooShort {
             resetAfterNonResult()
         } catch PressayError.silence {
@@ -845,6 +884,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     private func resetAfterNonResult() {
+        cancelCleanupConnectionPreparation()
         stateMachine.reset()
         target = nil
         overlay.hide()
@@ -857,6 +897,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     }
 
     private func fail(_ error: Error, message: String? = nil) {
+        cancelCleanupConnectionPreparation()
         lastError = error.localizedDescription
         logger.error("Dictation failed: \(error.localizedDescription, privacy: .public)")
         stateMachine.fail(error.localizedDescription)
@@ -1267,11 +1308,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     func canWriteUp(_ note: Note) -> Bool {
         note.kind == .meeting && note.hasTranscript && !note.formatting && settings.notesUseAI
             && notesModel != nil && liveSession?.noteID != note.id
-    }
-
-    private func learnFromEdits(_ corrections: [VocabularyCorrection]) {
-        guard settings.learnFromEdits else { return }
-        settings.learnedVocabulary.observe(corrections)
     }
 
     private func showInsertionOutcome(_ outcome: InsertionOutcome) {

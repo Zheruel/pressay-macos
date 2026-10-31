@@ -4,14 +4,9 @@ import SwiftUI
 
 enum OverlayStyle {
     case dictation
-    /// Command Mode: the speech is an instruction, not text to insert.
-    case command
 
     var colors: [Color] {
-        switch self {
-        case .dictation: [Color(red: 0.63, green: 0.42, blue: 1), Color(red: 0.48, green: 0.82, blue: 1)]
-        case .command: [Color(red: 1, green: 0.45, blue: 0.3), Color(red: 1, green: 0.78, blue: 0.3)]
-        }
+        [Color(red: 0.63, green: 0.42, blue: 1), Color(red: 0.48, green: 0.82, blue: 1)]
     }
 
     var gradient: LinearGradient {
@@ -45,7 +40,6 @@ final class OverlayState: ObservableObject {
     @Published var levels: [Float] = [0, 0, 0, 0]
     @Published var message = ""
     @Published var style: OverlayStyle = .dictation
-    @Published var toast: String?
     /// Drives the grow/collapse animation; the panel orders out after the fold.
     @Published var visible = false
     @Published var polishing = false
@@ -68,7 +62,6 @@ final class OverlayPanelController {
     /// press immediately so the wait for a cold Bluetooth link doesn't read as
     /// a dropped key press.
     func showArming(style: OverlayStyle = .dictation) {
-        state.toast = nil
         dismissTask?.cancel()
         state.style = style
         state.phase = .arming
@@ -77,7 +70,6 @@ final class OverlayPanelController {
     }
 
     func showRecording(style: OverlayStyle = .dictation) {
-        state.toast = nil
         dismissTask?.cancel()
         state.style = style
         if state.phase != .recording { state.recordingStarted = Date() }
@@ -87,7 +79,6 @@ final class OverlayPanelController {
     }
 
     func showProcessing() {
-        state.toast = nil
         dismissTask?.cancel()
         state.polishing = false
         state.phase = .processing
@@ -101,7 +92,6 @@ final class OverlayPanelController {
     }
 
     func showSuccess() {
-        state.toast = nil
         state.phase = .succeeded
         state.message = ""
         present()
@@ -109,22 +99,8 @@ final class OverlayPanelController {
     }
 
     func showError(_ message: String) {
-        state.toast = nil
         state.phase = .failed(message)
         state.message = message
-        present()
-        dismiss(after: .seconds(2.6))
-    }
-
-    /// Nothing on screen, or only the collapse of the last session.
-    var isIdle: Bool { state.phase == .idle || !state.visible }
-
-    /// Celebration for newly learned vocabulary; only shows between sessions.
-    func showLearnedToast(_ message: String) {
-        guard isIdle else { return }
-        dismissTask?.cancel()
-        state.phase = .idle
-        state.toast = message
         present()
         dismiss(after: .seconds(2.6))
     }
@@ -141,7 +117,6 @@ final class OverlayPanelController {
             state.phase = .idle
             state.levels = [0, 0, 0, 0]
             state.style = .dictation
-            state.toast = nil
             state.polishing = false
             state.recordingStarted = nil
         }
@@ -233,10 +208,8 @@ private struct IslandView: View {
         return false
     }
 
-    private var isBanner: Bool { state.toast != nil || isFailed }
-
     private var ear: CGFloat? {
-        guard state.visible, !isBanner else { return nil }
+        guard state.visible, !isFailed else { return nil }
         switch state.phase {
         case .arming: return 36
         case .recording: return notch.exists ? 78 : 64
@@ -247,7 +220,7 @@ private struct IslandView: View {
     }
 
     private var metrics: IslandMetrics {
-        if state.visible, isBanner {
+        if state.visible, isFailed {
             let height = notch.exists ? band + 36 : 40
             return IslandMetrics(width: max(gap + 190, 340), height: height, radius: 20, shoulder: 9, lifted: true)
         }
@@ -296,7 +269,7 @@ private struct IslandView: View {
 
     @ViewBuilder
     private var content: some View {
-        if state.visible, isBanner {
+        if state.visible, isFailed {
             VStack(spacing: 0) {
                 if notch.exists { Color.clear.frame(height: band) }
                 banner
@@ -337,7 +310,7 @@ private struct IslandView: View {
     }
 
     private var processingLabel: String {
-        if state.polishing { return state.style == .command ? "Writing" : "Polishing" }
+        if state.polishing { return "Polishing" }
         return "Transcribing"
     }
 
@@ -394,18 +367,10 @@ private struct IslandView: View {
 
     private var banner: some View {
         HStack(spacing: 9) {
-            if let toast = state.toast {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(state.style.gradient)
-                    .symbolEffect(.bounce, options: .nonRepeating, value: toast)
-                Text(toast)
-            } else {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Palette.mic)
-                Text(state.message)
-            }
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.mic)
+            Text(state.message)
         }
         .font(.system(size: 12.5, weight: .semibold))
         .foregroundStyle(.white)

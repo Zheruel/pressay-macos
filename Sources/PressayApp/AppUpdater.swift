@@ -201,6 +201,7 @@ struct UpdateNoticeView: View {
                 if actionable {
                     Button { updater.performAction() } label: { content }
                         .buttonStyle(.plain)
+                        .pointerStyle(.link)
                         .focused($focused)
                         .onHover { hovering = $0 }
                         .overlay {

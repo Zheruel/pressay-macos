@@ -41,9 +41,16 @@ public struct KeychainSecret: Sendable {
     }
 }
 
-/// The user's Anthropic API key; its presence turns on Claude cleanup.
 public enum ClaudeAPIKeyStore {
     private static let secret = KeychainSecret(account: "claude-api-key")
+    public static func read() -> String? { secret.read() }
+    @discardableResult public static func save(_ key: String) -> Bool { secret.save(key) }
+    public static func clear() { secret.clear() }
+}
+
+/// The user’s OpenAI API key, stored separately from subscription credentials.
+public enum OpenAIAPIKeyStore {
+    private static let secret = KeychainSecret(account: "openai-api-key")
     public static func read() -> String? { secret.read() }
     @discardableResult public static func save(_ key: String) -> Bool { secret.save(key) }
     public static func clear() { secret.clear() }

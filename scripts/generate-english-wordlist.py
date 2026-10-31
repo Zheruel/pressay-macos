@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerates Sources/PressayCore/EnglishWordList.swift.
 
-The vocabulary tuner must never auto-rewrite ordinary English, so the stop
+Phonetic matching must preserve ordinary English, so the stop
 list needs broad coverage. The list is the union of:
 
   1. the words already in EnglishWordList.swift (function-word core and the
@@ -28,7 +28,6 @@ except ImportError:
 
 REPO = Path(__file__).resolve().parent.parent
 SWIFT_FILE = REPO / "Sources/PressayCore/EnglishWordList.swift"
-CURATED_FILE = REPO / "Sources/PressayCore/CuratedVocabulary.swift"
 SYSTEM_DICT = Path("/usr/share/dict/words")
 TOP_N = 25_000
 
@@ -37,7 +36,7 @@ SUPPLEMENT = {"mockup", "mockups"}
 
 HEADER = '''import Foundation
 
-/// Common English lemmas the vocabulary tuner uses as a stop list. Generated
+/// Common English lemmas phonetic matching protects from correction. Generated
 /// by scripts/generate-english-wordlist.py: the original function-word core
 /// plus the top-{top_n} wordfreq lemmas intersected with the macOS system
 /// dictionary. Regenerate with the script; do not edit by hand.
@@ -73,11 +72,6 @@ def system_dictionary() -> set[str]:
     }
 
 
-def curated_tokens() -> set[str]:
-    text = CURATED_FILE.read_text()
-    return {token.lower() for token in re.findall(r"[A-Za-z]{3,}", text)}
-
-
 def main() -> None:
     core = existing_words()
     system = system_dictionary()
@@ -88,11 +82,8 @@ def main() -> None:
     }
     combined = core | frequent | SUPPLEMENT
 
-    overlaps = sorted(combined & curated_tokens())
     print(f"core {len(core)}, frequency-intersection {len(frequent)}, "
           f"total {len(combined)}")
-    print(f"overlap with curated vocabulary tokens (review only, kept): "
-          f"{', '.join(overlaps)}")
 
     for probe in ("mix", "correction", "colleague", "mockup", "mockups"):
         assert probe in combined, f"expected {probe!r} in the list"

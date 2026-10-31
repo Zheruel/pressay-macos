@@ -1,5 +1,7 @@
 # ASR options ranked — August 2026
 
+> Historical research: the Apple-native cleanup experiment and automatic vocabulary learning described below were removed on October 31, 2026. The dictionary now accepts only user-supplied entries.
+
 Follow-up to `asr-research-2026-08.md`, run after two constraints changed: the
 transcribe.cpp/GGUF requirement was lifted, and the goal became quality-first
 subject to ~4GB RAM (prefer ≤3GB) locally, or low cost in the cloud.

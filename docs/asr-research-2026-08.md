@@ -1,5 +1,7 @@
 # Better transcription for Pressay
 
+> Historical research: the Apple-native cleanup experiment and automatic vocabulary learning described below were removed on October 31, 2026. The dictionary now accepts only user-supplied entries.
+
 ## Verdict
 
 The local model is already near the ceiling of what is available on-device, and the win is in biasing and post-correction, not a new model. Twelve model candidates and eight biasing mechanisms were checked against your stack; none survived. Fun-ASR MLT Nano stays the default, and the highest-value change is four lines in `CuratedVocabulary.swift` closing documented mishearings the alias map currently misses, followed by making that tier phonetic instead of literal. The only decode-time lever with real upside — Fun-ASR's native hotword prompt — exists upstream in the model but is not exposed by transcribe.cpp, and that is a patch to someone else's C++, not a config change.
