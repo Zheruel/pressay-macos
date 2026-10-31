@@ -249,8 +249,14 @@ final class ClaudeCodeCleanupTests: XCTestCase {
                 else { XCTAssertEqual((error as? POSIXError)?.code, .EPIPE) }
             }
             XCTAssertLessThan(started.duration(to: .now), .seconds(1))
-            try await Task.sleep(for: .milliseconds(500))
-            XCTAssertEqual(kill(pid, 0), -1, "A child ignoring SIGTERM must still be killed")
+            let exitDeadline = ContinuousClock.now.advanced(by: .seconds(3))
+            while kill(pid, 0) == 0 && ContinuousClock.now < exitDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let status = kill(pid, 0)
+            let error = errno
+            XCTAssertEqual(status, -1, "A child ignoring SIGTERM must still be killed")
+            XCTAssertEqual(error, ESRCH)
         }
     }
 
