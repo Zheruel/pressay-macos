@@ -7,10 +7,16 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 ### Fixed
 
 - Speech models load again in downloaded releases. Release builds were missing MLX's Metal shader library, so the speech engine stopped before loading the model.
+- Fix a crash when the OpenAI cleanup connection was closed during its warm-up ping.
 
 ### Changed
 
 - Model download progress now shows in the sidebar.
+- The Dictionary is one editable list: each word has a Sounds like field for what it gets misheard as, and an × to remove it. Edits save as you type.
+
+### Removed
+
+- On-device formatting. It mostly added paragraph breaks, sometimes dropped words from detected lists, and only affected dictations without AI Cleanup.
 
 ## [1.14.1] - 2026-11-01
 

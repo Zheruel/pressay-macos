@@ -11,7 +11,6 @@ final class AppSettings: ObservableObject {
         static let asrModel = "asrModel"
         static let meetingASRModel = "meetingASRModel"
         static let meetingLanguage = "meetingLanguage"
-        static let structuredDictation = "structuredDictation"
         static let vocabulary = "vocabulary"
         static let onboardingComplete = "onboardingComplete"
         static let hasUsedDictation = "hasUsedDictation"
@@ -35,7 +34,7 @@ final class AppSettings: ObservableObject {
         static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
             "learnFromEdits", "vocabularyTuner.rules", "vocabularyTuner.blocklist",
             "vocabularyTuner.lastDetRun", "vocabularyTuner.lastK3Run",
-            "vocabularyTuner.seenCandidates", "vocabularyTuner.schemaVersion"]
+            "vocabularyTuner.seenCandidates", "vocabularyTuner.schemaVersion", "structuredDictation"]
     }
 
     private let defaults: UserDefaults
@@ -46,7 +45,6 @@ final class AppSettings: ObservableObject {
     @Published var asrModel: ASRModel { didSet { defaults.set(asrModel.rawValue, forKey: Key.asrModel) } }
     @Published var meetingASRModel: ASRModel { didSet { defaults.set(meetingASRModel.rawValue, forKey: Key.meetingASRModel) } }
     @Published var meetingLanguage: TranscriptionLanguage { didSet { defaults.set(meetingLanguage.rawValue, forKey: Key.meetingLanguage) } }
-    @Published var structuredDictation: Bool { didSet { defaults.set(structuredDictation, forKey: Key.structuredDictation) } }
     @Published var vocabularySource: String { didSet { defaults.set(vocabularySource, forKey: Key.vocabulary) } }
     @Published var onboardingComplete: Bool { didSet { defaults.set(onboardingComplete, forKey: Key.onboardingComplete) } }
     @Published var hasUsedDictation: Bool { didSet { defaults.set(hasUsedDictation, forKey: Key.hasUsedDictation) } }
@@ -134,9 +132,6 @@ final class AppSettings: ObservableObject {
         language = model.supportedLanguages.contains(storedLanguage)
             ? storedLanguage
             : model.defaultLanguage
-        // Default on: corpus-validated as word-preserving, and it only ever
-        // activates on longer dictations (15+ words, never terminals).
-        structuredDictation = defaults.object(forKey: Key.structuredDictation) as? Bool ?? true
         for key in Key.retired { defaults.removeObject(forKey: key) }
         let storedVocabulary = defaults.string(forKey: Key.vocabulary)
         if defaults.bool(forKey: Key.manualVocabularyOnly) {

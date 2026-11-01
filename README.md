@@ -72,7 +72,7 @@ Choose **Claude** or **OpenAI**, then **Subscription** or **API key**, under **S
 | --- | --- | --- |
 | Claude | Haiku 5.5, low reasoning | Your installed Claude Code CLI |
 | OpenAI | GPT-6 Luna, medium reasoning, Fast | ChatGPT browser sign-in |
-| None | On-device formatting | No account required |
+| None | Speech model output with your dictionary spellings | No account required |
 
 Cleanup uses [Hex’s default prompt](https://github.com/anomalyco/hex). The dictionary starts empty and supplies only spellings you add manually. A replay of 20 personal transcripts and six controls favored medium reasoning for Luna; Haiku’s medium setting showed no consistent fidelity benefit. These are text-fidelity checks, not verified speech accuracy. The short prompt can still drop qualifications or alter meaning.
 

@@ -487,13 +487,6 @@ private struct GeneralSettingsView: View {
                             .onChange(of: settings.language) { _, _ in coordinator.applyTranscriptionLanguage() }
                     }
                     PressaySetting(title: "Status") { ModelStatusView(coordinator: coordinator) }
-                    PressaySetting(
-                        title: "On-device formatting", detail: "Adds punctuation and paragraphs when AI Cleanup is off."
-                    ) {
-                        Toggle("On-device formatting", isOn: $settings.structuredDictation).toggleStyle(
-                            PressaySwitchStyle(showsLabel: false)
-                        ).frame(width: 32)
-                    }
                 }
             }
             PressaySection(title: "Permissions") {
@@ -971,125 +964,97 @@ struct PressayConfirmation: View {
     }
 }
 
-private struct DictionaryWord: Identifiable {
-    let preferred: String
-    let collection: String
-    let line: String
-    var id: String { preferred.lowercased() }
+private struct DictionaryRow: Identifiable, Equatable {
+    let id = UUID()
+    var word: String
+    var soundsLike: String
 }
 
+/// One editable row per word, like Hex's vocabulary sheet. Edits save as you type;
+/// rows without a word are kept on screen but never saved.
 private struct DictionarySettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings
-    @State private var search = ""
-    @State private var adding = false
+    @State private var rows: [DictionaryRow] = []
+    @FocusState private var focused: UUID?
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         settings = coordinator.settings
     }
-    private var words: [DictionaryWord] {
-        var result: [DictionaryWord] = []
-        var seen: Set<String> = []
-        var collection = "Your words"
-        for raw in settings.vocabularySource.split(whereSeparator: \.isNewline) {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("#") {
-                collection = String(line.dropFirst()).trimmingCharacters(in: .whitespaces)
-            } else if let entry = VocabularyParser.parse(line).first, seen.insert(entry.preferred.lowercased()).inserted
-            {
-                result.append(.init(preferred: entry.preferred, collection: collection, line: line))
-            }
-        }
-        return result
-    }
     var body: some View {
-        let words = words
-        let filtered = words.filter {
-            search.isEmpty || $0.preferred.localizedCaseInsensitiveContains(search)
-                || $0.collection.localizedCaseInsensitiveContains(search)
-        }
         PressayPage(lazy: true) {
             PressayHeading(title: "Dictionary", subtitle: "Set the spelling of names and terms.") {
-                Button {
-                    adding = true
-                } label: {
+                Button(action: add) {
                     Label("Add word", systemImage: "plus")
                 }.buttonStyle(PressayButtonStyle(kind: .primary))
             }
-            if !words.isEmpty {
-                HStack {
-                    PressaySearch(placeholder: "Search words", text: $search)
-                    Spacer()
-                    Text("\(words.count) words").font(.system(size: 11)).foregroundStyle(PressayPalette.muted)
-                }.padding(.bottom, 14)
-            }
-            if filtered.isEmpty {
+            if rows.isEmpty {
                 PressayEmpty(
-                    title: search.isEmpty ? "No words yet" : "No words found",
-                    detail: search.isEmpty
-                        ? "Add names and terms you want Pressay to spell correctly." : "Try a different search.",
-                    systemImage: search.isEmpty ? "character.book.closed" : "magnifyingglass",
-                    actionTitle: words.isEmpty ? "Add your first word" : nil, action: { adding = true })
+                    title: "No words yet", detail: "Add names and terms you want Pressay to spell correctly.",
+                    systemImage: "character.book.closed", actionTitle: "Add your first word", action: add)
             } else {
-                PressayGroup(lazy: true) {
-                    HStack {
-                        Text("SPELLING")
-                        Spacer()
-                        Text("COLLECTION").frame(width: 115, alignment: .leading)
+                PressayGroup {
+                    HStack(spacing: 10) {
+                        Text("WORD").frame(width: 190, alignment: .leading)
+                        Text("SOUNDS LIKE").frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer().frame(width: 28)
                     }
-                    .font(.system(size: 10, weight: .medium)).foregroundStyle(PressayPalette.muted).padding(
-                        .horizontal, 18
-                    ).padding(.vertical, 12)
-                    ForEach(filtered) { word in
-                        HStack {
-                            Text(word.preferred).font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            Text(word.collection).font(.system(size: 10)).foregroundStyle(PressayPalette.muted).frame(
-                                width: 115, alignment: .leading)
-                        }.padding(.horizontal, 18).padding(.vertical, 11)
-                            .overlay(alignment: .top) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
-                            .contextMenu { Button("Remove", role: .destructive) { remove(word) } }
-                            .accessibilityAction(named: "Remove") { remove(word) }
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(PressayPalette.muted)
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    ForEach($rows) { $row in
+                        HStack(spacing: 10) {
+                            TextField("Word", text: $row.word).modifier(PressayField()).frame(width: 190)
+                                .focused($focused, equals: row.id).accessibilityLabel("Word")
+                            TextField("Optional, comma-separated", text: $row.soundsLike).modifier(PressayField())
+                                .accessibilityLabel("Sounds like")
+                            Button {
+                                rows.removeAll { $0.id == row.id }
+                            } label: {
+                                Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                                    .frame(width: 28, height: 28).contentShape(Rectangle())
+                            }
+                            .buttonStyle(PressayPlainButtonStyle()).foregroundStyle(PressayPalette.muted).help("Remove")
+                            .accessibilityLabel(row.word.isEmpty ? "Remove word" : "Remove \(row.word)")
+                        }
+                        .padding(.horizontal, 18).padding(.vertical, 8)
+                        .overlay(alignment: .top) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
                     }
                 }
+                Text("Pressay writes each word with this spelling. Under Sounds like, add what it gets misheard as.")
+                    .font(.system(size: 11)).foregroundStyle(PressayPalette.muted).padding(.top, 10)
             }
         }
-        .sheet(isPresented: $adding) { AddDictionaryEntrySheet { settings.addVocabularyWord($0) } }
+        .onAppear(perform: load)
+        .onChange(of: rows) { _, rows in
+            let source = Self.source(for: rows)
+            if source != settings.vocabularySource { settings.vocabularySource = source }
+        }
+        .onChange(of: settings.vocabularySource) { _, source in
+            if source != Self.source(for: rows) { load() }
+        }
     }
-    private func remove(_ word: DictionaryWord) {
-        settings.vocabularySource = settings.vocabularySource.split(whereSeparator: \.isNewline).map(String.init)
-            .filter { $0.trimmingCharacters(in: .whitespaces) != word.line }.joined(separator: "\n")
+    private func load() {
+        rows = VocabularyParser.parse(settings.vocabularySource).map {
+            DictionaryRow(word: $0.preferred, soundsLike: $0.aliases.joined(separator: ", "))
+        }
     }
-}
-
-private struct AddDictionaryEntrySheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var preferred = ""
-    @FocusState private var focused: Bool
-    let onSave: (String) -> Void
-    var body: some View {
-        PressaySheet(title: "Add a word") {
-            Text("Use this spelling when Pressay hears the word.").font(.system(size: 12)).foregroundStyle(
-                PressayPalette.muted
-            ).padding(.top, -12).padding(.bottom, 24)
-            Text("Preferred spelling").font(.system(size: 12, weight: .semibold)).padding(.bottom, 8)
-            TextField("e.g. Figma", text: $preferred).modifier(PressayField()).focused($focused).onSubmit(save)
-                .accessibilityLabel("Preferred spelling")
-            Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.top, 24)
-            HStack(spacing: 8) {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Add word", action: save).buttonStyle(PressayButtonStyle(kind: .primary)).keyboardShortcut(
-                    .defaultAction
-                ).disabled(preferred.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }.padding(.top, 18)
-        }.onAppear { focused = true }
+    private func add() {
+        if let blank = rows.first(where: { $0.word.trimmingCharacters(in: .whitespaces).isEmpty }) {
+            focused = blank.id
+            return
+        }
+        let row = DictionaryRow(word: "", soundsLike: "")
+        rows.append(row)
+        DispatchQueue.main.async { focused = row.id }
     }
-    private func save() {
-        let value = preferred.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return }
-        onSave(value)
-        dismiss()
+    static func source(for rows: [DictionaryRow]) -> String {
+        rows.compactMap { row in
+            let word = row.word.trimmingCharacters(in: .whitespaces)
+            guard !word.isEmpty else { return nil }
+            let aliases = row.soundsLike.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            return aliases.isEmpty ? word : "\(word) <= \(aliases.joined(separator: ", "))"
+        }.joined(separator: "\n")
     }
 }
 

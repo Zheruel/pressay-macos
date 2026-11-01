@@ -799,9 +799,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 englishRules: englishRules
             )
             var finalText = deterministic
-            var structureLatency: TimeInterval = 0
+            var polishLatency: TimeInterval = 0
             var usedLanguageModel = false
-            let structureStarted = Date()
+            let polishStarted = Date()
             let snippet = SnippetExpander.exactMatch(deterministic, snippets: settings.snippets)
             if let snippet {
                 finalText = snippet.text
@@ -824,13 +824,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                     logger.error("AI cleanup fell back to rules: \(error.localizedDescription, privacy: .public)")
                 }
             }
-            if !usedLanguageModel, snippet == nil, settings.structuredDictation, !isTerminal, englishRules {
-                finalText = TranscriptStructurer.structure(deterministic)
-            }
             if snippet == nil {
                 finalText = SnippetExpander.expand(finalText, snippets: settings.snippets)
             }
-            structureLatency = Date().timeIntervalSince(structureStarted)
+            polishLatency = Date().timeIntervalSince(polishStarted)
 
             guard !Task.isCancelled else {
                 cleanUpCancelledProcessing()
@@ -846,7 +843,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 rawTranscript: transcript.text,
                 polishedText: finalText,
                 asrLatency: transcript.processingTime,
-                polishLatency: structureLatency,
+                polishLatency: polishLatency,
                 totalLatency: insertionLatency,
                 audioPath: audioURL?.path,
                 usedLanguageModel: usedLanguageModel
