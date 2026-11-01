@@ -37,9 +37,38 @@ jobs:
       - name: Run tests
         run: xcrun swift test --disable-sandbox
 
-      - name: Package DMG
+      # Every release must be signed by the same certificate: macOS ties
+      # permission approvals to it, and an ad-hoc signature resets them.
+      - name: Import release signing certificate
         env:
-          SIGNING_IDENTITY: '-'
+          RELEASE_SIGNING_CERTIFICATE: ${{ secrets.RELEASE_SIGNING_CERTIFICATE }}
+          RELEASE_SIGNING_PASSWORD: ${{ secrets.RELEASE_SIGNING_PASSWORD }}
+        run: |
+          if [[ -z "$RELEASE_SIGNING_CERTIFICATE" || -z "$RELEASE_SIGNING_PASSWORD" ]]; then
+            echo 'Run scripts/create-release-signing-certificate.sh before publishing a release.' >&2
+            exit 1
+          fi
+          umask 077
+          KEYCHAIN="$RUNNER_TEMP/release-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          IDENTITY_FILE="$RUNNER_TEMP/release-signing.p12"
+          trap 'rm -f "$IDENTITY_FILE"' EXIT
+          printf '%s' "$RELEASE_SIGNING_CERTIFICATE" | base64 --decode > "$IDENTITY_FILE"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$IDENTITY_FILE" -k "$KEYCHAIN" -P "$RELEASE_SIGNING_PASSWORD" -T /usr/bin/codesign >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          IFS=$'\n' read -r -d '' -a EXISTING < <(security list-keychains -d user | sed 's/^ *"//; s/"$//') || true
+          security list-keychains -d user -s "$KEYCHAIN" "${EXISTING[@]}"
+          # The self-signed root is untrusted, so find-identity -v hides it;
+          # codesign still signs with it when named by its SHA-1 hash.
+          HASH="$(security find-identity -p codesigning "$KEYCHAIN" | awk '/"Pressay Release Signing"/ { print $2; exit }')"
+          [[ -n "$HASH" ]] || { echo 'Release signing identity missing from the certificate secret.' >&2; exit 1; }
+          echo "SIGNING_IDENTITY=$HASH" >> "$GITHUB_ENV"
+          echo "RELEASE_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Package DMG
         run: |
           if ! xcrun metal --version >/dev/null 2>&1; then
             xcodebuild -downloadComponent MetalToolchain
@@ -76,3 +105,10 @@ jobs:
             .build/updates/Pressay-macos-arm64.zip \
             .build/updates/SHA256SUMS \
             .build/updates/appcast.xml
+
+      - name: Remove release signing keychain
+        if: always()
+        run: |
+          if [[ -n "${RELEASE_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$RELEASE_KEYCHAIN" || true
+          fi

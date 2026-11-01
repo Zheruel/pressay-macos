@@ -20,7 +20,9 @@ hdiutil create \
     >/dev/null
 
 if [[ -n "${SIGNING_IDENTITY:-}" && "${SIGNING_IDENTITY}" != "-" ]]; then
-    codesign --force --sign "$SIGNING_IDENTITY" --timestamp "$OUTPUT"
+    TIMESTAMP_ARGUMENT="--timestamp=none"
+    [[ "$SIGNING_IDENTITY" == Developer\ ID\ Application:* ]] && TIMESTAMP_ARGUMENT="--timestamp"
+    codesign --force --sign "$SIGNING_IDENTITY" "$TIMESTAMP_ARGUMENT" "$OUTPUT"
 fi
 
 echo "$OUTPUT"

@@ -141,7 +141,7 @@ Pressay asks for Microphone, Accessibility, and Input Monitoring permissions on 
 
 When an update is available, a notice appears in Pressay’s sidebar and menu bar. Click **Update and restart** to download, verify, and install it. Pressay waits for active dictation, processing, or meeting recording to finish before restarting. You can also choose **Check for Updates…**, or turn off automatic checks under **General › App updates**. Checks contact GitHub; no telemetry is sent.
 
-The [DMG download](https://github.com/Zheruel/pressay-macos/releases/latest) is also available. These builds are not Apple-notarized: a browser download may require **System Settings › Privacy & Security › Open Anyway** after the first launch attempt. Free ad-hoc signing can also require regranting Accessibility or Input Monitoring after an update. Automatic updates do not remove those macOS requirements. If insertion or the hold key stops working, remove and re-add Pressay under the affected permission in System Settings, then reopen it.
+The [DMG download](https://github.com/Zheruel/pressay-macos/releases/latest) is also available. These builds are not Apple-notarized: a browser download may require **System Settings › Privacy & Security › Open Anyway** after the first launch attempt. Updating from an ad-hoc signed release (before stable release signing) asks for Accessibility and Input Monitoring once more. If insertion or the hold key stops working, remove and re-add Pressay under the affected permission in System Settings, then reopen it.
 
 ### Build from source
 
@@ -191,7 +191,7 @@ Sources/
 └── TranscribeCpp/          Vendored Swift wrapper for the native runtime
 ```
 
-CI runs the tests and a full app build on every pull request. Pushing a `vX.Y.Z` tag that matches `Config/Info.plist` publishes the DMG, installer ZIP, checksums, and signed update feed. Increment `CFBundleVersion` for every release so Sparkle can order updates. The release workflow requires `SPARKLE_PRIVATE_KEY`; see [release setup](docs/releases.md). The bundle identifier stays `dev.localflow.app`; ad-hoc signing may still require regranting permissions.
+CI runs the tests and a full app build on every pull request. Pushing a `vX.Y.Z` tag that matches `Config/Info.plist` publishes the DMG, installer ZIP, checksums, and signed update feed. Increment `CFBundleVersion` for every release so Sparkle can order updates. The release workflow requires `SPARKLE_PRIVATE_KEY` and the release signing certificate; see [release setup](docs/releases.md). The bundle identifier stays `dev.localflow.app`.
 
 The separate `Runtime/` Swift package builds the bundled speech worker. Model data stays in Application Support; executable runtimes ship inside the signed app.
 
