@@ -2,6 +2,12 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.14.1] - 2026-11-01
+
+### Fixed
+
+- Keep Microphone, Accessibility and Input Monitoring approvals across updates. Releases are now signed with one stable certificate; updating to this release asks for them one last time.
+
 ## [1.12.2] - 2026-10-27
 
 ### Fixed
