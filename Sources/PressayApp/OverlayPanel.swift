@@ -4,9 +4,13 @@ import SwiftUI
 
 enum OverlayStyle {
     case dictation
+    case meeting
 
     var colors: [Color] {
-        [Color(red: 0.63, green: 0.42, blue: 1), Color(red: 0.48, green: 0.82, blue: 1)]
+        switch self {
+        case .dictation: [Color(red: 0.63, green: 0.42, blue: 1), Color(red: 0.48, green: 0.82, blue: 1)]
+        case .meeting: [Color(red: 1, green: 0.27, blue: 0.23), Color(red: 1, green: 0.62, blue: 0.3)]
+        }
     }
 
     var gradient: LinearGradient {
@@ -45,6 +49,15 @@ final class OverlayState: ObservableObject {
     @Published var polishing = false
     @Published var recordingStarted: Date?
     @Published var notch = NotchGeometry.none
+    @Published var successText = "Inserted"
+    /// A recording meeting lives in the island whenever no dictation state is showing.
+    @Published var meeting: LiveSession?
+    @Published var hovering = false
+    var stopMeeting: () -> Void = {}
+    #if DEBUG
+        /// Review mode pins hover, which can't be scripted.
+        var pinnedHover = false
+    #endif
 }
 
 /// Grows out of the notch (or top edge) so it never covers the text being written.
@@ -92,6 +105,7 @@ final class OverlayPanelController {
     }
 
     func showSuccess() {
+        state.successText = "Inserted"
         state.phase = .succeeded
         state.message = ""
         present()
@@ -105,8 +119,37 @@ final class OverlayPanelController {
         dismiss(after: .seconds(2.6))
     }
 
+    /// The island stays up for the whole meeting and takes clicks: hover shows Stop.
+    func showMeeting(_ session: LiveSession, stop: @escaping () -> Void) {
+        dismissTask?.cancel()
+        state.stopMeeting = stop
+        state.meeting = session
+        ensurePanel()
+        panel?.ignoresMouseEvents = false
+        present()
+    }
+
+    func endMeeting(saved: Bool) {
+        guard state.meeting != nil else { return }
+        state.meeting = nil
+        state.hovering = false
+        panel?.ignoresMouseEvents = true
+        guard saved else { return hide() }
+        state.successText = "Saved"
+        state.phase = .succeeded
+        present()
+        dismiss(after: .milliseconds(1200))
+    }
+
     func hide() {
         dismissTask?.cancel()
+        if state.meeting != nil {
+            // A dictation notice shown over a meeting folds back into the meeting.
+            state.phase = .idle
+            state.message = ""
+            state.polishing = false
+            return
+        }
         state.visible = false
         orderOutTask?.cancel()
         orderOutTask = Task { [weak self] in
@@ -119,6 +162,7 @@ final class OverlayPanelController {
             state.style = .dictation
             state.polishing = false
             state.recordingStarted = nil
+            state.successText = "Inserted"
         }
     }
 
@@ -162,6 +206,11 @@ final class OverlayPanelController {
     private func positionPanel() {
         guard let panel, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         state.notch = .of(screen)
+        #if DEBUG
+            if DesignReview.enabled, ProcessInfo.processInfo.environment["PRESSAY_REVIEW_NOTCH"] == "1" {
+                state.notch = NotchGeometry(width: 185, height: 32)
+            }
+        #endif
         let frame = screen.frame
         panel.setFrameOrigin(NSPoint(x: frame.midX - Self.stage.width / 2, y: frame.maxY - Self.stage.height))
     }
@@ -208,8 +257,12 @@ private struct IslandView: View {
         return false
     }
 
+    /// Dictation states take precedence; the meeting shows in between.
+    private var meeting: LiveSession? { state.phase == .idle ? state.meeting : nil }
+
     private var ear: CGFloat? {
         guard state.visible, !isFailed else { return nil }
+        if meeting != nil { return notch.exists ? 78 : 64 }
         switch state.phase {
         case .arming: return 36
         case .recording: return notch.exists ? 78 : 64
@@ -220,6 +273,10 @@ private struct IslandView: View {
     }
 
     private var metrics: IslandMetrics {
+        if state.visible, meeting != nil, state.hovering {
+            let height = (notch.exists ? band : 32) + 44
+            return IslandMetrics(width: max(gap + 156, 240), height: height, radius: 20, shoulder: 9, lifted: true)
+        }
         if state.visible, isFailed {
             let height = notch.exists ? band + 36 : 40
             return IslandMetrics(width: max(gap + 190, 340), height: height, radius: 20, shoulder: 9, lifted: true)
@@ -250,6 +307,13 @@ private struct IslandView: View {
         }
         .frame(width: m.width + 2 * m.shoulder, height: m.height)
         .clipShape(shape)
+        .contentShape(shape)
+        .onHover { hovering in
+            #if DEBUG
+                if state.pinnedHover { return }
+            #endif
+            if state.meeting != nil { state.hovering = hovering }
+        }
         .shadow(color: .black.opacity(m.lifted ? 0.34 : 0), radius: 14, y: 6)
         .scaleEffect(bump, anchor: .top)
         .offset(x: shake)
@@ -269,7 +333,11 @@ private struct IslandView: View {
 
     @ViewBuilder
     private var content: some View {
-        if state.visible, isFailed {
+        if state.visible, let meeting {
+            MeetingIsland(
+                session: meeting, state: state, notch: notch, band: band, gap: gap, reduceMotion: reduceMotion)
+                .transition(earTransition)
+        } else if state.visible, isFailed {
             VStack(spacing: 0) {
                 if notch.exists { Color.clear.frame(height: band) }
                 banner
@@ -353,7 +421,7 @@ private struct IslandView: View {
                 case .processing:
                     ShimmerText(text: processingLabel, animated: !reduceMotion)
                 case .succeeded:
-                    Text("Inserted")
+                    Text(state.successText)
                         .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(.white)
                 case .idle, .failed:
@@ -426,6 +494,147 @@ private struct IslandShape: Shape {
                           control: CGPoint(x: rect.maxX - s, y: rect.minY))
         path.closeSubpath()
         return path
+    }
+}
+
+// MARK: - Meeting
+
+/// Red dot, elapsed time and levels beside the camera; hovering drops Open and Stop below.
+private struct MeetingIsland: View {
+    @ObservedObject var session: LiveSession
+    @ObservedObject var state: OverlayState
+    let notch: NotchGeometry
+    let band: CGFloat
+    let gap: CGFloat
+    let reduceMotion: Bool
+
+    private var finishing: Bool { session.phase == .finishing }
+    private var levels: [Float] {
+        let mic = session.micLevel, others = session.othersLevel
+        return [mic, max(mic, others), others, (mic + others) / 2]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ears.frame(height: notch.exists ? band : 32)
+            if state.hovering {
+                controls.transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.28), value: finishing)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(finishing ? "Saving meeting notes" : "Meeting recording")
+    }
+
+    @ViewBuilder
+    private var ears: some View {
+        if notch.exists {
+            HStack(spacing: 0) {
+                leading.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 13)
+                Color.clear.frame(width: gap)
+                trailing.frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 13)
+            }
+        } else {
+            HStack(spacing: 8) {
+                leading
+                trailing
+            }.frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var leading: some View {
+        if finishing {
+            ProcessingGlyph(polishing: false)
+        } else {
+            HStack(spacing: 7) {
+                MeetingDot(live: !reduceMotion)
+                MeetingTimer(session: session)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        if finishing {
+            ShimmerText(text: "Saving", animated: !reduceMotion)
+        } else {
+            LiveBars(levels: levels, style: .meeting, dimmed: false)
+        }
+    }
+
+    private var controls: some View {
+        HStack(spacing: 8) {
+            Text(finishing ? "Saving your notes…" : "Taking notes")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Palette.secondary)
+            Spacer(minLength: 8)
+            Button {
+                state.stopMeeting()
+            } label: {
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 1.5).frame(width: 7, height: 7)
+                    Text("Stop")
+                }
+            }
+            .buttonStyle(StopButtonStyle())
+            .disabled(finishing)
+            .help("Stop the meeting")
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+    }
+}
+
+private struct MeetingDot: View {
+    let live: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !live)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            Circle()
+                .fill(OverlayStyle.meeting.colors[0])
+                .frame(width: 8, height: 8)
+                .opacity(live ? 0.55 + 0.45 * (0.5 + 0.5 * cos(t * 3)) : 1)
+        }
+        .frame(width: 21, height: 21)
+    }
+}
+
+/// Includes time recorded before a resume, like the meeting page.
+private struct MeetingTimer: View {
+    @ObservedObject var session: LiveSession
+
+    var body: some View {
+        TimelineView(.periodic(from: session.startedAt, by: 1)) { timeline in
+            let elapsed = session.offset + (session.stoppedAt ?? timeline.date).timeIntervalSince(session.startedAt)
+            let seconds = max(0, Int(elapsed))
+            Text(seconds >= 3600
+                ? String(format: "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
+                : String(format: "%d:%02d", seconds / 60, seconds % 60))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Palette.secondary)
+                .contentTransition(.numericText(countsDown: false))
+                .animation(.snappy, value: seconds)
+        }
+    }
+}
+
+private struct StopButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11)
+            .frame(height: 26)
+            .background(
+                Capsule().fill(OverlayStyle.meeting.colors[0])
+            )
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
+            .contentShape(Capsule())
     }
 }
 

@@ -42,7 +42,17 @@ EXPECTED=aaf30beadcdb6ac2b6004bbe20d4a7601aa640c3f67be0e4668370a76fddcbc1
 mkdir -p "$STAGE/orukeet"
 tar -xzf "$ARCHIVE" -C "$STAGE/orukeet" --strip-components=1
 
-xcrun swift build --package-path "$ROOT/Runtime" --disable-sandbox -c "$CONFIGURATION"
+# The native build system skips MLX's Metal shaders; without default.metallib
+# every MLX model fails to load.
+xcrun swift build --package-path "$ROOT/Runtime" --build-system swiftbuild --disable-sandbox -c "$CONFIGURATION"
+# Ask for the output folder: a cached .build/<configuration> from the native build
+# system would otherwise shadow swiftbuild's out/Products/<Configuration>.
+RUNTIME_BIN="$(xcrun swift build --package-path "$ROOT/Runtime" --build-system swiftbuild -c "$CONFIGURATION" --show-bin-path)"
+[[ -f "$RUNTIME_BIN/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib" ]] || {
+    echo "error: MLX Metal library missing from $RUNTIME_BIN. Found:" >&2
+    find "$ROOT/Runtime/.build" -name default.metallib >&2
+    exit 1
+}
 mkdir -p "$STAGE/licenses"
 install -m 644 "$SOURCE/LICENSE" "$STAGE/licenses/transcribe.cpp.txt"
 install -m 644 "$SOURCE/ggml/LICENSE" "$STAGE/licenses/ggml.txt"

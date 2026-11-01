@@ -78,5 +78,16 @@ struct MeetingAskPromptTests {
         #expect(prompt.contains("<meeting title=\"Old\""))
         #expect(prompt.hasSuffix("<question>\nWhat did we decide?\n</question>"))
         #expect(!prompt.contains("<my_notes>"))
+        #expect(prompt.hasPrefix("<today>"))
+        #expect(!prompt.contains("<conversation>"))
+    }
+
+    @Test func earlierExchangesComeBeforeTheQuestion() {
+        let prompt = MeetingAskPrompt.user(
+            question: "And who owns it?", meetings: [meeting("Sync", transcript: "Me: ship it")],
+            history: [.init(question: "What did we decide?", answer: "To ship on Friday.")]
+        )
+        #expect(prompt.contains("<asked>\nWhat did we decide?\n</asked>\n<answered>\nTo ship on Friday.\n</answered>"))
+        #expect(prompt.hasSuffix("<question>\nAnd who owns it?\n</question>"))
     }
 }

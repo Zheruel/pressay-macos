@@ -42,6 +42,11 @@ struct NotetakerPage: View {
                     }
                 }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if store.notes.contains(where: \.hasTranscript) {
+                AskChat(coordinator: coordinator, noteID: askNoteID)
+            }
+        }
         .confirmationDialog("Delete this meeting?", isPresented: deletingShown) {
             Button("Delete", role: .destructive) {
                 if let id = deleting {
@@ -78,6 +83,14 @@ struct NotetakerPage: View {
                 }
             }
         #endif
+    }
+
+    /// The meeting on screen, when it has a transcript to ask about.
+    private var askNoteID: UUID? {
+        guard case .note(let id)? = path.last, store.note(id)?.hasTranscript == true,
+            coordinator.liveSession?.noteID != id
+        else { return nil }
+        return id
     }
 
     private var deletingShown: Binding<Bool> {
@@ -271,10 +284,6 @@ private struct NotePage: View {
                 LiveMeetingView(
                     session: session,
                     title: store.note(id)?.title ?? "Meeting",
-                    earlierLines: store.note(id)?.lines.filter { $0.start < session.offset } ?? [],
-                    othersLabel: store.note(id)?.othersLabel ?? "Others",
-                    speakerNames: store.note(id)?.speakerNames ?? [],
-                    myNotes: myNotes(persist: false),
                     onStop: { coordinator.stopRecording() },
                     onDiscard: coordinator.discardRecording
                 )
@@ -328,7 +337,7 @@ private struct NotePage: View {
             .buttonStyle(PressayPlainButtonStyle()).foregroundStyle(PressayPalette.muted)
             .help("Back to Notetaker").accessibilityLabel("Back to Notetaker")
             Rectangle().fill(PressayPalette.line).frame(width: 1, height: 16)
-            HStack(spacing: 22) {
+            HStack(spacing: 0) {
                 ForEach(NoteTab.allCases, id: \.self) { choice in
                     Button {
                         tab = choice
@@ -343,6 +352,9 @@ private struct NotePage: View {
                                     Rectangle().fill(PressayPalette.accent).frame(height: 2)
                                 }
                             }
+                            .padding(.horizontal, 11)
+                            // The whole tab is clickable, not just the glyphs.
+                            .contentShape(.rect)
                     }
                     .buttonStyle(PressayPlainButtonStyle())
                     .accessibilityAddTraits(tab == choice ? .isSelected : [])
@@ -351,6 +363,7 @@ private struct NotePage: View {
             .disabled(editing || !note.hasTranscript)
             Spacer(minLength: 8)
             HStack(spacing: 6) {
+                if !editing { RemindersButton(coordinator: coordinator, note: note).font(.callout).padding(.trailing, 6) }
                 Button(editing ? "Done" : "Edit") { editing.toggle() }
                     .buttonStyle(PressayButtonStyle())
                     .disabled(tab != .summary || (!editing && note.formatting))
@@ -400,11 +413,6 @@ private struct NoteDetailView: View {
             case .summary: summary
             case .transcript: TranscriptTab(coordinator: coordinator, note: note)
             case .myNotes: myNotesTab
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !editing, note.kind == .meeting, note.hasTranscript {
-                AskBar(coordinator: coordinator, noteID: note.id)
             }
         }
         .onAppear {
@@ -508,7 +516,7 @@ private struct NoteDetailView: View {
                             .foregroundStyle(.secondary)
                             .padding(.bottom, 12)
                     }
-                    MarkdownNoteBody(markdown: note.body, onToggleTask: onToggleTask, tasksAccessory: AnyView(RemindersButton(coordinator: coordinator, note: note)))
+                    MarkdownNoteBody(markdown: note.body, onToggleTask: onToggleTask)
                 }
             }
             .frame(maxWidth: 700, alignment: .leading)
@@ -747,8 +755,10 @@ struct TranscriptLinesView: View {
 
 // MARK: - Ask anything
 
-private struct AskBar: View {
+/// A chat in the bottom-right corner, about the open meeting or all of them.
+struct AskChat: View {
     @ObservedObject var coordinator: AppCoordinator
+    /// The meeting on screen, if any.
     let noteID: UUID?
 
     private struct Exchange: Identifiable {
@@ -758,121 +768,209 @@ private struct AskBar: View {
         var failed = false
     }
 
+    #if DEBUG
+        @State private var open = ProcessInfo.processInfo.environment["PRESSAY_REVIEW_ASK"] == "1"
+    #else
+        @State private var open = false
+    #endif
     @State private var question = ""
     @State private var exchanges: [Exchange] = []
-    @State private var expanded = false
+    @State private var allMeetings = false
+    @State private var task: Task<Void, Never>?
     @FocusState private var focused: Bool
 
     var body: some View {
-        GlassEffectContainer(spacing: 8) {
-            VStack(spacing: 8) {
-                if expanded, !exchanges.isEmpty {
-                    answers
-                        .glassEffect(.regular, in: .rect(cornerRadius: 22))
-                        .transition(.blurReplace.combined(with: .move(edge: .bottom)))
-                }
-                field
+        Group {
+            if open {
+                panel.transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
+            } else {
+                launcher.transition(.opacity)
             }
         }
-        .frame(maxWidth: 700)
-        .padding(.horizontal, 24)
-        .padding(.top, 6)
-        .padding(.bottom, 14)
-        .frame(maxWidth: .infinity)
+        .padding(20)
+        .onChange(of: scope) { _, _ in newChat() }
     }
 
-    private var field: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "sparkles").foregroundStyle(.tint)
-            TextField(placeholder, text: $question)
-                .textFieldStyle(.plain)
-                .focused($focused)
-                .onSubmit(send)
-                .disabled(!available)
-            if !exchanges.isEmpty {
-                Button {
-                    withAnimation(.snappy) { expanded.toggle() }
-                } label: {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.up")
-                }
-                .buttonStyle(.borderless).pressayInteraction()
-                .help(expanded ? "Hide answers" : "Show answers")
-            }
-            Button(action: send) {
-                Image(systemName: "arrow.up.circle.fill").font(.title2)
-            }
-            .buttonStyle(.borderless).pressayInteraction()
-            .disabled(question.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+    private var scope: UUID? { allMeetings ? nil : noteID }
+
+    private var launcher: some View {
+        Button {
+            withAnimation(.snappy) { open = true }
+            focused = true
+        } label: {
+            Label("Ask", systemImage: "sparkles")
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.horizontal, 16)
+                .frame(height: 38)
+                .contentShape(.capsule)
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 8)
-        .padding(.vertical, 8)
+        .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .capsule)
+        .help(noteID == nil ? "Ask about your meetings" : "Ask about this meeting")
+        .keyboardShortcut("j", modifiers: .command)
     }
 
-    private var available: Bool { coordinator.notesModel != nil && coordinator.settings.notesUseAI }
-
-    private var placeholder: String {
-        if coordinator.notesModel == nil { return "Set up AI in Settings to ask about your meetings" }
-        if !coordinator.settings.notesUseAI { return "AI is off in Notetaker settings" }
-        return noteID == nil ? "Ask anything about your meetings" : "Ask anything about this meeting"
+    private var panel: some View {
+        VStack(spacing: 0) {
+            header
+            Divider().opacity(0.5)
+            messages
+            input
+        }
+        .frame(width: 380, height: 500)
+        .glassEffect(.regular, in: .rect(cornerRadius: 20))
+        .onExitCommand { close() }
     }
 
-    private var busy: Bool { exchanges.last.map { $0.answer == nil } ?? false }
+    private var header: some View {
+        HStack(spacing: 8) {
+            if noteID != nil {
+                Picker("Ask about", selection: $allMeetings) {
+                    Text("This meeting").tag(false)
+                    Text("All meetings").tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+            } else {
+                Text("All meetings").font(.system(size: 13, weight: .semibold))
+            }
+            Spacer()
+            Button(action: newChat) { Image(systemName: "square.and.pencil") }
+                .buttonStyle(.borderless).pressayInteraction()
+                .disabled(exchanges.isEmpty)
+                .help("New chat")
+            Button(action: close) { Image(systemName: "xmark") }
+                .buttonStyle(.borderless).pressayInteraction()
+                .help("Close")
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 46)
+    }
 
-    private var answers: some View {
+    private var messages: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 18) {
+                    if exchanges.isEmpty { suggestions }
                     ForEach(exchanges) { exchange in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(exchange.question).font(.callout.weight(.semibold))
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(exchange.question)
+                                .font(.system(size: 13))
+                                .textSelection(.enabled)
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .background(PressayPalette.accentSurface, in: .rect(cornerRadius: 14))
+                                .frame(maxWidth: .infinity, alignment: .trailing)
                             if let answer = exchange.answer {
-                                MarkdownNoteBody(markdown: answer)
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(exchange.failed ? .secondary : .primary)
+                                MarkdownNoteBody(markdown: answer, fontSize: 13.5, dimmed: exchange.failed)
                             } else {
                                 HStack(spacing: 6) {
                                     ProgressView().controlSize(.small)
-                                    Text("Thinking…").foregroundStyle(.secondary)
+                                    Text(scope == nil ? "Reading your meetings…" : "Reading the meeting…")
+                                        .foregroundStyle(.secondary)
                                 }
-                                .font(.callout)
+                                .font(.system(size: 13))
                             }
                         }
                         .id(exchange.id)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(16)
             }
-            .frame(maxHeight: 280)
             .onChange(of: exchanges.count) { _, _ in
-                if let last = exchanges.last { proxy.scrollTo(last.id, anchor: .top) }
+                if let last = exchanges.last { withAnimation { proxy.scrollTo(last.id, anchor: .top) } }
             }
         }
     }
 
-    private func send() {
-        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var suggestions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(scope == nil ? "Ask anything across your meetings." : "Ask anything about this meeting.")
+                .font(.system(size: 13)).foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+            ForEach(scope == nil ? Self.acrossMeetings : Self.aboutMeeting, id: \.self) { prompt in
+                Button {
+                    send(prompt)
+                } label: {
+                    Text(prompt)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(PressayPalette.button, in: .capsule)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .disabled(!available)
+            }
+        }
+    }
+
+    private static let aboutMeeting = ["What did we decide?", "What do I need to do?", "Write a follow-up email"]
+    private static let acrossMeetings = ["What do I owe people?", "Summarize this week’s meetings", "What’s still unresolved?"]
+
+    private var input: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField(placeholder, text: $question, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .lineLimit(1...5)
+                .focused($focused)
+                .onSubmit { send(question) }
+                .disabled(!available)
+                .padding(.vertical, 4)
+            Button {
+                send(question)
+            } label: {
+                Image(systemName: "arrow.up.circle.fill").font(.system(size: 22))
+            }
+            .buttonStyle(.borderless).pressayInteraction()
+            .disabled(question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy || !available)
+        }
+        .padding(.leading, 14).padding(.trailing, 8).padding(.vertical, 8)
+        .background(PressayPalette.base.opacity(0.6), in: .rect(cornerRadius: 16))
+        .padding(10)
+    }
+
+    private var available: Bool { coordinator.notesModel != nil && coordinator.settings.notesUseAI }
+
+    private var placeholder: String {
+        if coordinator.notesModel == nil { return "Set up AI in Settings to ask" }
+        if !coordinator.settings.notesUseAI { return "AI is off in Notetaker settings" }
+        return exchanges.isEmpty ? "Ask a question" : "Ask a follow-up"
+    }
+
+    private var busy: Bool { exchanges.last.map { $0.answer == nil } ?? false }
+
+    private func close() {
+        withAnimation(.snappy) { open = false }
+    }
+
+    private func newChat() {
+        task?.cancel()
+        exchanges = []
+        question = ""
+    }
+
+    private func send(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !busy, available else { return }
         question = ""
+        let history = exchanges.compactMap { exchange in
+            exchange.answer.flatMap { exchange.failed ? nil : MeetingAskPrompt.Exchange(question: exchange.question, answer: $0) }
+        }
         let exchange = Exchange(question: text)
         exchanges.append(exchange)
-        withAnimation(.snappy) { expanded = true }
-        Task {
+        let scope = scope
+        task = Task {
             let answer: String
             var failed = false
             do {
-                answer = try await coordinator.ask(text, about: noteID)
+                answer = try await coordinator.ask(text, history: history, about: scope)
             } catch {
                 answer = error.localizedDescription
                 failed = true
             }
-            if let index = exchanges.firstIndex(where: { $0.id == exchange.id }) {
-                exchanges[index].answer = answer
-                exchanges[index].failed = failed
-            }
+            guard !Task.isCancelled, let index = exchanges.firstIndex(where: { $0.id == exchange.id }) else { return }
+            exchanges[index].answer = answer
+            exchanges[index].failed = failed
         }
     }
 }
@@ -908,80 +1006,111 @@ struct MyNotesEditor: View {
 }
 
 /// The Markdown subset notes use: headings, lists, checkboxes, inline emphasis.
+/// One text view for the whole note, so a selection can run across paragraphs like a document.
 struct MarkdownNoteBody: View {
     let markdown: String
     /// Without it, tasks show as plain bullets.
     var onToggleTask: ((ActionItem) -> Void)?
-    /// Shown beside the heading of the first task list.
-    var tasksAccessory: AnyView?
+    var fontSize: CGFloat = 15
+    var dimmed = false
 
     private enum Block {
-        case heading(String, accessory: Bool)
+        case heading(String)
         case paragraph(String)
         case bullet(String, nested: Bool)
         case numbered(String, String)
         case task(ActionItem)
+        case othersHeading
+        case othersTask(ActionItem)
     }
 
     var body: some View {
         let blocks = blocks
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                view(for: block)
-                    .padding(.top, spacing(before: index, in: blocks))
-            }
-        }
-        .font(.system(size: 15))
-        .textSelection(.enabled)
-    }
-
-    @ViewBuilder
-    private func view(for block: Block) -> some View {
-        switch block {
-        case .heading(let text, let accessory):
-            HStack(alignment: .firstTextBaseline) {
-                Text(inline(text)).font(.system(size: 18, weight: .semibold))
-                if accessory, let tasksAccessory {
-                    Spacer()
-                    tasksAccessory.font(.callout)
-                }
-            }
-        case .paragraph(let text):
-            Text(inline(text)).lineSpacing(4)
-        case .bullet(let text, let nested):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(nested ? "◦" : "•").foregroundStyle(.secondary)
-                Text(inline(text)).lineSpacing(3)
-            }
-            .padding(.leading, nested ? 20 : 0)
-        case .numbered(let number, let text):
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(number).monospacedDigit().foregroundStyle(.secondary)
-                Text(inline(text)).lineSpacing(3)
-            }
-        case .task(let item) where onToggleTask == nil:
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("•").foregroundStyle(.secondary)
-                Text("\(Text(inline(item.text)))\(ownerText(item))")
-            }
-        case .task(let item):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Button { onToggleTask?(item) } label: {
-                    Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(item.done ? Color.accentColor : .secondary)
-                        .imageScale(.large)
-                }
-                .buttonStyle(PressayPlainButtonStyle())
-                .accessibilityLabel(item.done ? "Mark as not done" : "Mark as done")
-                Text("\(Text(inline(item.text)).strikethrough(item.done))\(ownerText(item))")
-                    .foregroundStyle(item.done ? .secondary : .primary)
-            }
+        let tasks = blocks.compactMap { if case .task(let item) = $0 { item } else { nil } }
+        SelectableText(text: attributed(blocks)) { url in
+            guard url.scheme == "pressay-task", let line = Int(url.host() ?? ""),
+                let item = tasks.first(where: { $0.line == line })
+            else { return }
+            onToggleTask?(item)
         }
     }
 
-    private func ownerText(_ item: ActionItem) -> Text {
-        guard let owner = item.owner else { return Text("") }
-        return Text("  " + (item.isMine ? "You" : owner)).font(.callout.weight(.medium)).foregroundStyle(.secondary)
+    private func attributed(_ blocks: [Block]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let body = NSFont.systemFont(ofSize: fontSize)
+        let primary = dimmed ? NSColor.secondaryLabelColor : NSColor.labelColor
+        for (index, block) in blocks.enumerated() {
+            let style = NSMutableParagraphStyle()
+            style.paragraphSpacingBefore = spacing(before: index, in: blocks)
+            style.lineSpacing = 3
+            var line = NSMutableAttributedString()
+            func append(_ text: String, _ attributes: [NSAttributedString.Key: Any] = [:]) {
+                line.append(NSAttributedString(string: text, attributes: [.font: body, .foregroundColor: primary].merging(attributes) { $1 }))
+            }
+            func hang(_ indent: CGFloat, marker: CGFloat = 0) {
+                style.firstLineHeadIndent = marker
+                style.headIndent = indent
+                style.tabStops = [NSTextTab(textAlignment: .left, location: indent)]
+            }
+            switch block {
+            case .heading(let text):
+                line = inline(text, font: .systemFont(ofSize: fontSize + 3, weight: .semibold), color: primary)
+            case .paragraph(let text):
+                style.lineSpacing = 4
+                line = inline(text, font: body, color: primary)
+            case .bullet(let text, let nested):
+                hang(nested ? 36 : 16, marker: nested ? 20 : 0)
+                append((nested ? "◦" : "•") + "\t", [.foregroundColor: NSColor.secondaryLabelColor])
+                line.append(inline(text, font: body, color: primary))
+            case .numbered(let number, let text):
+                hang(22)
+                append(number + "\t", [.foregroundColor: NSColor.secondaryLabelColor])
+                line.append(inline(text, font: body, color: primary))
+            case .othersHeading:
+                line = NSMutableAttributedString(string: "For others", attributes: [
+                    .font: NSFont.systemFont(ofSize: fontSize - 2, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor,
+                ])
+            case .othersTask(let item):
+                hang(16)
+                append("•\t", [.foregroundColor: NSColor.secondaryLabelColor])
+                append((item.owner ?? "") + "  ", [.font: NSFont.systemFont(ofSize: fontSize, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor])
+                line.append(inline(item.text, font: body, color: .secondaryLabelColor, struck: item.done))
+            case .task(let item):
+                hang(24)
+                if onToggleTask == nil {
+                    append("•\t", [.foregroundColor: NSColor.secondaryLabelColor])
+                } else {
+                    line.append(checkbox(item, height: fontSize))
+                    append("\t")
+                }
+                line.append(inline(item.text, font: body, color: item.done ? .secondaryLabelColor : primary, struck: item.done))
+                if let owner = item.owner {
+                    append("  " + (item.isMine ? "You" : owner), [
+                        .font: NSFont.systemFont(ofSize: fontSize - 2, weight: .medium), .foregroundColor: NSColor.secondaryLabelColor,
+                    ])
+                }
+            }
+            if index < blocks.count - 1 { line.append(NSAttributedString(string: "\n", attributes: [.font: body])) }
+            line.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: line.length))
+            result.append(line)
+        }
+        return result
+    }
+
+    private func checkbox(_ item: ActionItem, height: CGFloat) -> NSAttributedString {
+        let config = NSImage.SymbolConfiguration(pointSize: height + 1, weight: .regular)
+            .applying(.init(paletteColors: [item.done ? .controlAccentColor : .secondaryLabelColor]))
+        let attachment = NSTextAttachment()
+        attachment.image = NSImage(
+            systemSymbolName: item.done ? "checkmark.circle.fill" : "circle",
+            accessibilityDescription: item.done ? "Mark as not done" : "Mark as done"
+        )?.withSymbolConfiguration(config)
+        if let size = attachment.image?.size {
+            attachment.bounds = CGRect(x: 0, y: -(size.height - height) / 2 - 2, width: size.width, height: size.height)
+        }
+        let box = NSMutableAttributedString(attachment: attachment)
+        box.addAttribute(.link, value: URL(string: "pressay-task://\(item.line)")!, range: NSRange(location: 0, length: box.length))
+        return box
     }
 
     private func spacing(before index: Int, in blocks: [Block]) -> CGFloat {
@@ -989,40 +1118,62 @@ struct MarkdownNoteBody: View {
         switch (blocks[index - 1], blocks[index]) {
         case (_, .heading): return 22
         case (.heading, _): return 8
-        case (.bullet, .bullet), (.numbered, .numbered), (.task, .task): return 6
+        case (.bullet, .bullet), (.numbered, .numbered), (.task, .task), (.othersTask, .othersTask): return 6
+        case (_, .othersHeading): return 16
+        case (.othersHeading, _): return 6
         default: return 12
         }
     }
 
-    private func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+    private func inline(_ text: String, font: NSFont, color: NSColor, struck: Bool = false) -> NSMutableAttributedString {
+        let parsed = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
+        let result = NSMutableAttributedString()
+        for run in parsed.runs {
+            var runFont = font
+            let intent = run.inlinePresentationIntent ?? []
+            if intent.contains(.stronglyEmphasized) { runFont = NSFontManager.shared.convert(runFont, toHaveTrait: .boldFontMask) }
+            if intent.contains(.emphasized) { runFont = NSFontManager.shared.convert(runFont, toHaveTrait: .italicFontMask) }
+            if intent.contains(.code) { runFont = .monospacedSystemFont(ofSize: font.pointSize - 1, weight: .regular) }
+            var attributes: [NSAttributedString.Key: Any] = [.font: runFont, .foregroundColor: color]
+            if struck { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+            if let link = run.link { attributes[.link] = link }
+            result.append(NSAttributedString(string: String(parsed[run.range].characters), attributes: attributes))
+        }
+        return result
     }
 
     private var blocks: [Block] {
         let tasks = Dictionary(ActionItem.parse(markdown).map { ($0.line, $0) }, uniquingKeysWith: { first, _ in first })
         var result: [Block] = []
         var paragraph: [String] = []
-        var lastHeading: Int?
-        var accessoryPlaced = tasksAccessory == nil
-        func flush() {
+        var run: [ActionItem] = []
+        func flushParagraph() {
             if !paragraph.isEmpty { result.append(.paragraph(paragraph.joined(separator: " "))) }
             paragraph = []
         }
+        func flush() {
+            flushParagraph()
+            // Your tasks stay a checklist; other people's are listed after, by person, for reference.
+            guard !run.isEmpty else { return }
+            let others = run.filter { $0.owner != nil && !$0.isMine }
+            result += run.filter { $0.owner == nil || $0.isMine }.map(Block.task)
+            if !others.isEmpty {
+                let order = others.compactMap(\.owner).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+                result.append(.othersHeading)
+                result += order.flatMap { owner in others.filter { $0.owner == owner } }.map(Block.othersTask)
+            }
+            run = []
+        }
         for (index, rawLine) in markdown.components(separatedBy: "\n").enumerated() {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
-            if line.isEmpty { flush(); continue }
+            if line.isEmpty { flushParagraph(); continue }
             if let item = tasks[index] {
-                flush()
-                if !accessoryPlaced, let heading = lastHeading, case .heading(let text, _) = result[heading] {
-                    result[heading] = .heading(text, accessory: true)
-                    accessoryPlaced = true
-                }
-                result.append(.task(item))
+                flushParagraph()
+                run.append(item)
             } else if let match = line.firstMatch(of: /^#{1,6}\s+(.+)$/) {
                 flush()
-                lastHeading = result.count
-                result.append(.heading(String(match.1), accessory: false))
+                result.append(.heading(String(match.1)))
             } else if let match = line.firstMatch(of: /^[-*•]\s+(.+)$/) {
                 flush(); result.append(.bullet(String(match.1), nested: rawLine.hasPrefix("  ") || rawLine.hasPrefix("\t")))
             } else if let match = line.firstMatch(of: /^(\d+[.)])\s+(.+)$/) {
@@ -1343,4 +1494,58 @@ struct HoverHighlight: ViewModifier {
 
 extension View {
     func hoverHighlight() -> some View { modifier(HoverHighlight()) }
+}
+
+/// A read-only, selectable text view sized to its content, for text SwiftUI can only select one block at a time.
+struct SelectableText: NSViewRepresentable {
+    let text: NSAttributedString
+    var onLink: (URL) -> Void = { _ in }
+
+    func makeNSView(context: Context) -> NSTextView {
+        let view = NSTextView(usingTextLayoutManager: false)
+        view.isEditable = false
+        view.isSelectable = true
+        view.drawsBackground = false
+        view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.textContainer?.widthTracksTextView = true
+        view.isVerticallyResizable = false
+        view.linkTextAttributes = [.cursor: NSCursor.pointingHand]
+        view.delegate = context.coordinator
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return view
+    }
+
+    func updateNSView(_ view: NSTextView, context: Context) {
+        context.coordinator.onLink = onLink
+        guard view.textStorage?.isEqual(to: text) != true else { return }
+        let selection = view.selectedRanges
+        view.textStorage?.setAttributedString(text)
+        view.selectedRanges = selection.filter { NSMaxRange($0.rangeValue) <= text.length }.nonEmpty ?? [NSValue(range: NSRange())]
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView view: NSTextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? 600
+        guard let container = view.textContainer, let layout = view.layoutManager else { return nil }
+        container.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        return CGSize(width: width, height: ceil(layout.usedRect(for: container).height))
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(onLink: onLink) }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var onLink: (URL) -> Void
+        init(onLink: @escaping (URL) -> Void) { self.onLink = onLink }
+
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            guard let url = link as? URL else { return false }
+            if url.scheme == "pressay-task" { onLink(url) } else { NSWorkspace.shared.open(url) }
+            return true
+        }
+    }
+}
+
+private extension Array {
+    var nonEmpty: Self? { isEmpty ? nil : self }
 }

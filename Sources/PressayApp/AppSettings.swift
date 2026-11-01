@@ -11,7 +11,6 @@ final class AppSettings: ObservableObject {
         static let asrModel = "asrModel"
         static let meetingASRModel = "meetingASRModel"
         static let meetingLanguage = "meetingLanguage"
-        static let structuredDictation = "structuredDictation"
         static let vocabulary = "vocabulary"
         static let onboardingComplete = "onboardingComplete"
         static let hasUsedDictation = "hasUsedDictation"
@@ -23,19 +22,13 @@ final class AppSettings: ObservableObject {
         static let chatGPTWelcomeShown = "chatGPTWelcomeShown"
         static let manualVocabularyOnly = "manualVocabularyOnly"
         static let notesModel = "notesModel"
-        static let snippets = "snippets"
         static let detectCalls = "detectCalls"
-        static let stopWhenCallEnds = "stopWhenCallEnds"
-        static let openNotepad = "openNotepad"
-        static let showLiveTranscript = "showLiveTranscript"
         static let maxMeetingHours = "maxMeetingHours"
         static let notesUseAI = "notesUseAI"
-        static let meetingSystemAudio = "meetingSystemAudio"
-        static let separateVoices = "separateVoices"
-        static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
+        static let retired = ["snippets", "stopWhenCallEnds", "meetingSystemAudio", "separateVoices", "polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
             "learnFromEdits", "vocabularyTuner.rules", "vocabularyTuner.blocklist",
             "vocabularyTuner.lastDetRun", "vocabularyTuner.lastK3Run",
-            "vocabularyTuner.seenCandidates", "vocabularyTuner.schemaVersion"]
+            "vocabularyTuner.seenCandidates", "vocabularyTuner.schemaVersion", "structuredDictation", "openNotepad", "showLiveTranscript"]
     }
 
     private let defaults: UserDefaults
@@ -46,7 +39,6 @@ final class AppSettings: ObservableObject {
     @Published var asrModel: ASRModel { didSet { defaults.set(asrModel.rawValue, forKey: Key.asrModel) } }
     @Published var meetingASRModel: ASRModel { didSet { defaults.set(meetingASRModel.rawValue, forKey: Key.meetingASRModel) } }
     @Published var meetingLanguage: TranscriptionLanguage { didSet { defaults.set(meetingLanguage.rawValue, forKey: Key.meetingLanguage) } }
-    @Published var structuredDictation: Bool { didSet { defaults.set(structuredDictation, forKey: Key.structuredDictation) } }
     @Published var vocabularySource: String { didSet { defaults.set(vocabularySource, forKey: Key.vocabulary) } }
     @Published var onboardingComplete: Bool { didSet { defaults.set(onboardingComplete, forKey: Key.onboardingComplete) } }
     @Published var hasUsedDictation: Bool { didSet { defaults.set(hasUsedDictation, forKey: Key.hasUsedDictation) } }
@@ -66,23 +58,12 @@ final class AppSettings: ObservableObject {
     @Published var chatGPTWelcomeShown: Bool {
         didSet { defaults.set(chatGPTWelcomeShown, forKey: Key.chatGPTWelcomeShown) }
     }
-    @Published var snippets: [Snippet] {
-        didSet { defaults.set(try? JSONEncoder().encode(snippets), forKey: Key.snippets) }
-    }
     /// A `NotesModel.id`; empty follows the AI Cleanup provider.
     @Published var notesModel: String { didSet { defaults.set(notesModel, forKey: Key.notesModel) } }
     @Published var detectCalls: Bool { didSet { defaults.set(detectCalls, forKey: Key.detectCalls) } }
-    @Published var stopWhenCallEnds: Bool { didSet { defaults.set(stopWhenCallEnds, forKey: Key.stopWhenCallEnds) } }
-    @Published var openNotepad: Bool { didSet { defaults.set(openNotepad, forKey: Key.openNotepad) } }
-    @Published var showLiveTranscript: Bool { didSet { defaults.set(showLiveTranscript, forKey: Key.showLiveTranscript) } }
     @Published var maxMeetingHours: Int { didSet { defaults.set(maxMeetingHours, forKey: Key.maxMeetingHours) } }
     /// Off keeps notes on-device.
     @Published var notesUseAI: Bool { didSet { defaults.set(notesUseAI, forKey: Key.notesUseAI) } }
-    @Published var meetingSystemAudio: Bool {
-        didSet { defaults.set(meetingSystemAudio, forKey: Key.meetingSystemAudio) }
-    }
-    /// Labels the other people on a call "Speaker 1", "Speaker 2"… instead of one "Others".
-    @Published var separateVoices: Bool { didSet { defaults.set(separateVoices, forKey: Key.separateVoices) } }
     @Published private(set) var launchAtLoginError: String?
 
     @Published var launchAtLogin: Bool {
@@ -111,15 +92,9 @@ final class AppSettings: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         notesModel = defaults.string(forKey: Key.notesModel) ?? ""
-        snippets = defaults.data(forKey: Key.snippets).flatMap { try? JSONDecoder().decode([Snippet].self, from: $0) } ?? []
         detectCalls = defaults.object(forKey: Key.detectCalls) as? Bool ?? true
-        stopWhenCallEnds = defaults.object(forKey: Key.stopWhenCallEnds) as? Bool ?? true
-        openNotepad = defaults.object(forKey: Key.openNotepad) as? Bool ?? true
-        showLiveTranscript = defaults.object(forKey: Key.showLiveTranscript) as? Bool ?? true
         maxMeetingHours = defaults.object(forKey: Key.maxMeetingHours) as? Int ?? 3
         notesUseAI = defaults.object(forKey: Key.notesUseAI) as? Bool ?? true
-        meetingSystemAudio = defaults.object(forKey: Key.meetingSystemAudio) as? Bool ?? true
-        separateVoices = defaults.object(forKey: Key.separateVoices) as? Bool ?? true
         holdKey = Self.readHoldKey(
             defaults, codeKey: Key.holdKeyCode, legacyKey: Key.holdKey, fallback: .rightOption
         )
@@ -134,9 +109,6 @@ final class AppSettings: ObservableObject {
         language = model.supportedLanguages.contains(storedLanguage)
             ? storedLanguage
             : model.defaultLanguage
-        // Default on: corpus-validated as word-preserving, and it only ever
-        // activates on longer dictations (15+ words, never terminals).
-        structuredDictation = defaults.object(forKey: Key.structuredDictation) as? Bool ?? true
         for key in Key.retired { defaults.removeObject(forKey: key) }
         let storedVocabulary = defaults.string(forKey: Key.vocabulary)
         if defaults.bool(forKey: Key.manualVocabularyOnly) {

@@ -22,15 +22,8 @@
             store.set(
                 "# Design & tools\nFigma\nNotion\n# Your words\nPressay\nTin\n# Development\nSupabase\nTypeScript",
                 forKey: "vocabulary")
-            let snippets = [
-                Snippet(trigger: "my calendar link", text: "https://cal.com/your-name"),
-                Snippet(trigger: "my address", text: "42 Market Street\nSan Francisco, CA"),
-                Snippet(trigger: "email sign off", text: "Best,\nTin"),
-            ]
-            store.set(try? JSONEncoder().encode(snippets), forKey: "snippets")
             if ProcessInfo.processInfo.environment["PRESSAY_REVIEW_EMPTY"] == "1" {
                 store.set("", forKey: "vocabulary")
-                store.set(try? JSONEncoder().encode([Snippet]()), forKey: "snippets")
             }
             return store
         }()

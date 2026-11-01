@@ -32,7 +32,6 @@ No account, no telemetry, no subscription. Audio never leaves the Mac.
 - **Dictation anywhere.** Hold Right Option (configurable), speak, release. The text lands in the field that was focused when you started, in native, web and Electron apps. The clipboard is preserved.
 - **Local speech recognition for each task.** Orukeet is recommended for fast everyday dictation; MOSS for meeting accuracy. Ranked pickers also offer Parakeet Ultra, Qwen3-ASR 1.7B and Mega-ASR. All models use automatic language detection; fixed-language choices appear where the runtime supports them.
 - **AI Cleanup (optional).** Fixes misheard words, removes fillers and false starts, and formats lists and paragraphs. Uses your Claude or OpenAI subscription or API key. Only text is sent.
-- **Snippets.** Say "my calendar link" and Pressay types the URL. Works inside any dictation.
 - **Notetaker.** Offers to take notes when a call starts. Records your mic as "You" and tells the other people on the call apart on-device (Speaker 1, Speaker 2, or their names), so it works with Zoom, Meet, Teams or Slack and no bot joins the call. When the call ends you get a titled note with a summary, decisions, action items with owners, and open questions. Ask anything about one meeting or all of them, and keep your action items in one list or send them to Reminders.
 - **Your own dictionary.** Starts empty. Add names and terms yourself; Pressay never adds words automatically. Both the on-device rules and AI Cleanup use your entries.
 - **Microphone lifecycle.** The microphone opens when you hold the talk key and closes when you release or cancel. The start sound plays once real audio arrives.
@@ -72,7 +71,7 @@ Choose **Claude** or **OpenAI**, then **Subscription** or **API key**, under **S
 | --- | --- | --- |
 | Claude | Haiku 5.5, low reasoning | Your installed Claude Code CLI |
 | OpenAI | GPT-6 Luna, medium reasoning, Fast | ChatGPT browser sign-in |
-| None | On-device formatting | No account required |
+| None | Speech model output with your dictionary spellings | No account required |
 
 Cleanup uses [Hex’s default prompt](https://github.com/anomalyco/hex). The dictionary starts empty and supplies only spellings you add manually. A replay of 20 personal transcripts and six controls favored medium reasoning for Luna; Haiku’s medium setting showed no consistent fidelity benefit. These are text-fidelity checks, not verified speech accuracy. The short prompt can still drop qualifications or alter meaning.
 
@@ -90,11 +89,11 @@ Earlier cleanup comparisons remain in [`docs/claude-cleanup/`](docs/claude-clean
 
 When Zoom, Teams, Meet, FaceTime, Slack or another call app starts using the microphone, Pressay offers to take notes. You can also click **Start Notetaker** in the menu bar or on the Notetaker page of the Pressay window.
 
-- A small notepad floats above your apps with the timer, the live transcript and your own notes.
+- While it records, the notch shows a red dot, the timer and the audio level. Hover it to stop.
 - Your mic is recorded with echo cancellation. Call audio comes from a Core Audio process tap; the first meeting asks for **System Audio Recording** permission.
 - An on-device voice activity model finds speech, even from quiet participants, and each utterance is transcribed on the Mac as soon as the speaker pauses.
 - Up to four other voices are told apart on the Mac. After the call, the AI names a speaker only when they introduced themselves or were addressed by name, and fixes misheard names and terms using your Dictionary. Rename speakers from the meeting header.
-- When the call ends (or you click **Stop**), the AI writes the note. Each meeting has **Summary**, **Transcript** and **My Notes** tabs, and an **Ask anything** box. Past meetings are grouped by day and searchable, and you can ask questions across all of them.
+- When the call ends (or you click **Stop**), the AI writes the note. Each meeting has **Summary**, **Transcript** and **My Notes** tabs. Your action items are a checklist; other people's are listed under **For others**. **Ask** (⌘J, bottom right) is a chat about the open meeting or all of them, with follow-up questions.
 - **Action items** collects your open tasks across meetings. Complete them with the circular control, or add them to Reminders. Other assignments remain in each meeting note.
 - Choose speech recognition, language, and the ranked notes model under **General › Notetaker**. Claude Sonnet 5.5 and GPT-6.1 Sol lead their provider lists. Meeting AI requires an Anthropic API key or a ChatGPT subscription connected in AI Cleanup; Claude Code subscriptions and OpenAI API keys currently support dictation cleanup only.
 - Audio is never saved. Only the transcript and your notes go to the AI provider, to write the note or answer a question.
