@@ -16,11 +16,23 @@ generate_keys --account dev.localflow.app
 
 The tool stores the private key in the login keychain and prints the public key. Set the printed public key in `Config/Info.plist` before distributing the first updatable app. Export the private key to a temporary file with `generate_keys --account dev.localflow.app -x <file>`, then pass that file on stdin to `gh secret set SPARKLE_PRIVATE_KEY --repo Zheruel/pressay-macos`. Remove the temporary file and keep a secure backup of the key. Keep the same key for subsequent releases; replacing it without a supported key rotation strands existing installs.
 
+## App signing certificate
+
+Release builds are signed with a self-signed `Pressay Release Signing` certificate. macOS ties Microphone, Accessibility and Input Monitoring approvals to it, so updates keep their permissions as long as every release uses the same certificate. It needs no paid account. It does not make the app notarized, so Gatekeeper's first-launch warning remains.
+
+Set it up once:
+
+```bash
+./scripts/create-release-signing-certificate.sh
+```
+
+The script stores the certificate in the repository's `RELEASE_SIGNING_CERTIFICATE` and `RELEASE_SIGNING_PASSWORD` Actions secrets, plus a backup in the login keychain. Keep that backup: replacing the certificate makes every user approve permissions again. The first release signed with it also asks once, because earlier releases were ad-hoc signed.
+
 ## Publish
 
 1. Update `CFBundleShortVersionString` and increase `CFBundleVersion` in `Config/Info.plist`.
 2. Merge the tested change, then push a matching `vX.Y.Z` tag.
-3. The workflow builds the ad-hoc-signed app and DMG, packages the ZIP, and uses Sparkle’s `generate_appcast` to sign the archive and generate its feed. A missing or mismatched signing key fails the release.
+3. The workflow builds the app and DMG signed with the release certificate, packages the ZIP, and uses Sparkle’s `generate_appcast` to sign the archive and generate its feed. A missing Sparkle key or release certificate fails the release.
 4. GitHub publishes `Pressay-macos-arm64.zip`, `SHA256SUMS`, `appcast.xml`, and the versioned DMG. The app’s fixed `releases/latest/download/appcast.xml` URL resolves to the latest release; the feed’s download URL pins its exact release tag.
 
 Each feed contains the current stable release. No server, Pages deployment, alternate channel, or delta update storage is needed. Do not edit or replace an archive after signing it. Publishing another release requires a higher build number.
