@@ -19,10 +19,10 @@ hdiutil create \
     "$OUTPUT" \
     >/dev/null
 
-if [[ -n "${SIGNING_IDENTITY:-}" && "${SIGNING_IDENTITY}" != "-" ]]; then
-    TIMESTAMP_ARGUMENT="--timestamp=none"
-    [[ "$SIGNING_IDENTITY" == Developer\ ID\ Application:* ]] && TIMESTAMP_ARGUMENT="--timestamp"
-    codesign --force --sign "$SIGNING_IDENTITY" "$TIMESTAMP_ARGUMENT" "$OUTPUT"
+# Only a Developer ID signature helps Gatekeeper; a self-signed one on the DMG
+# adds nothing, since permissions follow the app inside it.
+if [[ "${SIGNING_IDENTITY:-}" == Developer\ ID\ Application:* ]]; then
+    codesign --force --sign "$SIGNING_IDENTITY" --timestamp "$OUTPUT"
 fi
 
 echo "$OUTPUT"

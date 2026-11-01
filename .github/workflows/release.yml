@@ -55,6 +55,7 @@ jobs:
           trap 'rm -f "$IDENTITY_FILE"' EXIT
           printf '%s' "$RELEASE_SIGNING_CERTIFICATE" | base64 --decode > "$IDENTITY_FILE"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "RELEASE_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
           security set-keychain-settings -lut 3600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security import "$IDENTITY_FILE" -k "$KEYCHAIN" -P "$RELEASE_SIGNING_PASSWORD" -T /usr/bin/codesign >/dev/null
@@ -66,7 +67,6 @@ jobs:
           HASH="$(security find-identity -p codesigning "$KEYCHAIN" | awk '/"Pressay Release Signing"/ { print $2; exit }')"
           [[ -n "$HASH" ]] || { echo 'Release signing identity missing from the certificate secret.' >&2; exit 1; }
           echo "SIGNING_IDENTITY=$HASH" >> "$GITHUB_ENV"
-          echo "RELEASE_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
       - name: Package DMG
         run: |

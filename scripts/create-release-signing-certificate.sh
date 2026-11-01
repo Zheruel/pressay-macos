@@ -1,10 +1,8 @@
 #!/bin/zsh
 set -euo pipefail
 
-# One-time setup: creates the self-signed identity release builds are signed
-# with and stores it as GitHub Actions secrets. macOS ties Microphone,
-# Accessibility and Input Monitoring approvals to this certificate, so every
-# release must keep using it. A copy stays in the login keychain as a backup.
+# One-time setup for the release signing identity. macOS ties permission
+# approvals to it, so every release must keep using the same one.
 
 IDENTITY="Pressay Release Signing"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
@@ -41,8 +39,7 @@ subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid:always
 EOF
 
-# Long validity: an expired certificate would force a new one, and with it a
-# new round of permission prompts.
+# Replacing an expired certificate would mean new permission prompts.
 openssl req \
     -new \
     -newkey rsa:3072 \
@@ -64,14 +61,14 @@ openssl pkcs12 \
     -passout "pass:$PASSWORD" \
     -out "$TEMP_DIR/identity.p12"
 
+base64 -i "$TEMP_DIR/identity.p12" | gh secret set RELEASE_SIGNING_CERTIFICATE --repo "$REPOSITORY"
+printf '%s' "$PASSWORD" | gh secret set RELEASE_SIGNING_PASSWORD --repo "$REPOSITORY"
+# Import last: a failed upload above leaves nothing behind, so a rerun works.
 security import "$TEMP_DIR/identity.p12" \
     -k "$KEYCHAIN" \
     -P "$PASSWORD" \
     -T /usr/bin/codesign \
     >/dev/null
-
-base64 -i "$TEMP_DIR/identity.p12" | gh secret set RELEASE_SIGNING_CERTIFICATE --repo "$REPOSITORY"
-printf '%s' "$PASSWORD" | gh secret set RELEASE_SIGNING_PASSWORD --repo "$REPOSITORY"
 unset PASSWORD
 
 openssl x509 -in "$TEMP_DIR/certificate.pem" -noout -fingerprint -sha1
