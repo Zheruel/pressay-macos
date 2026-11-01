@@ -22,11 +22,10 @@ final class AppSettings: ObservableObject {
         static let chatGPTWelcomeShown = "chatGPTWelcomeShown"
         static let manualVocabularyOnly = "manualVocabularyOnly"
         static let notesModel = "notesModel"
-        static let snippets = "snippets"
         static let detectCalls = "detectCalls"
         static let maxMeetingHours = "maxMeetingHours"
         static let notesUseAI = "notesUseAI"
-        static let retired = ["stopWhenCallEnds", "meetingSystemAudio", "separateVoices", "polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
+        static let retired = ["snippets", "stopWhenCallEnds", "meetingSystemAudio", "separateVoices", "polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
             "learnFromEdits", "vocabularyTuner.rules", "vocabularyTuner.blocklist",
             "vocabularyTuner.lastDetRun", "vocabularyTuner.lastK3Run",
             "vocabularyTuner.seenCandidates", "vocabularyTuner.schemaVersion", "structuredDictation", "openNotepad", "showLiveTranscript"]
@@ -58,9 +57,6 @@ final class AppSettings: ObservableObject {
     }
     @Published var chatGPTWelcomeShown: Bool {
         didSet { defaults.set(chatGPTWelcomeShown, forKey: Key.chatGPTWelcomeShown) }
-    }
-    @Published var snippets: [Snippet] {
-        didSet { defaults.set(try? JSONEncoder().encode(snippets), forKey: Key.snippets) }
     }
     /// A `NotesModel.id`; empty follows the AI Cleanup provider.
     @Published var notesModel: String { didSet { defaults.set(notesModel, forKey: Key.notesModel) } }
@@ -96,7 +92,6 @@ final class AppSettings: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         notesModel = defaults.string(forKey: Key.notesModel) ?? ""
-        snippets = defaults.data(forKey: Key.snippets).flatMap { try? JSONDecoder().decode([Snippet].self, from: $0) } ?? []
         detectCalls = defaults.object(forKey: Key.detectCalls) as? Bool ?? true
         maxMeetingHours = defaults.object(forKey: Key.maxMeetingHours) as? Int ?? 3
         notesUseAI = defaults.object(forKey: Key.notesUseAI) as? Bool ?? true

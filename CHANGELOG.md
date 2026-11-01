@@ -23,6 +23,7 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 
 - The floating notepad, the live transcript and the in-meeting notes editor, along with their two settings. The meeting page shows a simple recording state.
 - The Stop when the call ends, Transcribe other people and Tell speakers apart settings. Meetings always stop when the call ends, record the call's audio and tell speakers apart; if macOS blocks the call's audio, the meeting records your mic and says so.
+- Snippets.
 - On-device formatting. It mostly added paragraph breaks, sometimes dropped words from detected lists, and only affected dictations without AI Cleanup.
 
 ## [1.14.1] - 2026-11-01

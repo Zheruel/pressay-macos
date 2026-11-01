@@ -803,10 +803,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             var polishLatency: TimeInterval = 0
             var usedLanguageModel = false
             let polishStarted = Date()
-            let snippet = SnippetExpander.exactMatch(deterministic, snippets: settings.snippets)
-            if let snippet {
-                finalText = snippet.text
-            } else if cleanupActive,
+            if cleanupActive,
                ClaudeCleanupPolicy.shouldClean(transcript.text, isTerminal: isTerminal) {
                 // Raw transcript: the rules' phonetic rewrites would only hand Claude errors to undo.
                 let raw = transcript.text
@@ -824,9 +821,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 } catch {
                     logger.error("AI cleanup fell back to rules: \(error.localizedDescription, privacy: .public)")
                 }
-            }
-            if snippet == nil {
-                finalText = SnippetExpander.expand(finalText, snippets: settings.snippets)
             }
             polishLatency = Date().timeIntervalSince(polishStarted)
 

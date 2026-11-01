@@ -170,14 +170,13 @@ private struct CompactHistoryRow: View {
 }
 
 enum SettingsSection: String {
-    case home, notes, history, dictionary, snippets, general, claude
+    case home, notes, history, dictionary, general, claude
     var title: String {
         switch self {
         case .home: "Home"
         case .notes: "Notetaker"
         case .history: "History"
         case .dictionary: "Dictionary"
-        case .snippets: "Snippets"
         case .general: "General"
         case .claude: "AI Cleanup"
         }
@@ -202,7 +201,7 @@ struct SettingsRootView: View {
                 }.padding(.horizontal, 11).padding(.top, 68).padding(.bottom, 26)
                 navGroup([.home, .notes, .history])
                 Spacer().frame(height: 20)
-                navGroup([.dictionary, .snippets])
+                navGroup([.dictionary])
                 Spacer().frame(height: 20)
                 navGroup([.general, .claude])
                 Spacer(minLength: 12)
@@ -245,7 +244,6 @@ struct SettingsRootView: View {
                 case .notes: NotetakerPage(coordinator: coordinator)
                 case .history: HistoryView(coordinator: coordinator)
                 case .dictionary: DictionarySettingsView(coordinator: coordinator)
-                case .snippets: SnippetsSettingsView(coordinator: coordinator)
                 case .general: GeneralSettingsView(coordinator: coordinator)
                 case .claude: ClaudeCleanupSettingsView(coordinator: coordinator)
                 }
@@ -1047,136 +1045,6 @@ private struct DictionarySettingsView: View {
                 .filter { !$0.isEmpty }
             return aliases.isEmpty ? word : "\(word) <= \(aliases.joined(separator: ", "))"
         }.joined(separator: "\n")
-    }
-}
-
-private struct SnippetsSettingsView: View {
-    @ObservedObject var coordinator: AppCoordinator
-    @ObservedObject private var settings: AppSettings
-    @State private var editing: Snippet?
-    @State private var adding = false
-    init(coordinator: AppCoordinator) {
-        self.coordinator = coordinator
-        settings = coordinator.settings
-    }
-    private func triggers(except id: UUID?) -> Set<String> {
-        Set(settings.snippets.filter { $0.id != id }.map { SnippetExpander.normalized($0.trigger) })
-    }
-    var body: some View {
-        PressayPage(lazy: true) {
-            PressayHeading(title: "Snippets", subtitle: "Expand spoken phrases into saved text.") {
-                Button {
-                    adding = true
-                } label: {
-                    Label("Add snippet", systemImage: "plus")
-                }.buttonStyle(PressayButtonStyle(kind: .primary))
-            }
-            if settings.snippets.isEmpty {
-                PressayEmpty(
-                    title: "No snippets yet",
-                    detail: "Turn a phrase into your booking link, an address, or your usual sign-off.",
-                    systemImage: "text.quote", actionTitle: "Create your first snippet", action: { adding = true })
-            } else {
-                PressayGroup(lazy: true) {
-                    ForEach(settings.snippets) { snippet in
-                        Button {
-                            editing = snippet
-                        } label: {
-                            HStack(alignment: .center, spacing: 16) {
-                                Text(snippet.trigger).font(.system(size: 13, weight: .medium)).frame(
-                                    width: 164, alignment: .leading)
-                                Image(systemName: "arrow.right").font(.system(size: 12)).foregroundStyle(
-                                    PressayPalette.muted)
-                                Text(snippet.text).font(.system(size: 13)).lineSpacing(3).lineLimit(2).foregroundStyle(
-                                    PressayPalette.muted
-                                ).frame(maxWidth: .infinity, alignment: .leading)
-                                Image(systemName: "pencil").font(.system(size: 13)).frame(width: 20, height: 28)
-                                    .foregroundStyle(PressayPalette.muted).accessibilityHidden(true)
-                            }.padding(.horizontal, 20).padding(.vertical, 17).frame(minHeight: 72)
-                        }.buttonStyle(PressayPlainButtonStyle()).help("Edit snippet").accessibilityLabel("Edit \(snippet.trigger)")
-                            .overlay(alignment: .bottom) { Rectangle().fill(PressayPalette.line).frame(height: 1) }
-                            .contextMenu {
-                                Button("Edit…") { editing = snippet }
-                                Button("Delete…", role: .destructive) { editing = snippet }
-                            }
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $adding) {
-            SnippetSheet(snippet: nil, taken: triggers(except: nil), onDelete: nil) { settings.snippets.append($0) }
-        }
-        .sheet(item: $editing) { snippet in
-            SnippetSheet(
-                snippet: snippet, taken: triggers(except: snippet.id),
-                onDelete: { settings.snippets.removeAll { $0.id == snippet.id } }
-            ) { updated in
-                if let i = settings.snippets.firstIndex(where: { $0.id == updated.id }) {
-                    settings.snippets[i] = updated
-                }
-            }
-        }
-    }
-}
-
-private struct SnippetSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let snippet: Snippet?
-    let taken: Set<String>
-    let onDelete: (() -> Void)?
-    let onSave: (Snippet) -> Void
-    @State private var trigger = ""
-    @State private var text = ""
-    @State private var deleting = false
-    private var duplicate: Bool { taken.contains(SnippetExpander.normalized(trigger)) }
-    var body: some View {
-        PressaySheet(title: snippet == nil ? "New snippet" : "Edit snippet") {
-            Text("When I say").font(.system(size: 12, weight: .semibold)).padding(.bottom, 8)
-            TextField("e.g. my calendar link", text: $trigger).modifier(PressayField()).accessibilityLabel("When I say")
-            Text("Type this").font(.system(size: 12, weight: .semibold)).padding(.top, 22).padding(.bottom, 8)
-            TextEditor(text: $text).font(.system(size: 13)).scrollContentBackground(.hidden).scrollIndicators(.hidden)
-                .frame(height: 93).modifier(PressayField()).accessibilityLabel("Type this")
-            Text(
-                duplicate
-                    ? "You already have a snippet for this phrase."
-                    : "Choose a phrase you wouldn’t otherwise say in conversation."
-            )
-            .font(.system(size: 11)).foregroundStyle(duplicate ? PressayPalette.danger : PressayPalette.muted).padding(
-                .top, 10)
-            Rectangle().fill(PressayPalette.line).frame(height: 1).padding(.top, 24)
-            HStack(spacing: 8) {
-                if onDelete != nil {
-                    Button("Delete…") { deleting = true }.buttonStyle(PressayButtonStyle(kind: .danger))
-                }
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") {
-                    onSave(
-                        .init(
-                            id: snippet?.id ?? UUID(), trigger: trigger.trimmingCharacters(in: .whitespacesAndNewlines),
-                            text: text))
-                    dismiss()
-                }
-                .buttonStyle(PressayButtonStyle(kind: .primary)).keyboardShortcut(.defaultAction)
-                .disabled(
-                    SnippetExpander.normalized(trigger).isEmpty
-                        || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || duplicate)
-            }.padding(.top, 18)
-        }
-        .onAppear {
-            trigger = snippet?.trigger ?? ""
-            text = snippet?.text ?? ""
-        }
-        .sheet(isPresented: $deleting) {
-            PressayConfirmation(
-                title: "Delete snippet?", detail: "This phrase will no longer insert its saved text.",
-                action: "Delete snippet", destructive: true
-            ) {
-                onDelete?()
-                deleting = false
-                dismiss()
-            }
-        }
     }
 }
 
