@@ -7,14 +7,20 @@ import OSLog
 final class CapturedTarget: @unchecked Sendable {
     let pid: pid_t
     let bundleID: String?
+    /// Kept so history can name apps without a bundle ID, such as dev builds.
+    let appName: String?
     let element: AXUIElement?
     let context: DictationContext
     /// The focused window's title, which tells a Gmail tab from a Slack tab in a browser.
     let windowTitle: String?
 
-    init(pid: pid_t, bundleID: String?, element: AXUIElement?, context: DictationContext, windowTitle: String? = nil) {
+    init(
+        pid: pid_t, bundleID: String?, appName: String? = nil, element: AXUIElement?, context: DictationContext,
+        windowTitle: String? = nil
+    ) {
         self.pid = pid
         self.bundleID = bundleID
+        self.appName = appName
         self.element = element
         self.context = context
         self.windowTitle = windowTitle
@@ -49,7 +55,7 @@ final class AccessibilityBridge {
             vocabulary: vocabulary
         )
         return CapturedTarget(
-            pid: pid, bundleID: bundleID, element: element, context: context,
+            pid: pid, bundleID: bundleID, appName: application?.localizedName, element: element, context: context,
             windowTitle: focusedWindowTitle(pid: pid)
         )
     }
@@ -75,6 +81,7 @@ final class AccessibilityBridge {
         return CapturedTarget(
             pid: target.pid,
             bundleID: target.bundleID,
+            appName: target.appName,
             element: element,
             context: target.context,
             windowTitle: target.windowTitle
@@ -95,6 +102,7 @@ final class AccessibilityBridge {
         return CapturedTarget(
             pid: application.processIdentifier,
             bundleID: bundleID,
+            appName: application.localizedName,
             element: element,
             context: DictationContext(
                 targetBundleID: bundleID,

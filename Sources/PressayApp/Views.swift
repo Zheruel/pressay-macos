@@ -144,7 +144,7 @@ private struct CompactHistoryRow: View {
                         copied
                             ? "Copied"
                             : [
-                                AppInfo.name(for: record.targetBundleID),
+                                AppInfo.name(for: record),
                                 record.createdAt.formatted(date: .omitted, time: .shortened),
                             ].compactMap { $0 }.joined(separator: " · ")
                     )
@@ -387,6 +387,11 @@ enum AppInfo {
         }
         names[bundleID] = .some(name)
         return name
+    }
+
+    /// Falls back to the name saved at capture when the bundle ID is missing or no longer installed.
+    static func name(for record: DictationRecord) -> String? {
+        name(for: record.targetBundleID) ?? record.targetAppName
     }
 
     static func icon(for bundleID: String?) -> NSImage? {
@@ -1236,7 +1241,7 @@ private struct HistoryView: View {
         guard !searchText.isEmpty else { return history.records }
         return history.records.filter {
             $0.referenceText.localizedCaseInsensitiveContains(searchText)
-                || (AppInfo.name(for: $0.targetBundleID)?.localizedCaseInsensitiveContains(searchText) ?? false)
+                || (AppInfo.name(for: $0)?.localizedCaseInsensitiveContains(searchText) ?? false)
         }
     }
 
@@ -1301,7 +1306,7 @@ private struct HistoryRow: View {
     }
     private var meta: String {
         [
-            AppInfo.name(for: record.targetBundleID),
+            AppInfo.name(for: record),
             showsDay
                 ? record.createdAt.formatted(.relative(presentation: .named))
                 : record.createdAt.formatted(date: .omitted, time: .shortened), "\(Int(record.duration.rounded())) sec",

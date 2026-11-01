@@ -838,6 +838,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 id: recordID,
                 duration: clip.duration,
                 targetBundleID: target.bundleID,
+                targetAppName: target.appName,
                 engine: engineName,
                 rawTranscript: transcript.text,
                 polishedText: finalText,
@@ -1096,8 +1097,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         finishTask = Task { [weak self] in
             let lines = await session.finish()
             guard let self else { return }
-            liveSession = nil
             overlay.endMeeting(saved: true)
+            liveSession = nil
             finishTask = nil
             applyASRModel()
             finishNote(session.noteID, newLines: lines, from: session.offset, duration: duration, automatic: automatic)
