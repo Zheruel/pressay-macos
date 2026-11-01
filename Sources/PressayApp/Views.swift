@@ -582,11 +582,6 @@ private struct GeneralSettingsView: View {
                     switchRow("Offer to take notes when a call starts", nil, $settings.detectCalls)
                     switchRow("Stop when the call ends", nil, $settings.stopWhenCallEnds).disabled(
                         !settings.detectCalls)
-                    switchRow(
-                        "Transcribe other people", "Include your Mac’s audio with your microphone.",
-                        $settings.meetingSystemAudio)
-                    switchRow("Tell speakers apart", nil, $settings.separateVoices).disabled(
-                        !settings.meetingSystemAudio)
                 }
             }
             PressaySection(title: "While recording") {

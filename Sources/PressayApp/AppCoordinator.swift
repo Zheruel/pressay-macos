@@ -1027,9 +1027,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 offset: 0,
                 transcriber: transcriber,
                 vocabulary: settings.vocabularyEntries,
-                inputUID: settings.inputDeviceUID,
-                captureSystemAudio: settings.meetingSystemAudio,
-                separateVoices: settings.separateVoices
+                inputUID: settings.inputDeviceUID
             )
             session.onLine = { [weak self] line in
                 self?.notes.modify(noteID) { $0.lines.append(line) }

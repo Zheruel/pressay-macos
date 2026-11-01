@@ -27,9 +27,7 @@ final class AppSettings: ObservableObject {
         static let stopWhenCallEnds = "stopWhenCallEnds"
         static let maxMeetingHours = "maxMeetingHours"
         static let notesUseAI = "notesUseAI"
-        static let meetingSystemAudio = "meetingSystemAudio"
-        static let separateVoices = "separateVoices"
-        static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
+        static let retired = ["meetingSystemAudio", "separateVoices", "polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
             "learnFromEdits", "vocabularyTuner.rules", "vocabularyTuner.blocklist",
             "vocabularyTuner.lastDetRun", "vocabularyTuner.lastK3Run",
             "vocabularyTuner.seenCandidates", "vocabularyTuner.schemaVersion", "structuredDictation", "openNotepad", "showLiveTranscript"]
@@ -72,11 +70,6 @@ final class AppSettings: ObservableObject {
     @Published var maxMeetingHours: Int { didSet { defaults.set(maxMeetingHours, forKey: Key.maxMeetingHours) } }
     /// Off keeps notes on-device.
     @Published var notesUseAI: Bool { didSet { defaults.set(notesUseAI, forKey: Key.notesUseAI) } }
-    @Published var meetingSystemAudio: Bool {
-        didSet { defaults.set(meetingSystemAudio, forKey: Key.meetingSystemAudio) }
-    }
-    /// Labels the other people on a call "Speaker 1", "Speaker 2"… instead of one "Others".
-    @Published var separateVoices: Bool { didSet { defaults.set(separateVoices, forKey: Key.separateVoices) } }
     @Published private(set) var launchAtLoginError: String?
 
     @Published var launchAtLogin: Bool {
@@ -110,8 +103,6 @@ final class AppSettings: ObservableObject {
         stopWhenCallEnds = defaults.object(forKey: Key.stopWhenCallEnds) as? Bool ?? true
         maxMeetingHours = defaults.object(forKey: Key.maxMeetingHours) as? Int ?? 3
         notesUseAI = defaults.object(forKey: Key.notesUseAI) as? Bool ?? true
-        meetingSystemAudio = defaults.object(forKey: Key.meetingSystemAudio) as? Bool ?? true
-        separateVoices = defaults.object(forKey: Key.separateVoices) as? Bool ?? true
         holdKey = Self.readHoldKey(
             defaults, codeKey: Key.holdKeyCode, legacyKey: Key.holdKey, fallback: .rightOption
         )

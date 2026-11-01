@@ -46,8 +46,7 @@ final class LiveSession: ObservableObject {
         transcriber: any SpeechTranscriber,
         vocabulary: [VocabularyParser.Entry],
         inputUID: String?,
-        captureSystemAudio: Bool,
-        separateVoices: Bool = false,
+        captureSystemAudio: Bool = true,
         startedAt: Date = .now
     ) throws {
         self.startedAt = startedAt
@@ -55,7 +54,7 @@ final class LiveSession: ObservableObject {
         self.kind = kind
         self.offset = offset
         system = kind == .meeting && captureSystemAudio ? SystemAudioCapture() : nil
-        voices = system != nil && separateVoices ? VoiceSeparator() : nil
+        voices = system != nil ? VoiceSeparator() : nil
 
         let (stream, continuation) = AsyncStream<SegmentPipeline.Item>.makeStream()
         pipeline = SegmentPipeline(continuation: continuation, detector: kind == .meeting ? SpeechDetector.make() : nil)
