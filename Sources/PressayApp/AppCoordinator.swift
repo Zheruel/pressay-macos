@@ -172,7 +172,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         reloadClaudeKey()
         reloadOpenAIKey()
         callDetector.onEvent = { [weak self] in self?.handleCall($0) }
-        callSettingsWatch = settings.$detectCalls.sink { [weak self] in self?.applyCallDetection($0) }
+        // Always on, so Stop when the call ends works without the offer; it only reads which apps use the mic.
+        callDetector.start()
+        callSettingsWatch = settings.$detectCalls.sink { [weak self] in if !$0 { self?.callPrompt.dismiss() } }
         for note in notes.notes where note.needsWriteUp { writeUpNote(note.id, review: true) }
         Task { await prepareModel() }
         if !settings.onboardingComplete {
@@ -918,25 +920,18 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         NotesModel.options(claude: claudeAPIKey != nil, chatGPT: chatGPT.isSignedIn)
     }
 
-    private func applyCallDetection(_ detect: Bool) {
-        if detect {
-            callDetector.start()
-        } else {
-            callDetector.stop()
-            callPrompt.dismiss()
-        }
-    }
-
     private func handleCall(_ event: CallDetectionState.Event) {
         switch event {
         case .started(let app):
+            // A meeting started before the call was detected still belongs to it.
+            liveSession?.fromCall = true
             guard settings.detectCalls, liveSession == nil else { return }
             callPrompt.show(app: app) { [weak self] in
                 self?.startMeeting()
             }
         case .ended:
             callPrompt.dismiss()
-            if settings.stopWhenCallEnds, let session = liveSession, session.fromCall {
+            if let session = liveSession, session.fromCall {
                 stopRecording(automatic: true)
             }
         }
@@ -1219,16 +1214,17 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    func ask(_ question: String, about noteID: UUID?) async throws -> String {
+    func ask(_ question: String, history: [MeetingAskPrompt.Exchange] = [], about noteID: UUID?) async throws -> String {
         guard settings.notesUseAI else { throw NotesAIError.turnedOff }
-        let source = noteID.flatMap(notes.note).map { [$0] } ?? Self.relevantMeetings(for: question, in: notes.notes)
+        let context = ([question] + history.map(\.question)).joined(separator: " ")
+        let source = noteID.flatMap(notes.note).map { [$0] } ?? Self.relevantMeetings(for: context, in: notes.notes)
         guard !source.isEmpty else { return "There are no meetings to search yet." }
         let meetings = source.map {
             MeetingAskPrompt.Meeting(title: $0.title, date: $0.createdAt, notes: $0.body, myNotes: $0.myNotes, transcript: $0.transcriptText)
         }
         return try await completeNote(
             system: MeetingAskPrompt.system,
-            user: MeetingAskPrompt.user(question: question, meetings: meetings),
+            user: MeetingAskPrompt.user(question: question, meetings: meetings, history: history),
             timeout: 90
         )
     }
@@ -1255,7 +1251,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         return "The AI couldn’t write this note: \(error.localizedDescription)"
     }
 
-    private static func relevantMeetings(for question: String, in notes: [Note], limit: Int = 30) -> [Note] {
+    /// Most relevant first, so the transcript budget goes to the meetings the question is about.
+    private static func relevantMeetings(for question: String, in notes: [Note], limit: Int = 40) -> [Note] {
         let words = question.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 3 }
         func hits(_ note: Note) -> Int {
             let text = (note.title + " " + note.body + " " + note.myNotes).lowercased()
@@ -1266,8 +1263,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         let ranked = scored.sorted { a, b in
             a.hits != b.hits ? a.hits > b.hits : a.note.createdAt > b.note.createdAt
         }
-        let picked: [Note] = ranked.prefix(limit).map { $0.note }
-        return picked.sorted { $0.createdAt > $1.createdAt }
+        return ranked.prefix(limit).map { $0.note }
     }
 
     /// Ticking a box is not an edit, so a later write-up can still replace the notes.

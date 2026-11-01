@@ -24,10 +24,9 @@ final class AppSettings: ObservableObject {
         static let notesModel = "notesModel"
         static let snippets = "snippets"
         static let detectCalls = "detectCalls"
-        static let stopWhenCallEnds = "stopWhenCallEnds"
         static let maxMeetingHours = "maxMeetingHours"
         static let notesUseAI = "notesUseAI"
-        static let retired = ["meetingSystemAudio", "separateVoices", "polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
+        static let retired = ["stopWhenCallEnds", "meetingSystemAudio", "separateVoices", "polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
             "learnFromEdits", "vocabularyTuner.rules", "vocabularyTuner.blocklist",
             "vocabularyTuner.lastDetRun", "vocabularyTuner.lastK3Run",
             "vocabularyTuner.seenCandidates", "vocabularyTuner.schemaVersion", "structuredDictation", "openNotepad", "showLiveTranscript"]
@@ -66,7 +65,6 @@ final class AppSettings: ObservableObject {
     /// A `NotesModel.id`; empty follows the AI Cleanup provider.
     @Published var notesModel: String { didSet { defaults.set(notesModel, forKey: Key.notesModel) } }
     @Published var detectCalls: Bool { didSet { defaults.set(detectCalls, forKey: Key.detectCalls) } }
-    @Published var stopWhenCallEnds: Bool { didSet { defaults.set(stopWhenCallEnds, forKey: Key.stopWhenCallEnds) } }
     @Published var maxMeetingHours: Int { didSet { defaults.set(maxMeetingHours, forKey: Key.maxMeetingHours) } }
     /// Off keeps notes on-device.
     @Published var notesUseAI: Bool { didSet { defaults.set(notesUseAI, forKey: Key.notesUseAI) } }
@@ -100,7 +98,6 @@ final class AppSettings: ObservableObject {
         notesModel = defaults.string(forKey: Key.notesModel) ?? ""
         snippets = defaults.data(forKey: Key.snippets).flatMap { try? JSONDecoder().decode([Snippet].self, from: $0) } ?? []
         detectCalls = defaults.object(forKey: Key.detectCalls) as? Bool ?? true
-        stopWhenCallEnds = defaults.object(forKey: Key.stopWhenCallEnds) as? Bool ?? true
         maxMeetingHours = defaults.object(forKey: Key.maxMeetingHours) as? Int ?? 3
         notesUseAI = defaults.object(forKey: Key.notesUseAI) as? Bool ?? true
         holdKey = Self.readHoldKey(

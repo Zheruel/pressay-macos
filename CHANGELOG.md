@@ -6,19 +6,23 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 
 ### Fixed
 
+- A meeting now stops when the call ends even if you started it before joining the call, or with call offers turned off.
 - Speech models load again in downloaded releases. Release builds were missing MLX's Metal shader library, so the speech engine stopped before loading the model.
 - Fix a crash when the OpenAI cleanup connection was closed during its warm-up ping.
 
 ### Changed
 
 - Meetings show in the notch like dictation: a red dot, the timer and the audio level. Hover to stop; stopping shows Saving, then Saved.
+- Ask is a chat in the bottom-right corner (⌘J): ask about the open meeting or all meetings, with follow-up questions. Answers know today's date and say which meeting each point comes from.
+- Meeting summaries are one selectable document: drag to select across paragraphs. Your action items stay a checklist; other people's are listed under For others. Add to Reminders moves to the toolbar.
+- The Summary, Transcript and My Notes tabs are easier to click.
 - Model download progress now shows in the sidebar.
 - The Dictionary is one editable list: each word has a Sounds like field for what it gets misheard as, and an × to remove it. Edits save as you type.
 
 ### Removed
 
 - The floating notepad, the live transcript and the in-meeting notes editor, along with their two settings. The meeting page shows a simple recording state.
-- The Transcribe other people and Tell speakers apart settings. Meetings always record the call's audio and tell speakers apart; if macOS blocks the call's audio, the meeting records your mic and says so.
+- The Stop when the call ends, Transcribe other people and Tell speakers apart settings. Meetings always stop when the call ends, record the call's audio and tell speakers apart; if macOS blocks the call's audio, the meeting records your mic and says so.
 - On-device formatting. It mostly added paragraph breaks, sometimes dropped words from detected lists, and only affected dictations without AI Cleanup.
 
 ## [1.14.1] - 2026-11-01

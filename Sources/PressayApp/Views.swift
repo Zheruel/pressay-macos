@@ -580,8 +580,6 @@ private struct GeneralSettingsView: View {
             PressaySection(title: "Calls") {
                 PressayGroup {
                     switchRow("Offer to take notes when a call starts", nil, $settings.detectCalls)
-                    switchRow("Stop when the call ends", nil, $settings.stopWhenCallEnds).disabled(
-                        !settings.detectCalls)
                 }
             }
             PressaySection(title: "While recording") {
