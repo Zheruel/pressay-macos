@@ -2,6 +2,16 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.14.2] - 2026-11-01
+
+### Fixed
+
+- Speech models load again in downloaded releases. Release builds were missing MLX's Metal shader library, so the speech engine stopped before loading the model.
+
+### Changed
+
+- Model download progress now shows in the sidebar.
+
 ## [1.14.1] - 2026-11-01
 
 ### Fixed

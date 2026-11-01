@@ -229,6 +229,13 @@ struct SettingsRootView: View {
                             )
                             .font(.system(size: 11))
                         }
+                        if coordinator.modelPreparing, let progress = coordinator.modelDownloadProgress {
+                            HStack(spacing: 8) {
+                                ProgressView(value: progress).controlSize(.small)
+                                Text("\(Int(progress * 100))%").font(.system(size: 10)).monospacedDigit()
+                                    .foregroundStyle(PressayPalette.muted)
+                            }
+                        }
                     }
                     Text("On-device · \(coordinator.activeSpeechModelName)").font(.system(size: 10)).foregroundStyle(
                         PressayPalette.muted)
@@ -653,13 +660,8 @@ struct ModelStatusView: View {
     var body: some View {
         if coordinator.modelPreparing {
             HStack(spacing: 8) {
-                if let value = coordinator.modelDownloadProgress {
-                    ProgressView(value: value).frame(width: 90)
-                    Text("\(Int(value * 100))%").monospacedDigit()
-                } else {
-                    ProgressView().controlSize(.small)
-                    Text("Loading…")
-                }
+                ProgressView().controlSize(.small)
+                Text("Loading…")
             }.font(.system(size: 11)).foregroundStyle(PressayPalette.muted)
         } else if coordinator.modelReady {
             StatusLabel(text: "Ready", color: PressayPalette.success)
