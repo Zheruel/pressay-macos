@@ -25,8 +25,6 @@ final class AppSettings: ObservableObject {
         static let snippets = "snippets"
         static let detectCalls = "detectCalls"
         static let stopWhenCallEnds = "stopWhenCallEnds"
-        static let openNotepad = "openNotepad"
-        static let showLiveTranscript = "showLiveTranscript"
         static let maxMeetingHours = "maxMeetingHours"
         static let notesUseAI = "notesUseAI"
         static let meetingSystemAudio = "meetingSystemAudio"
@@ -34,7 +32,7 @@ final class AppSettings: ObservableObject {
         static let retired = ["polishHoldKeyCode", "polishModel", "noteStyle", "matchAppStyle", "keepMicWarm", "vocabularySuggestions.pending", "vocabularySuggestions.lastMined", "vocabularySuggestions.dismissed",
             "learnFromEdits", "vocabularyTuner.rules", "vocabularyTuner.blocklist",
             "vocabularyTuner.lastDetRun", "vocabularyTuner.lastK3Run",
-            "vocabularyTuner.seenCandidates", "vocabularyTuner.schemaVersion", "structuredDictation"]
+            "vocabularyTuner.seenCandidates", "vocabularyTuner.schemaVersion", "structuredDictation", "openNotepad", "showLiveTranscript"]
     }
 
     private let defaults: UserDefaults
@@ -71,8 +69,6 @@ final class AppSettings: ObservableObject {
     @Published var notesModel: String { didSet { defaults.set(notesModel, forKey: Key.notesModel) } }
     @Published var detectCalls: Bool { didSet { defaults.set(detectCalls, forKey: Key.detectCalls) } }
     @Published var stopWhenCallEnds: Bool { didSet { defaults.set(stopWhenCallEnds, forKey: Key.stopWhenCallEnds) } }
-    @Published var openNotepad: Bool { didSet { defaults.set(openNotepad, forKey: Key.openNotepad) } }
-    @Published var showLiveTranscript: Bool { didSet { defaults.set(showLiveTranscript, forKey: Key.showLiveTranscript) } }
     @Published var maxMeetingHours: Int { didSet { defaults.set(maxMeetingHours, forKey: Key.maxMeetingHours) } }
     /// Off keeps notes on-device.
     @Published var notesUseAI: Bool { didSet { defaults.set(notesUseAI, forKey: Key.notesUseAI) } }
@@ -112,8 +108,6 @@ final class AppSettings: ObservableObject {
         snippets = defaults.data(forKey: Key.snippets).flatMap { try? JSONDecoder().decode([Snippet].self, from: $0) } ?? []
         detectCalls = defaults.object(forKey: Key.detectCalls) as? Bool ?? true
         stopWhenCallEnds = defaults.object(forKey: Key.stopWhenCallEnds) as? Bool ?? true
-        openNotepad = defaults.object(forKey: Key.openNotepad) as? Bool ?? true
-        showLiveTranscript = defaults.object(forKey: Key.showLiveTranscript) as? Bool ?? true
         maxMeetingHours = defaults.object(forKey: Key.maxMeetingHours) as? Int ?? 3
         notesUseAI = defaults.object(forKey: Key.notesUseAI) as? Bool ?? true
         meetingSystemAudio = defaults.object(forKey: Key.meetingSystemAudio) as? Bool ?? true

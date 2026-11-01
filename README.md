@@ -90,7 +90,7 @@ Earlier cleanup comparisons remain in [`docs/claude-cleanup/`](docs/claude-clean
 
 When Zoom, Teams, Meet, FaceTime, Slack or another call app starts using the microphone, Pressay offers to take notes. You can also click **Start Notetaker** in the menu bar or on the Notetaker page of the Pressay window.
 
-- A small notepad floats above your apps with the timer, the live transcript and your own notes.
+- While it records, the notch shows a red dot, the timer and the audio level. Hover it to stop.
 - Your mic is recorded with echo cancellation. Call audio comes from a Core Audio process tap; the first meeting asks for **System Audio Recording** permission.
 - An on-device voice activity model finds speech, even from quiet participants, and each utterance is transcribed on the Mac as soon as the speaker pauses.
 - Up to four other voices are told apart on the Mac. After the call, the AI names a speaker only when they introduced themselves or were addressed by name, and fixes misheard names and terms using your Dictionary. Rename speakers from the meeting header.

@@ -81,9 +81,6 @@ struct MenuContentView: View {
                 menuDivider.padding(.top, 8).padding(.bottom, 10)
                 if coordinator.liveSession != nil {
                     MenuRow(title: "Stop Notetaker", icon: "stop.fill") { coordinator.stopRecording() }
-                    MenuRow(title: "Show notepad", icon: "rectangle.on.rectangle") {
-                        coordinator.showNotepadIfRecording()
-                    }
                 } else {
                     MenuRow(
                         title: coordinator.meetingStarting ? "Cancel Notetaker setup" : "Start Notetaker", icon: "plus"
@@ -596,9 +593,6 @@ private struct GeneralSettingsView: View {
                             items: [1, 2, 3, 4, 6, 8].map { .choice("\($0) \($0 == 1 ? "hour" : "hours")", $0) }
                         ).labelsHidden().frame(width: 130)
                     }
-                    switchRow("Show the notepad", nil, $settings.openNotepad)
-                    switchRow("Show the live transcript", nil, $settings.showLiveTranscript).disabled(
-                        !settings.openNotepad)
                 }
             }
         }

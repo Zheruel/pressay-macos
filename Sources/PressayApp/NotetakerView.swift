@@ -271,10 +271,6 @@ private struct NotePage: View {
                 LiveMeetingView(
                     session: session,
                     title: store.note(id)?.title ?? "Meeting",
-                    earlierLines: store.note(id)?.lines.filter { $0.start < session.offset } ?? [],
-                    othersLabel: store.note(id)?.othersLabel ?? "Others",
-                    speakerNames: store.note(id)?.speakerNames ?? [],
-                    myNotes: myNotes(persist: false),
                     onStop: { coordinator.stopRecording() },
                     onDiscard: coordinator.discardRecording
                 )

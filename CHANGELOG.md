@@ -11,11 +11,13 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 
 ### Changed
 
+- Meetings show in the notch like dictation: a red dot, the timer and the audio level. Hover to stop; stopping shows Saving, then Saved.
 - Model download progress now shows in the sidebar.
 - The Dictionary is one editable list: each word has a Sounds like field for what it gets misheard as, and an × to remove it. Edits save as you type.
 
 ### Removed
 
+- The floating notepad, the live transcript and the in-meeting notes editor, along with their two settings. The meeting page shows a simple recording state.
 - On-device formatting. It mostly added paragraph breaks, sometimes dropped words from detected lists, and only affected dictations without AI Cleanup.
 
 ## [1.14.1] - 2026-11-01

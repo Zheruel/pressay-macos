@@ -77,7 +77,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     @Published private(set) var openAIAPIKey: String?
     private lazy var onboardingWindow = OnboardingWindowController(coordinator: self)
     private lazy var settingsWindow = SettingsWindowController(coordinator: self)
-    private lazy var notepad = NotepadPanelController(coordinator: self)
     private let callPrompt = CallPromptController()
     private let callDetector = CallDetector()
     @Published var settingsPaneRequest: String?
@@ -269,7 +268,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         case "key":
             claudeAPIKey = "sk-ant-demo-000000000000000000001234"
             showSettings()
-        case "notepad":
+        case "meeting-island":
             startMeeting()
         case "notes":
             showNotes()
@@ -955,7 +954,12 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             }
             engineModel = settings.meetingASRModel
             liveSession = session
-            notepad.show(session: session)
+            showMeetingIsland(session)
+            // Hover can't be scripted, so review mode can pin the expanded island.
+            if ProcessInfo.processInfo.environment["PRESSAY_REVIEW_ISLAND"] == "expanded" {
+                overlay.state.pinnedHover = true
+                overlay.state.hovering = true
+            }
             return
         }
         #endif
@@ -1035,12 +1039,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             notes.add(Note(id: noteID, kind: .meeting, title: "Meeting", body: "", transcripts: [], duration: 0))
             liveSession = session
             sounds.play(.begin)
-            // From the window, the notepad appears once the user switches away.
-            if settingsWindow.isKey || !settings.openNotepad {
-                showNotes()
-            } else {
-                notepad.show(session: session)
-            }
+            showMeetingIsland(session)
+            if settingsWindow.isKey { showNotes() }
             scheduleLengthLimit(for: session)
             logger.info("Notetaker started\(session.fromCall ? " during a call" : "", privacy: .public)")
         } catch {
@@ -1072,7 +1072,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             let duration = session.elapsed
             let lines = await session.finish()
             liveSession = nil
-            notepad.dismiss()
+            overlay.endMeeting(saved: false)
             if lines.contains(where: { !$0.text.isEmpty }) {
                 notes.modify(session.noteID) { note in
                     note.duration += duration
@@ -1093,20 +1093,21 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         guard let session = liveSession, session.phase == .recording, finishTask == nil else { return }
         sounds.play(.release)
         let duration = session.elapsed
-        notepad.dismiss()
         finishTask = Task { [weak self] in
             let lines = await session.finish()
             guard let self else { return }
             liveSession = nil
+            overlay.endMeeting(saved: true)
             finishTask = nil
             applyASRModel()
             finishNote(session.noteID, newLines: lines, from: session.offset, duration: duration, automatic: automatic)
         }
     }
 
-    func showNotepadIfRecording() {
-        guard let session = liveSession, session.phase == .recording, settings.openNotepad else { return }
-        notepad.show(session: session)
+    private func showMeetingIsland(_ session: LiveSession) {
+        overlay.showMeeting(session) { [weak self] in
+            self?.stopRecording()
+        }
     }
 
     private static func placeholderTitle(_ note: Note) -> String {
@@ -1117,7 +1118,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         guard let session = liveSession else { return }
         session.discard()
         liveSession = nil
-        notepad.dismiss()
+        overlay.endMeeting(saved: false)
         sounds.play(.cancel)
         applyASRModel()
         if session.createdNote {
