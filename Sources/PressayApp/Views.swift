@@ -960,8 +960,7 @@ private struct DictionaryRow: Identifiable, Equatable {
     var soundsLike: String
 }
 
-/// One editable row per word, like Hex's vocabulary sheet. Edits save as you type;
-/// rows without a word are kept on screen but never saved.
+/// Edits save as you type; rows without a word stay on screen but are never saved.
 private struct DictionarySettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject private var settings: AppSettings

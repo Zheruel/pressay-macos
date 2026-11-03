@@ -53,6 +53,8 @@ final class OverlayState: ObservableObject {
     /// A recording meeting lives in the island whenever no dictation state is showing.
     @Published var meeting: LiveSession?
     @Published var hovering = false
+    /// Where the island is drawn in the stage, top-left origin, for hit testing.
+    var islandFrame = CGRect.zero
     var stopMeeting: () -> Void = {}
     #if DEBUG
         /// Review mode pins hover, which can't be scripted.
@@ -67,6 +69,7 @@ final class OverlayPanelController {
     private var panel: NSPanel?
     private var dismissTask: Task<Void, Never>?
     private var orderOutTask: Task<Void, Never>?
+    private var hoverTask: Task<Void, Never>?
 
     /// Fixed stage; the island morphs inside it because window resizing can't spring smoothly.
     private static let stage = NSSize(width: 560, height: 150)
@@ -119,18 +122,42 @@ final class OverlayPanelController {
         dismiss(after: .seconds(2.6))
     }
 
-    /// The island stays up for the whole meeting and takes clicks: hover shows Stop.
+    /// The island stays up for the whole meeting: hover shows Stop.
     func showMeeting(_ session: LiveSession, stop: @escaping () -> Void) {
         dismissTask?.cancel()
         state.stopMeeting = stop
         state.meeting = session
         ensurePanel()
-        panel?.ignoresMouseEvents = false
         present()
+        hoverTask?.cancel()
+        hoverTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.trackPointer()
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+    }
+
+    /// A panel that takes clicks takes them across its whole transparent stage, so it takes them
+    /// only while the pointer is over the island.
+    private func trackPointer() {
+        guard let panel else { return }
+        #if DEBUG
+            if state.pinnedHover { return panel.ignoresMouseEvents = false }
+        #endif
+        let island = state.islandFrame
+        let frame = NSRect(
+            x: panel.frame.minX + island.minX, y: panel.frame.maxY - island.maxY,
+            width: island.width, height: island.height
+        )
+        let inside = frame.contains(NSEvent.mouseLocation)
+        if state.hovering != inside { state.hovering = inside }
+        if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
     }
 
     func endMeeting(saved: Bool) {
         guard state.meeting != nil else { return }
+        hoverTask?.cancel()
         state.meeting = nil
         state.hovering = false
         panel?.ignoresMouseEvents = true
@@ -307,13 +334,7 @@ private struct IslandView: View {
         }
         .frame(width: m.width + 2 * m.shoulder, height: m.height)
         .clipShape(shape)
-        .contentShape(shape)
-        .onHover { hovering in
-            #if DEBUG
-                if state.pinnedHover { return }
-            #endif
-            if state.meeting != nil { state.hovering = hovering }
-        }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { state.islandFrame = $0 }
         .shadow(color: .black.opacity(m.lifted ? 0.34 : 0), radius: 14, y: 6)
         .scaleEffect(bump, anchor: .top)
         .offset(x: shake)
@@ -499,7 +520,7 @@ private struct IslandShape: Shape {
 
 // MARK: - Meeting
 
-/// Red dot, elapsed time and levels beside the camera; hovering drops Open and Stop below.
+/// Red dot, elapsed time and levels beside the camera; hovering drops Stop below.
 private struct MeetingIsland: View {
     @ObservedObject var session: LiveSession
     @ObservedObject var state: OverlayState

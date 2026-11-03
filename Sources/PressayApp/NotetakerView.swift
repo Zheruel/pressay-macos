@@ -353,7 +353,6 @@ private struct NotePage: View {
                                 }
                             }
                             .padding(.horizontal, 11)
-                            // The whole tab is clickable, not just the glyphs.
                             .contentShape(.rect)
                     }
                     .buttonStyle(PressayPlainButtonStyle())
@@ -1540,7 +1539,12 @@ struct SelectableText: NSViewRepresentable {
 
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
             guard let url = link as? URL else { return false }
-            if url.scheme == "pressay-task" { onLink(url) } else { NSWorkspace.shared.open(url) }
+            switch url.scheme?.lowercased() {
+            case "pressay-task": onLink(url)
+            // Links come from AI output, so only web and mail links open.
+            case "http", "https", "mailto": NSWorkspace.shared.open(url)
+            default: break
+            }
             return true
         }
     }

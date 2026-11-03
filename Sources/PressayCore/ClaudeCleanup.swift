@@ -102,18 +102,19 @@ public enum ClaudeCleanupPrompt {
     /// Names the model can match to the style rules; unknown apps pass their bundle ID.
     static func appName(for bundleID: String?) -> String {
         guard let bundleID else { return "unknown" }
-        let known: [(prefix: String, name: String)] = [
-            ("com.anthropic.claudefordesktop", "Claude"), ("com.openai.chat", "ChatGPT"), ("com.openai.codex", "Codex"),
-            ("com.t3tools.t3code", "T3 Code (AI coding agent)"), ("com.todesktop.230313mzl4w4u92", "Cursor"),
-            ("com.microsoft.VSCode", "VS Code"), ("com.tinyspeck.slackmacgap", "Slack"), ("com.apple.MobileSMS", "Messages"),
-            ("net.whatsapp.WhatsApp", "WhatsApp"), ("com.hnc.Discord", "Discord"), ("com.apple.mail", "Mail"),
-            ("com.superhuman.electron", "Superhuman (email)"), ("com.apple.Notes", "Notes"), ("notion.id", "Notion"),
-        ]
-        return known.first { bundleID == $0.prefix }.map { "\($0.name) (\(bundleID))" } ?? bundleID
+        return knownApps[bundleID].map { "\($0) (\(bundleID))" } ?? bundleID
     }
 
+    private static let knownApps = [
+        "com.anthropic.claudefordesktop": "Claude", "com.openai.chat": "ChatGPT", "com.openai.codex": "Codex",
+        "com.t3tools.t3code": "T3 Code (AI coding agent)", "com.todesktop.230313mzl4w4u92": "Cursor",
+        "com.microsoft.VSCode": "VS Code", "com.tinyspeck.slackmacgap": "Slack", "com.apple.MobileSMS": "Messages",
+        "net.whatsapp.WhatsApp": "WhatsApp", "com.hnc.Discord": "Discord", "com.apple.mail": "Mail",
+        "com.superhuman.electron": "Superhuman (email)", "com.apple.Notes": "Notes", "notion.id": "Notion",
+    ]
+
     /// Asks for a full edit: clear, readable and formatted, keeping meaning, voice and who does what.
-    /// Chosen over Hex's one-line prompt in a blind replay of 32 past dictations; see CHANGELOG 1.14.2.
+    /// Chosen over Hex's one-line prompt in a blind replay of 32 past dictations.
     static let template = """
     You are a dictation editor. The user spoke, and a speech-to-text model wrote down the raw transcript. Turn it into the finished text they meant to write, ready to paste where they are typing.
 

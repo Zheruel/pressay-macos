@@ -7,7 +7,6 @@ import OSLog
 final class CapturedTarget: @unchecked Sendable {
     let pid: pid_t
     let bundleID: String?
-    /// Kept so history can name apps without a bundle ID, such as dev builds.
     let appName: String?
     let element: AXUIElement?
     let context: DictationContext
