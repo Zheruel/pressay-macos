@@ -2,7 +2,7 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
-## [1.14.2] - 2026-11-01
+## [1.14.2] - 2026-11-03
 
 ### Fixed
 
