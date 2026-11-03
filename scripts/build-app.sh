@@ -14,16 +14,18 @@ fi
 export CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-$ROOT/.build/ModuleCache}"
 "$ROOT/scripts/build-asr-runtime.sh"
 xcrun swift build --disable-sandbox -c "$CONFIGURATION" --product Pressay
+APP_BIN="$(xcrun swift build -c "$CONFIGURATION" --show-bin-path)"
+RUNTIME_BIN="$(xcrun swift build --package-path "$ROOT/Runtime" --build-system swiftbuild -c "$CONFIGURATION" --show-bin-path)"
 
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$CONTENTS/Frameworks"
-cp "$ROOT/.build/$CONFIGURATION/Pressay" "$CONTENTS/MacOS/Pressay"
-cp "$ROOT/Runtime/.build/$CONFIGURATION/PressayASRWorker" "$CONTENTS/MacOS/PressayASRWorker"
+cp "$APP_BIN/Pressay" "$CONTENTS/MacOS/Pressay"
+cp "$RUNTIME_BIN/PressayASRWorker" "$CONTENTS/MacOS/PressayASRWorker"
 mkdir -p "$CONTENTS/Resources/ASRRuntime"
 ditto "$ROOT/.build/asr-runtime/transcribe" "$CONTENTS/Resources/ASRRuntime/transcribe"
 ditto "$ROOT/.build/asr-runtime/orukeet" "$CONTENTS/Resources/ASRRuntime/orukeet"
 ditto "$ROOT/.build/asr-runtime/licenses" "$CONTENTS/Resources/ASRRuntime/licenses"
-for resource in "$ROOT/Runtime/.build/$CONFIGURATION/"*.bundle; do
+for resource in "$RUNTIME_BIN/"*.bundle; do
     ditto "$resource" "$CONTENTS/Resources/${resource:t}"
 done
 cp "$ROOT/Config/Info.plist" "$CONTENTS/Info.plist"
@@ -38,7 +40,7 @@ cp "$ROOT/Config/Info.plist" "$CONTENTS/Info.plist"
 # SwiftPM copies the framework into the products directory on every build —
 # the one location that is stable across SwiftPM artifact-extraction layouts.
 # The raw artifacts path is only a fallback.
-FRAMEWORK_SOURCE="$ROOT/.build/$CONFIGURATION/CTranscribe.framework"
+FRAMEWORK_SOURCE="$APP_BIN/CTranscribe.framework"
 if [[ ! -d "$FRAMEWORK_SOURCE" ]]; then
     FRAMEWORK_SOURCE="$ROOT/.build/artifacts/whisper/CTranscribe/TranscribeCpp.xcframework/macos-arm64_x86_64/CTranscribe.framework"
 fi
@@ -71,7 +73,7 @@ else
 fi
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$CONTENTS/MacOS/Pressay" 2>/dev/null || true
 SPARKLE="$CONTENTS/Frameworks/Sparkle.framework"
-ditto "$ROOT/.build/$CONFIGURATION/Sparkle.framework" "$SPARKLE"
+ditto "$APP_BIN/Sparkle.framework" "$SPARKLE"
 mkdir -p "$CONTENTS/Resources/licenses"
 cp "$ROOT/Config/Sparkle-LICENSE.txt" "$CONTENTS/Resources/licenses/Sparkle.txt"
 if [[ -d "$ROOT/Config/Sounds" ]]; then

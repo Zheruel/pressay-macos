@@ -77,7 +77,6 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     @Published private(set) var openAIAPIKey: String?
     private lazy var onboardingWindow = OnboardingWindowController(coordinator: self)
     private lazy var settingsWindow = SettingsWindowController(coordinator: self)
-    private lazy var notepad = NotepadPanelController(coordinator: self)
     private let callPrompt = CallPromptController()
     private let callDetector = CallDetector()
     @Published var settingsPaneRequest: String?
@@ -173,7 +172,9 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         reloadClaudeKey()
         reloadOpenAIKey()
         callDetector.onEvent = { [weak self] in self?.handleCall($0) }
-        callSettingsWatch = settings.$detectCalls.sink { [weak self] in self?.applyCallDetection($0) }
+        // Always on, so Stop when the call ends works without the offer; it only reads which apps use the mic.
+        callDetector.start()
+        callSettingsWatch = settings.$detectCalls.sink { [weak self] in if !$0 { self?.callPrompt.dismiss() } }
         for note in notes.notes where note.needsWriteUp { writeUpNote(note.id, review: true) }
         Task { await prepareModel() }
         if !settings.onboardingComplete {
@@ -269,7 +270,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         case "key":
             claudeAPIKey = "sk-ant-demo-000000000000000000001234"
             showSettings()
-        case "notepad":
+        case "meeting-island":
             startMeeting()
         case "notes":
             showNotes()
@@ -799,13 +800,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 englishRules: englishRules
             )
             var finalText = deterministic
-            var structureLatency: TimeInterval = 0
+            var polishLatency: TimeInterval = 0
             var usedLanguageModel = false
-            let structureStarted = Date()
-            let snippet = SnippetExpander.exactMatch(deterministic, snippets: settings.snippets)
-            if let snippet {
-                finalText = snippet.text
-            } else if cleanupActive,
+            let polishStarted = Date()
+            if cleanupActive,
                ClaudeCleanupPolicy.shouldClean(transcript.text, isTerminal: isTerminal) {
                 // Raw transcript: the rules' phonetic rewrites would only hand Claude errors to undo.
                 let raw = transcript.text
@@ -824,13 +822,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                     logger.error("AI cleanup fell back to rules: \(error.localizedDescription, privacy: .public)")
                 }
             }
-            if !usedLanguageModel, snippet == nil, settings.structuredDictation, !isTerminal, englishRules {
-                finalText = TranscriptStructurer.structure(deterministic)
-            }
-            if snippet == nil {
-                finalText = SnippetExpander.expand(finalText, snippets: settings.snippets)
-            }
-            structureLatency = Date().timeIntervalSince(structureStarted)
+            polishLatency = Date().timeIntervalSince(polishStarted)
 
             guard !Task.isCancelled else {
                 cleanUpCancelledProcessing()
@@ -842,11 +834,12 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 id: recordID,
                 duration: clip.duration,
                 targetBundleID: target.bundleID,
+                targetAppName: target.appName,
                 engine: engineName,
                 rawTranscript: transcript.text,
                 polishedText: finalText,
                 asrLatency: transcript.processingTime,
-                polishLatency: structureLatency,
+                polishLatency: polishLatency,
                 totalLatency: insertionLatency,
                 audioPath: audioURL?.path,
                 usedLanguageModel: usedLanguageModel
@@ -921,25 +914,18 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         NotesModel.options(claude: claudeAPIKey != nil, chatGPT: chatGPT.isSignedIn)
     }
 
-    private func applyCallDetection(_ detect: Bool) {
-        if detect {
-            callDetector.start()
-        } else {
-            callDetector.stop()
-            callPrompt.dismiss()
-        }
-    }
-
     private func handleCall(_ event: CallDetectionState.Event) {
         switch event {
         case .started(let app):
+            // A meeting started before the call was detected still belongs to it.
+            liveSession?.fromCall = true
             guard settings.detectCalls, liveSession == nil else { return }
             callPrompt.show(app: app) { [weak self] in
                 self?.startMeeting()
             }
         case .ended:
             callPrompt.dismiss()
-            if settings.stopWhenCallEnds, let session = liveSession, session.fromCall {
+            if let session = liveSession, session.fromCall {
                 stopRecording(automatic: true)
             }
         }
@@ -958,7 +944,12 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             }
             engineModel = settings.meetingASRModel
             liveSession = session
-            notepad.show(session: session)
+            showMeetingIsland(session)
+            // Hover can't be scripted, so review mode can pin the expanded island.
+            if ProcessInfo.processInfo.environment["PRESSAY_REVIEW_ISLAND"] == "expanded" {
+                overlay.state.pinnedHover = true
+                overlay.state.hovering = true
+            }
             return
         }
         #endif
@@ -1025,9 +1016,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 offset: 0,
                 transcriber: transcriber,
                 vocabulary: settings.vocabularyEntries,
-                inputUID: settings.inputDeviceUID,
-                captureSystemAudio: settings.meetingSystemAudio,
-                separateVoices: settings.separateVoices
+                inputUID: settings.inputDeviceUID
             )
             session.onLine = { [weak self] line in
                 self?.notes.modify(noteID) { $0.lines.append(line) }
@@ -1038,12 +1027,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             notes.add(Note(id: noteID, kind: .meeting, title: "Meeting", body: "", transcripts: [], duration: 0))
             liveSession = session
             sounds.play(.begin)
-            // From the window, the notepad appears once the user switches away.
-            if settingsWindow.isKey || !settings.openNotepad {
-                showNotes()
-            } else {
-                notepad.show(session: session)
-            }
+            showMeetingIsland(session)
+            if settingsWindow.isKey { showNotes() }
             scheduleLengthLimit(for: session)
             logger.info("Notetaker started\(session.fromCall ? " during a call" : "", privacy: .public)")
         } catch {
@@ -1075,7 +1060,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
             let duration = session.elapsed
             let lines = await session.finish()
             liveSession = nil
-            notepad.dismiss()
+            overlay.endMeeting(saved: false)
             if lines.contains(where: { !$0.text.isEmpty }) {
                 notes.modify(session.noteID) { note in
                     note.duration += duration
@@ -1096,10 +1081,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         guard let session = liveSession, session.phase == .recording, finishTask == nil else { return }
         sounds.play(.release)
         let duration = session.elapsed
-        notepad.dismiss()
         finishTask = Task { [weak self] in
             let lines = await session.finish()
             guard let self else { return }
+            overlay.endMeeting(saved: true)
             liveSession = nil
             finishTask = nil
             applyASRModel()
@@ -1107,9 +1092,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    func showNotepadIfRecording() {
-        guard let session = liveSession, session.phase == .recording, settings.openNotepad else { return }
-        notepad.show(session: session)
+    private func showMeetingIsland(_ session: LiveSession) {
+        overlay.showMeeting(session) { [weak self] in
+            self?.stopRecording()
+        }
     }
 
     private static func placeholderTitle(_ note: Note) -> String {
@@ -1120,7 +1106,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         guard let session = liveSession else { return }
         session.discard()
         liveSession = nil
-        notepad.dismiss()
+        overlay.endMeeting(saved: false)
         sounds.play(.cancel)
         applyASRModel()
         if session.createdNote {
@@ -1222,16 +1208,17 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
     }
 
-    func ask(_ question: String, about noteID: UUID?) async throws -> String {
+    func ask(_ question: String, history: [MeetingAskPrompt.Exchange] = [], about noteID: UUID?) async throws -> String {
         guard settings.notesUseAI else { throw NotesAIError.turnedOff }
-        let source = noteID.flatMap(notes.note).map { [$0] } ?? Self.relevantMeetings(for: question, in: notes.notes)
+        let context = ([question] + history.map(\.question)).joined(separator: " ")
+        let source = noteID.flatMap(notes.note).map { [$0] } ?? Self.relevantMeetings(for: context, in: notes.notes)
         guard !source.isEmpty else { return "There are no meetings to search yet." }
         let meetings = source.map {
             MeetingAskPrompt.Meeting(title: $0.title, date: $0.createdAt, notes: $0.body, myNotes: $0.myNotes, transcript: $0.transcriptText)
         }
         return try await completeNote(
             system: MeetingAskPrompt.system,
-            user: MeetingAskPrompt.user(question: question, meetings: meetings),
+            user: MeetingAskPrompt.user(question: question, meetings: meetings, history: history),
             timeout: 90
         )
     }
@@ -1258,7 +1245,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         return "The AI couldn’t write this note: \(error.localizedDescription)"
     }
 
-    private static func relevantMeetings(for question: String, in notes: [Note], limit: Int = 30) -> [Note] {
+    /// Most relevant first, so the transcript budget goes to the meetings the question is about.
+    private static func relevantMeetings(for question: String, in notes: [Note], limit: Int = 40) -> [Note] {
         let words = question.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 3 }
         func hits(_ note: Note) -> Int {
             let text = (note.title + " " + note.body + " " + note.myNotes).lowercased()
@@ -1269,8 +1257,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         let ranked = scored.sorted { a, b in
             a.hits != b.hits ? a.hits > b.hits : a.note.createdAt > b.note.createdAt
         }
-        let picked: [Note] = ranked.prefix(limit).map { $0.note }
-        return picked.sorted { $0.createdAt > $1.createdAt }
+        return ranked.prefix(limit).map { $0.note }
     }
 
     /// Ticking a box is not an edit, so a later write-up can still replace the notes.

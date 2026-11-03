@@ -43,6 +43,12 @@ public struct ClaudeCodeClient: Sendable {
 
     public init(executable: URL? = ClaudeCodeClient.findExecutable()) { self.executable = executable }
 
+    /// Claude Code otherwise spends about 3 s per run on update checks, telemetry and similar
+    /// requests after the text arrives (5.6 s → 2.0 s median for Haiku on 10 past dictations).
+    static var environment: [String: String] {
+        ProcessInfo.processInfo.environment.merging(["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"]) { _, new in new }
+    }
+
     public static func findExecutable() -> URL? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let paths = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin"]
@@ -305,6 +311,7 @@ final class ClaudeCodeProcess: @unchecked Sendable {
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
+            process.environment = ClaudeCodeClient.environment
             process.currentDirectoryURL = directory
             process.standardInput = stdin; process.standardOutput = stdout; process.standardError = stderr
             // Inherit authentication configuration unchanged. Never read credentials ourselves.
@@ -415,6 +422,7 @@ private final class ClaudeCodePendingProcess: @unchecked Sendable {
                         let process = Process()
                         process.executableURL = self.executable
                         process.arguments = self.arguments
+                        process.environment = ClaudeCodeClient.environment
                         process.currentDirectoryURL = directory
                         process.standardInput = pipe.fileHandleForReading
                         process.standardOutput = stdout

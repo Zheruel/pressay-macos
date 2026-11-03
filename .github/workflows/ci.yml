@@ -38,9 +38,9 @@ jobs:
           path: |
             .build
             Runtime/.build
-          key: spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.resolved', 'Runtime/Package.resolved') }}
+          key: spm-swiftbuild-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Package.resolved', 'Runtime/Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
+            spm-swiftbuild-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
 
       - name: Resolve dependencies
         run: xcrun swift package resolve

@@ -43,11 +43,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     var isKey: Bool { window?.isKeyWindow == true }
 
-    func windowDidResignKey(_ notification: Notification) {
-        // Switching to the call app mid-meeting brings up the notepad.
-        coordinator?.showNotepadIfRecording()
-    }
-
     private weak var coordinator: AppCoordinator?
 
     func present() {

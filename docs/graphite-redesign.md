@@ -77,7 +77,7 @@ open -n /path/to/Pressay-Review.app \
   --env PRESSAY_NO_KEYCHAIN=1
 ```
 
-Review mode is compiled only in DEBUG. It uses an isolated defaults suite, in-memory history, temporary meeting notes and synthetic fixtures. It skips hotkeys, model loading, provider credentials, login registration and system permission requests. Use `PRESSAY_REVIEW_APPEARANCE=light`, `PRESSAY_REVIEW_EMPTY=1`, or `PRESSAY_REVIEW_PERMISSIONS=missing` for variants; `PRESSAY_DEMO` also accepts `menu`, `onboarding`, `notepad` and `call`. With `notepad`, use `PRESSAY_REVIEW_MEETING_STATE=listening|recording|finishing|long` to inspect live states; `PRESSAY_REVIEW_REDUCE_MOTION=1` renders a static listening waveform without changing macOS settings.
+Review mode is compiled only in DEBUG. It uses an isolated defaults suite, in-memory history, temporary meeting notes and synthetic fixtures. It skips hotkeys, model loading, provider credentials, login registration and system permission requests. Use `PRESSAY_REVIEW_APPEARANCE=light`, `PRESSAY_REVIEW_EMPTY=1`, or `PRESSAY_REVIEW_PERMISSIONS=missing` for variants; `PRESSAY_DEMO` also accepts `menu`, `onboarding`, `meeting-island` and `call`. With `meeting-island`, `PRESSAY_REVIEW_ISLAND=expanded` pins the hovered island and `PRESSAY_REVIEW_NOTCH=1` draws it around a simulated notch; with it or `notes`, use `PRESSAY_REVIEW_MEETING_STATE=listening|recording|finishing|long` to inspect live states; `PRESSAY_REVIEW_ASK=1` opens the Ask chat; `PRESSAY_REVIEW_REDUCE_MOTION=1` renders a static listening waveform without changing macOS settings.
 
 ## Compact saved-note header · 1.12.1
 

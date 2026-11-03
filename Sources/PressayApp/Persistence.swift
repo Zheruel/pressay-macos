@@ -9,6 +9,8 @@ final class DictationRecord: Identifiable {
     var createdAt: Date
     var duration: TimeInterval
     var targetBundleID: String?
+    /// The app's name at capture, for apps without a bundle ID (such as dev builds).
+    var targetAppName: String?
     var engineRawValue: String
     var rawTranscript: String
     var polishedText: String
@@ -25,6 +27,7 @@ final class DictationRecord: Identifiable {
         createdAt: Date = .now,
         duration: TimeInterval,
         targetBundleID: String?,
+        targetAppName: String? = nil,
         engine: String,
         rawTranscript: String,
         polishedText: String,
@@ -40,6 +43,7 @@ final class DictationRecord: Identifiable {
         self.createdAt = createdAt
         self.duration = duration
         self.targetBundleID = targetBundleID
+        self.targetAppName = targetAppName
         self.engineRawValue = engine
         self.rawTranscript = rawTranscript
         self.polishedText = polishedText

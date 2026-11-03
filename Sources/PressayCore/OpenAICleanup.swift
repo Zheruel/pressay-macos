@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A connection has exactly one reader. Closing a retired connection cannot affect its replacement.
 protocol OpenAICleanupSocket: Sendable {
@@ -24,8 +25,12 @@ private struct ResponsesSocket: OpenAICleanupSocket {
     }
 
     func ping() async throws {
+        // URLSession can call the pong handler twice when the socket is closed
+        // mid-ping (warm-up timeout), and a second resume crashes the app.
+        let resumed = OSAllocatedUnfairLock(initialState: false)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             task.sendPing { error in
+                guard resumed.withLock({ done in defer { done = true }; return !done }) else { return }
                 if let error { continuation.resume(throwing: error) }
                 else { continuation.resume() }
             }

@@ -69,11 +69,11 @@
   <rect x="64" y="391" width="186" height="28" rx="14" fill="#e1eeff"/>
   <circle cx="81" cy="405" r="4" fill="#0a84ff"/>
   <text x="93" y="409" class="eyebrow" fill="#0a70e0">ON-DEVICE OPTION</text>
-  <text x="64" y="454" class="label">Structured dictation</text>
-  <text x="64" y="476" class="small">Punctuation · paragraphs · lists — deterministic, 0 ms</text>
+  <text x="64" y="454" class="label">Dictionary spellings</text>
+  <text x="64" y="476" class="small">Your words, fixed after transcription — deterministic, 0 ms</text>
   <rect x="404" y="399" width="160" height="62" rx="15" fill="#e8f2ff"/>
-  <text x="484" y="426" text-anchor="middle" class="label">Toggle</text>
-  <text x="484" y="447" text-anchor="middle" class="small">on by default</text>
+  <text x="484" y="426" text-anchor="middle" class="label">Always on</text>
+  <text x="484" y="447" text-anchor="middle" class="small">no account</text>
 
   <rect x="616" y="370" width="540" height="120" rx="18" fill="#ffffff" stroke="#e3e3e8" stroke-width="1.5"/>
   <rect x="636" y="391" width="170" height="28" rx="14" fill="#fff3e0"/>

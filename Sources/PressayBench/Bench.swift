@@ -4,7 +4,7 @@ import PressayCore
 import PressayTranscription
 
 // PressayBench — dev-only evaluation harness.
-// Subcommands: asr | asr-tune | post | structure | overhead | vocab | meeting | incremental |
+// Subcommands: asr | asr-tune | post | overhead | vocab | meeting | incremental |
 // manifest-from-audio (see the usage errors of each for options).
 
 struct ManifestEntry: Codable {
@@ -27,19 +27,6 @@ struct ASRRow: Codable {
     let rep: Int
     let latency: TimeInterval
     let text: String
-    let error: String?
-}
-
-struct StructureRow: Codable {
-    let id: String
-    let duration: TimeInterval
-    let candidate: String
-    let latency: TimeInterval
-    let changed: Bool
-    let idempotent: Bool
-    let validatorPassed: Bool
-    let paragraphs: Int
-    let bulletLines: Int
     let error: String?
 }
 
@@ -74,8 +61,6 @@ struct Bench {
             try await runASR(entries: entries(), options: options, outDir: outDir)
         case "asr-tune":
             try await runAsrTune(entries: entries(), options: options, outDir: outDir)
-        case "structure":
-            try await runStructure(entries: entries(), options: options, outDir: outDir)
         case "overhead":
             try runOverhead(entries: entries(), outDir: outDir)
         case "vocab":
@@ -249,11 +234,9 @@ struct Bench {
         let raw = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: URL(fileURLWithPath: input)))
         let vocabularySource = try options["vocabulary"].map { try String(contentsOfFile: $0, encoding: .utf8) }
         let entries = VocabularyParser.parse(vocabularySource ?? "")
-        var results: [String: [String: String]] = ["rules": [:], "rules+structure": [:]]
+        var results: [String: [String: String]] = ["rules": [:]]
         for (id, text) in raw {
-            let cleaned = DeterministicPromptCleaner.clean(text, vocabulary: entries)
-            results["rules"]![id] = cleaned
-            results["rules+structure"]![id] = TranscriptStructurer.structure(cleaned)
+            results["rules"]![id] = DeterministicPromptCleaner.clean(text, vocabulary: entries)
         }
         try JSONEncoder.bench.encode(results, to: URL(fileURLWithPath: output))
         print("wrote \(output)")
@@ -291,122 +274,6 @@ struct Bench {
         )
         try JSONEncoder.bench.encode(entries, to: manifestURL)
         print("wrote \(manifestURL.path): \(entries.count) clips from \(audioDir.path)")
-    }
-
-    // MARK: - Structuring evaluation
-
-    /// Evaluates deterministic structuring over the corpus. Transcripts come from the manifest's
-    /// stored rawTranscript or, when empty, from transcribing the clip once
-    /// into structure-transcripts.json so iteration on the rules is instant.
-    /// Output: review.md (side-by-side blocks) + structure-results.json.
-    static func runStructure(entries: [ManifestEntry], options: [String: String], outDir: URL) async throws {
-        let minDuration = TimeInterval(options["min-duration"] ?? "0") ?? 0
-        let maxClips = Int(options["max-clips"] ?? "0") ?? 0
-        let showAll = options["all"] == "1"
-        let language = options["language"] ?? "en"
-
-        var clips = entries.filter { $0.duration >= minDuration }
-        if maxClips > 0 { clips = Array(clips.prefix(maxClips)) }
-
-        // Phase A: a transcript for every clip, cached across runs.
-        let cacheURL = outDir.appending(path: "structure-transcripts.json")
-        var cache = (try? JSONDecoder().decode(
-            [String: String].self, from: Data(contentsOf: cacheURL)
-        )) ?? [:]
-        var transcriber: GGMLTranscriber?
-        var texts: [(entry: ManifestEntry, text: String)] = []
-        for clip in clips {
-            if !clip.rawTranscript.isEmpty {
-                texts.append((clip, clip.rawTranscript))
-            } else if let cached = cache[clip.id] {
-                texts.append((clip, cached))
-            } else if let audio = clip.audio, FileManager.default.fileExists(atPath: audio) {
-                if transcriber == nil {
-                    let engine = GGMLTranscriber(model: .whisperTurboGGML, language: language)
-                    try await engine.prepare()
-                    transcriber = engine
-                    print("transcribing uncached clips…")
-                }
-                let transcript = try await transcriber!.transcribe(
-                    AudioClip(samples: try loadSamples(audio))
-                )
-                cache[clip.id] = transcript.text
-                try JSONEncoder.bench.encode(cache, to: cacheURL)
-                texts.append((clip, transcript.text))
-                print(String(format: "  %5.1fs  %@", clip.duration, String(clip.id.prefix(8))))
-            }
-        }
-        print("structure evaluation: \(texts.count) transcripts")
-
-        let vocabularySource = try options["vocabulary"].map { try String(contentsOfFile: $0, encoding: .utf8) }
-        let vocabulary = VocabularyParser.parse(vocabularySource ?? "")
-        let terms = vocabulary.map(\.preferred)
-        let validator = ProtectedTokenValidator()
-        var rows: [StructureRow] = []
-        var review = "# Structuring review\n"
-        for (clip, raw) in texts {
-            let cleaned = DeterministicPromptCleaner.clean(raw, vocabulary: vocabulary)
-
-            var outputs: [(candidate: String, text: String, latency: TimeInterval, error: String?)] = []
-            let rulesStarted = ContinuousClock.now
-            let ruled = TranscriptStructurer.structure(cleaned)
-            outputs.append(("rules", ruled, rulesStarted.duration(to: .now).seconds, nil))
-
-            var anyChanged = false
-            for output in outputs {
-                let validation = validator.validate(
-                    source: cleaned, candidate: output.text, vocabulary: terms
-                )
-                let idempotent = output.candidate != "rules"
-                    || TranscriptStructurer.structure(output.text) == output.text
-                let changed = output.text != cleaned
-                anyChanged = anyChanged || changed
-                rows.append(StructureRow(
-                    id: clip.id, duration: clip.duration, candidate: output.candidate,
-                    latency: output.latency, changed: changed, idempotent: idempotent,
-                    validatorPassed: validation.isValid,
-                    paragraphs: output.text.components(separatedBy: "\n\n").count,
-                    bulletLines: output.text.components(separatedBy: "\n")
-                        .filter { $0.hasPrefix("- ") }.count,
-                    error: output.error
-                ))
-            }
-
-            if anyChanged || showAll {
-                review += "\n---\n\n## \(clip.id.prefix(8)) · \(String(format: "%.1f", clip.duration))s\n"
-                review += "\n**RAW (cleaned)**\n\n```\n\(cleaned)\n```\n"
-                for output in outputs {
-                    let label = output.candidate.uppercased()
-                    if let error = output.error {
-                        review += "\n**\(label)** — error: \(error)\n"
-                    } else {
-                        review += "\n**\(label)**\n\n```\n\(output.text)\n```\n"
-                    }
-                }
-            }
-        }
-
-        for candidate in Set(rows.map(\.candidate)).sorted() {
-            let mine = rows.filter { $0.candidate == candidate }
-            let changed = mine.filter(\.changed).count
-            let validatorFailures = mine.filter { !$0.validatorPassed }.count
-            let idempotencyFailures = mine.filter { !$0.idempotent }.count
-            let errors = mine.filter { $0.error != nil }.count
-            print(String(
-                format: "%-6@ changed %d/%d · validator failures %d · idempotency failures %d · errors %d · median latency %.0f ms",
-                candidate as NSString, changed, mine.count,
-                validatorFailures, idempotencyFailures, errors,
-                // Error rows carry a placeholder latency of 0; keep them out
-                // of the median so failures don't flatter the speed number.
-                median(mine.filter { $0.error == nil }.map(\.latency)) * 1000
-            ))
-        }
-
-        let reviewURL = outDir.appending(path: "review.md")
-        try review.write(to: reviewURL, atomically: true, encoding: .utf8)
-        let resultsURL = outDir.appending(path: "structure-results.json")
-        try JSONEncoder.bench.encode(rows, to: resultsURL)
-        print("wrote \(reviewURL.path) and \(resultsURL.path)")
     }
 
     // MARK: - Vocabulary audit
