@@ -22,13 +22,13 @@ final class ClaudeCleanupTests: XCTestCase {
         let system = try XCTUnwrap((body["system"] as? [[String: Any]])?.first)
         XCTAssertEqual(system["cache_control"] as? [String: String], ["type": "ephemeral"])
         let text = try XCTUnwrap(system["text"] as? String)
-        XCTAssertTrue(text.hasSuffix("Telnyx (may be transcribed as telnex)"))
+        XCTAssertTrue(text.hasSuffix("Telnyx (may be transcribed as telnex)\n</vocabulary>"))
         XCTAssertFalse(text.contains("{vocab}"))
         // The transcript must stay out of the cached prefix.
         XCTAssertFalse(text.contains("use telnex"))
         let message = try XCTUnwrap((body["messages"] as? [[String: Any]])?.first)
         XCTAssertEqual(message["content"] as? String,
-                       "Foreground application: com.openai.codex\nBrowser host: none\n\nRaw transcript:\n<transcript>\nuse telnex\n</transcript>")
+                       "<app>Codex (com.openai.codex)</app>\n<transcript>\nuse telnex\n</transcript>")
         XCTAssertEqual(body["thinking"] as? [String: String], ["type": "adaptive"])
         XCTAssertEqual(body["output_config"] as? [String: String], ["effort": "medium"])
 

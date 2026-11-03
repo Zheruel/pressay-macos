@@ -16,6 +16,8 @@ All notable changes to Pressay are documented here. The project follows [Semanti
 - Ask is a chat in the bottom-right corner (⌘J): ask about the open meeting or all meetings, with follow-up questions. Answers know today's date and say which meeting each point comes from.
 - Meeting summaries are one selectable document: drag to select across paragraphs. Your action items stay a checklist; other people's are listed under For others. Add to Reminders moves to the toolbar.
 - The Summary, Transcript and My Notes tabs are easier to click.
+- AI Cleanup has a new prompt: it fixes typos and misheard words, rewrites rambling into clear sentences, splits longer dictations into paragraphs, and never answers what you dictated.
+- Cleanup with a Claude subscription is about 3 seconds faster: Claude Code no longer makes update and telemetry requests on each dictation.
 - Model download progress now shows in the sidebar.
 - The Dictionary is one editable list: each word has a Sounds like field for what it gets misheard as, and an × to remove it. Edits save as you type.
 
