@@ -174,6 +174,15 @@ myRepository <= my repository
 
 The dictionary starts empty and only contains words you add. Pressay does not learn from corrections or scan your history for new entries. Remove words from their context menu at any time.
 
+## Cross-platform migration preview
+
+The migration to a shared Rust core and Tauri is being developed alongside the
+complete native Mac app. The preview has real local dictation, history and
+vocabulary, with separate storage and an explicit practice flow. It is not yet
+feature-complete and does not replace this release. See the [build instructions](apps/desktop/README.md),
+[architecture decision](docs/architecture/001-shared-rust-core.md), and
+[validation record](docs/cross-platform-validation.md).
+
 ## Development
 
 ```bash

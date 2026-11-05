@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pressay</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="icon.png" alt="" width="38" height="38" />
+        <div>Pressay<small>Cross-platform preview</small></div>
+      </div>
+      <nav aria-label="Main navigation">
+        <button class="nav active" data-page="dictation">
+          <span aria-hidden="true">◉</span> Dictation
+        </button>
+        <button class="nav" data-page="meetings">
+          <span aria-hidden="true">▤</span> Notetaker
+        </button>
+        <button class="nav" data-page="dictionary">
+          <span aria-hidden="true">Aa</span> Dictionary
+        </button>
+        <button class="nav" data-page="general">
+          <span aria-hidden="true">⚙</span> General
+        </button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div id="readiness">
+          <span class="status-dot"></span
+          ><span id="readiness-label">Set up Pressay</span>
+        </div>
+        <button class="quiet" id="setup-again">Open setup</button
+        ><button class="quiet" id="quit">Quit Pressay</button>
+      </div>
+    </aside>
+    <main id="workspace">
+      <div id="error" role="alert" hidden></div>
+      <section data-panel="dictation">
+        <div class="heading">
+          <div>
+            <h1>Dictation</h1>
+            <p>Your voice, ready to write.</p>
+          </div>
+          <kbd class="shortcut">Ctrl + Shift + Space</kbd>
+        </div>
+        <div class="hero">
+          <span class="mic-mark" aria-hidden="true">◉</span>
+          <div>
+            <h2 id="capture-status">Hold. Speak. Release.</h2>
+            <p id="capture-detail">
+              Your words appear at the cursor. Speech stays on this device.
+            </p>
+          </div>
+          <button id="cancel" hidden>Cancel</button>
+        </div>
+        <div class="stats">
+          <div><strong id="words">0</strong><span>Words dictated</span></div>
+          <div><strong id="count">0</strong><span>Dictations</span></div>
+          <div>
+            <strong id="latency">—</strong
+            ><span>Last release to insertion</span>
+          </div>
+        </div>
+        <div class="section-heading">
+          <h2>Recent dictations</h2>
+          <span>Stored on this device</span>
+        </div>
+        <div id="history" class="history"></div>
+      </section>
+      <section data-panel="meetings" hidden>
+        <div class="heading">
+          <div>
+            <h1>Notetaker</h1>
+            <p>Your imported meetings, kept intact.</p>
+          </div>
+        </div>
+        <div class="notice">
+          Meeting capture is still being ported. Continue using the native Mac
+          app to record meetings; this preview can read imported notes.
+        </div>
+        <div id="meetings"></div>
+      </section>
+      <section data-panel="dictionary" hidden>
+        <div class="heading">
+          <div>
+            <h1>Dictionary</h1>
+            <p>Your names and terms, spelled your way.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Words that matter to you</h2>
+          <p>
+            One term per line. Add a common mishearing after <code>&lt;=</code>.
+            Your dictionary starts empty.
+          </p>
+          <label for="vocabulary">Personal vocabulary</label
+          ><textarea
+            id="vocabulary"
+            rows="12"
+            spellcheck="false"
+            placeholder="Supabase&#10;myRepository &lt;= my repository"
+          ></textarea>
+          <div class="row">
+            <p id="dictionary-result" role="status"></p>
+            <button class="primary" id="save-vocabulary">
+              Save dictionary
+            </button>
+          </div>
+        </div>
+      </section>
+      <section data-panel="general" hidden>
+        <div class="heading">
+          <div>
+            <h1>General</h1>
+            <p>Make Pressay work for you.</p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Speech recognition</h2>
+          <p>
+            Models run locally. Downloads are pinned and checked before loading.
+          </p>
+          <label for="model">Dictation model</label
+          ><select id="model"></select>
+          <p class="muted" id="model-size"></p>
+          <button id="prepare" class="primary">Prepare model</button>
+          <div class="download" hidden>
+            <progress max="1" value="0"></progress>
+            <p role="status" class="download-label"></p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Microphone</h2>
+          <label for="input-device">Input device</label
+          ><select id="input-device">
+            <option value="">System default</option>
+          </select>
+          <p>
+            Pressay opens the microphone when you hold the shortcut and closes
+            it on release or cancellation.
+          </p>
+        </div>
+        <div class="card">
+          <h2>Bring your data with you</h2>
+          <p>
+            Import a migration export from the native Mac app. Existing settings
+            and history are preserved. Your original Mac files are never
+            replaced.
+          </p>
+          <label for="migration">Pressay migration JSON</label
+          ><input type="file" id="migration" accept="application/json,.json" />
+          <p role="status" id="migration-result"></p>
+        </div>
+        <div class="notice">
+          This is a validation preview. It has a separate app identity and data
+          store. The native Mac app remains the complete release, including AI
+          cleanup, meeting capture and updates.
+        </div>
+      </section>
+    </main>
+    <dialog id="onboarding" aria-labelledby="setup-title">
+      <div class="onboarding-layout">
+        <div class="setup-story">
+          <img src="icon.png" alt="" width="64" height="64" />
+          <div>
+            <p class="eyebrow">YOUR VOICE. YOUR DEVICE.</p>
+            <h2>Less typing.<br />More you.</h2>
+            <p>
+              Speak naturally. Pressay turns your words into text, right where
+              you’re working.
+            </p>
+          </div>
+          <div class="privacy">
+            <span aria-hidden="true">◈</span> Local speech recognition.<br />No
+            account required.
+          </div>
+        </div>
+        <div class="setup-content">
+          <button id="close-setup" class="close" aria-label="Close setup">
+            ×
+          </button>
+          <ol class="steps" aria-label="Setup progress">
+            <li data-step="0">1 <span>Permissions</span></li>
+            <li data-step="1">2 <span>Speech model</span></li>
+            <li data-step="2">3 <span>Try it</span></li>
+          </ol>
+          <h1 id="setup-title">A few permissions.<br />Then it’s your turn.</h1>
+          <p id="setup-description">
+            You stay in control. Allow Pressay to hear you and type where you’re
+            working.
+          </p>
+          <div data-setup="0">
+            <div class="permission-list" id="permission-list"></div>
+            <p class="muted" id="platform-note"></p>
+            <button class="primary wide" id="permissions-next">Continue</button>
+          </div>
+          <div data-setup="1" hidden>
+            <label for="setup-model">Choose your speech model</label
+            ><select id="setup-model"></select>
+            <p id="setup-model-size" class="muted"></p>
+            <div class="download" hidden>
+              <progress max="1" value="0"></progress>
+              <p class="download-label" role="status"></p>
+            </div>
+            <button class="primary wide" id="setup-prepare">
+              Download and prepare
+            </button>
+            <p class="muted">
+              Preparation includes a real model load. You can retry a failed
+              download without changing your existing model files.
+            </p>
+            <button class="wide" id="model-next" disabled>
+              Continue to practice
+            </button>
+          </div>
+          <div data-setup="2" hidden>
+            <div class="practice-prompt">
+              <span class="eyebrow">TRY SAYING</span>
+              <p>“My words belong here.”</p>
+              <span>Or say anything you like.</span>
+            </div>
+            <label for="practice"
+              >Click here, then hold
+              <kbd class="shortcut">Ctrl + Shift + Space</kbd></label
+            ><textarea
+              id="practice"
+              rows="4"
+              placeholder="Your spoken words will appear here…"
+              spellcheck="false"
+            ></textarea>
+            <p id="practice-status" role="status">
+              Hold the shortcut, speak, then release.
+            </p>
+            <button class="primary wide" id="finish-setup" disabled>
+              Start using Pressay
+            </button>
+          </div>
+          <button class="quiet" id="setup-back" hidden>← Back</button>
+          <p class="setup-error" id="setup-error" role="alert"></p>
+        </div>
+      </div>
+    </dialog>
+    <script src="app.js"></script>
+  </body>
+</html>

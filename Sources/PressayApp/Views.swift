@@ -527,6 +527,13 @@ private struct GeneralSettingsView: View {
             PressaySection(title: "App updates") {
                 UpdatePreferencesView(updater: coordinator.updates)
             }
+            PressaySection(title: "Cross-platform preview") {
+                PressayGroup {
+                    PressaySetting(title: "Export a copy", detail: "Settings, all saved dictations, and meeting notes.") {
+                        CoreMigrationExportButton()
+                    }
+                }
+            }
             if let error = coordinator.lastError {
                 Text(error).font(.system(size: 12)).foregroundStyle(PressayPalette.danger).padding(.top, 18)
                     .textSelection(.enabled)

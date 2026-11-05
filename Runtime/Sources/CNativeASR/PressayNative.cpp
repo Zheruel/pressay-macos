@@ -1,12 +1,51 @@
 #include "PressayNative.h"
 #include "vendor/transcribe.h"
 #include "vendor/nemo_asr.h"
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
 #include <string>
 #include <memory>
+#include <vector>
+
+// Keep the runtime a process-local plugin, including on Windows. Only load an
+// absolute application-owned path; dependencies resolve beside the plugin or
+// from Windows system directories, never the current working directory.
+static void *open_library(const char *path) {
+#ifdef _WIN32
+    const int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, nullptr, 0);
+    if (!count) throw std::runtime_error("Invalid runtime path");
+    std::vector<wchar_t> wide(static_cast<size_t>(count));
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide.data(), count);
+    auto library = LoadLibraryExW(wide.data(), nullptr,
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!library) throw std::runtime_error("Could not load transcription runtime (Windows error "
+        + std::to_string(GetLastError()) + ")");
+    return reinterpret_cast<void *>(library);
+#else
+    int flags = RTLD_NOW | RTLD_LOCAL;
+#ifdef __APPLE__
+    flags |= RTLD_FIRST;
+#endif
+    auto library = dlopen(path, flags);
+    if (!library) throw std::runtime_error(dlerror());
+    return library;
+#endif
+}
+static void *find_symbol(void *library, const char *name) noexcept {
+#ifdef _WIN32
+    return reinterpret_cast<void *>(GetProcAddress(reinterpret_cast<HMODULE>(library), name));
+#else
+    return dlsym(library, name);
+#endif
+}
 
 struct pressay_asr {
     void *library = nullptr;
@@ -15,14 +54,25 @@ struct pressay_asr {
     nemo_speech_asr_recognizer *orukeet = nullptr;
     std::string text;
     template<class T> T symbol(const char *name) {
-        auto p = dlsym(library, name);
+        auto p = find_symbol(library, name);
         if (!p) throw std::runtime_error(std::string("Missing runtime symbol: ") + name);
         return reinterpret_cast<T>(p);
     }
-    ~pressay_asr() {
-        if (session) symbol<decltype(&transcribe_session_free)>("transcribe_session_free")(session);
-        if (model) symbol<decltype(&transcribe_model_free)>("transcribe_model_free")(model);
-        if (orukeet) symbol<decltype(&nemo_speech_asr_destroy)>("nemo_speech_asr_destroy")(orukeet);
+    ~pressay_asr() noexcept {
+        // Loading can fail with an incomplete plugin. Destruction must never
+        // throw while unwinding the original error.
+        if (session) {
+            auto free = reinterpret_cast<decltype(&transcribe_session_free)>(find_symbol(library, "transcribe_session_free"));
+            if (free) free(session);
+        }
+        if (model) {
+            auto free = reinterpret_cast<decltype(&transcribe_model_free)>(find_symbol(library, "transcribe_model_free"));
+            if (free) free(model);
+        }
+        if (orukeet) {
+            auto free = reinterpret_cast<decltype(&nemo_speech_asr_destroy)>(find_symbol(library, "nemo_speech_asr_destroy"));
+            if (free) free(orukeet);
+        }
         // ggml owns process-global backend state; the process is the lifetime
         // boundary. Do not dlclose code while its backend threads may exist.
     }
@@ -35,8 +85,7 @@ pressay_asr *pressay_asr_load(const char *library, const char *model, int is_oru
                              char *error, size_t error_size) {
     try {
         auto h = std::make_unique<pressay_asr>();
-        h->library = dlopen(library, RTLD_NOW | RTLD_LOCAL | RTLD_FIRST);
-        if (!h->library) throw std::runtime_error(dlerror());
+        h->library = open_library(library);
         if (is_orukeet) {
             nemo_speech_asr_backend_config backend{};
             backend.size = sizeof(backend); backend.gpu = 0;

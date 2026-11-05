@@ -18,6 +18,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     /// 0…1, or `nil` when idle or the size is unknown.
     @Published private(set) var modelDownloadProgress: Double?
     @Published private(set) var lastError: String?
+    @Published private(set) var dictationMicrophoneLive = false
+    @Published private(set) var dictationMicrophoneArming = false
+    @Published private(set) var lastDictationCompletion: OnboardingDictationEvidence?
+    private var sessionReceivedAudio = false
 
     #if DEBUG
     let settings = AppSettings(defaults: DesignReview.defaults)
@@ -88,6 +92,8 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private var finishTask: Task<Void, Never>? { didSet { updateActivityChanged() } }
 
     private func updateActivityChanged() {
+        dictationMicrophoneArming = stateMachine.phase == .arming
+        if stateMachine.phase != .recording { dictationMicrophoneLive = false }
         // Let the current callback finish saving its note or inserting its dictation before relaunching.
         Task { @MainActor [weak self] in self?.updates.resumeIfIdle() }
     }
@@ -578,11 +584,14 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         settingsWindow.present()
     }
 
-    func completeOnboarding() {
+    func completeOnboarding(practiceText: String, startedAt: Date) {
         permissions.refresh()
-        guard permissions.allGranted, modelReady else { return }
+        guard permissions.allGranted, modelReady,
+              lastDictationCompletion?.verifies(practiceText: practiceText, startedAt: startedAt,
+                                                appPID: ProcessInfo.processInfo.processIdentifier) == true else { return }
         settings.onboardingComplete = true
         restartHotkey()
+        permissions.dismissGuide()
         onboardingWindow.dismiss()
     }
 
@@ -609,6 +618,7 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
         }
         activeMonitor = monitor
         sessionEngine = transcriber
+        sessionReceivedAudio = false
         keyPressedAt = Date()
         do {
             // Cue waits for real audio: a cold Bluetooth link gives 550 ms+ of silence, and beeping
@@ -633,9 +643,11 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
 
     private func captureBecameLive() {
         guard stateMachine.phase == .arming else { return }
+        sessionReceivedAudio = true
         armingTimeoutTask?.cancel()
         armingTimeoutTask = nil
         stateMachine.begin()
+        dictationMicrophoneLive = true
         prepareCleanupConnection()
         sounds.play(.begin)
         recorder.markEarcon(duration: sounds.beginCaptureDelay)
@@ -645,10 +657,15 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
     private func startArmingTimeout() {
         armingTimeoutTask?.cancel()
         armingTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(1_200))
+            try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled, let self, stateMachine.phase == .arming else { return }
-            logger.warning("mic never reported live audio; cueing on timeout")
-            captureBecameLive()
+            logger.warning("mic never reported live audio")
+            recorder.cancel()
+            let streamer = self.streamer
+            self.streamer = nil
+            Task { await streamer?.cancel() }
+            fail(PressayError.microphoneUnavailable,
+                 message: "No audio arrived. Check your microphone, then try again.")
         }
     }
 
@@ -829,6 +846,10 @@ final class AppCoordinator: ObservableObject, HoldHotkeyDelegate {
                 return
             }
             let insertion = await accessibility.insert(finalText, into: target)
+            lastDictationCompletion = OnboardingDictationEvidence(
+                text: finalText, targetPID: target.pid, receivedAudio: sessionReceivedAudio,
+                inserted: insertion != .copied, completedAt: .now
+            )
             let insertionLatency = Date().timeIntervalSince(releasedAt)
             let record = DictationRecord(
                 id: recordID,

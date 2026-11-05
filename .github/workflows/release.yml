@@ -14,18 +14,33 @@ jobs:
   release:
     name: Build and publish DMG
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 120
+    env:
+      # Keep stable self-signed releases available until Apple credentials exist.
+      PRESSAY_NOTARIZE: ${{ vars.PRESSAY_NOTARIZE || '0' }}
+      PRESSAY_NOTARY_PROFILE: pressay-release
 
     steps:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Verify tag matches the app version
+      - name: Verify release configuration and version
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
         run: |
           if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
             echo 'Configure SPARKLE_PRIVATE_KEY before publishing an updatable release.' >&2
+            exit 1
+          fi
+          if [[ "$PRESSAY_NOTARIZE" != 0 && "$PRESSAY_NOTARIZE" != 1 ]]; then
+            echo 'Repository variable PRESSAY_NOTARIZE must be 0 or 1.' >&2
+            exit 1
+          fi
+          if [[ "$PRESSAY_NOTARIZE" == 1 && ( -z "$APPLE_NOTARY_KEY" || -z "$APPLE_NOTARY_KEY_ID" || -z "$APPLE_NOTARY_ISSUER" ) ]]; then
+            echo 'Configure the Apple notarization secrets described in docs/releases.md before publishing.' >&2
             exit 1
           fi
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Config/Info.plist)"
@@ -37,15 +52,14 @@ jobs:
       - name: Run tests
         run: xcrun swift test --disable-sandbox
 
-      # Every release must be signed by the same certificate: macOS ties
-      # permission approvals to it, and an ad-hoc signature resets them.
+      # Keep signing identity stable; switching to Developer ID may need reapproval.
       - name: Import release signing certificate
         env:
           RELEASE_SIGNING_CERTIFICATE: ${{ secrets.RELEASE_SIGNING_CERTIFICATE }}
           RELEASE_SIGNING_PASSWORD: ${{ secrets.RELEASE_SIGNING_PASSWORD }}
         run: |
           if [[ -z "$RELEASE_SIGNING_CERTIFICATE" || -z "$RELEASE_SIGNING_PASSWORD" ]]; then
-            echo 'Run scripts/create-release-signing-certificate.sh before publishing a release.' >&2
+            echo 'Configure the release certificate secrets described in docs/releases.md.' >&2
             exit 1
           fi
           umask 077
@@ -56,19 +70,38 @@ jobs:
           printf '%s' "$RELEASE_SIGNING_CERTIFICATE" | base64 --decode > "$IDENTITY_FILE"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           echo "RELEASE_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
-          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          echo "PRESSAY_NOTARY_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security import "$IDENTITY_FILE" -k "$KEYCHAIN" -P "$RELEASE_SIGNING_PASSWORD" -T /usr/bin/codesign >/dev/null
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
           IFS=$'\n' read -r -d '' -a EXISTING < <(security list-keychains -d user | sed 's/^ *"//; s/"$//') || true
           security list-keychains -d user -s "$KEYCHAIN" "${EXISTING[@]}"
-          # The self-signed root is untrusted, so find-identity -v hides it;
-          # codesign still signs with it when named by its SHA-1 hash.
-          HASH="$(security find-identity -p codesigning "$KEYCHAIN" | awk '/"Pressay Release Signing"/ { print $2; exit }')"
-          [[ -n "$HASH" ]] || { echo 'Release signing identity missing from the certificate secret.' >&2; exit 1; }
-          echo "SIGNING_IDENTITY=$HASH" >> "$GITHUB_ENV"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+          if [[ -z "$IDENTITY" && "$PRESSAY_NOTARIZE" != 1 ]]; then
+            # Self-signed roots are not included by find-identity -v. Keep using
+            # the certificate hash, preserving the established release identity.
+            IDENTITY="$(security find-identity -p codesigning "$KEYCHAIN" | awk '/"Pressay Release Signing"/ { print $2; exit }')"
+          fi
+          [[ -n "$IDENTITY" ]] || { echo 'Release identity is missing; notarization requires Developer ID Application.' >&2; exit 1; }
+          echo "SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
 
-      - name: Package DMG
+      - name: Store notarization credentials in the temporary keychain
+        if: env.PRESSAY_NOTARIZE == '1'
+        env:
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          umask 077
+          NOTARY_KEY_FILE="$RUNNER_TEMP/notary-key.p8"
+          trap 'rm -f "$NOTARY_KEY_FILE"' EXIT
+          printf '%s' "$APPLE_NOTARY_KEY" > "$NOTARY_KEY_FILE"
+          xcrun notarytool store-credentials "$PRESSAY_NOTARY_PROFILE" \
+            --key "$NOTARY_KEY_FILE" --key-id "$APPLE_NOTARY_KEY_ID" \
+            --issuer "$APPLE_NOTARY_ISSUER" --keychain "$RELEASE_KEYCHAIN" >/dev/null
+
+      - name: Package and verify app and DMG (notarize when configured)
         run: |
           if ! xcrun metal --version >/dev/null 2>&1; then
             xcodebuild -downloadComponent MetalToolchain
@@ -98,9 +131,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          NOTES=()
+          if [[ "$PRESSAY_NOTARIZE" != 1 ]]; then
+            NOTES=(--notes 'This build is not Apple-notarized. Browser downloads may require System Settings → Privacy & Security → Open Anyway on first launch.')
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --title "Pressay ${GITHUB_REF_NAME#v}" \
             --generate-notes \
+            "${NOTES[@]}" \
             .build/Pressay-*.dmg \
             .build/updates/Pressay-macos-arm64.zip \
             .build/updates/SHA256SUMS \

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Pressay Preview",
+  "version": "0.1.0",
+  "identifier": "dev.localflow.preview",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Pressay Preview",
+        "width": 1060,
+        "height": 760,
+        "minWidth": 760,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "Private local dictation and meeting notes",
+    "macOS": {
+      "minimumSystemVersion": "26.0",
+      "infoPlist": "Info.plist"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libasound2t64",
+          "libwebkit2gtk-4.1-0",
+          "libayatana-appindicator3-1",
+          "libxdo3"
+        ]
+      }
+    },
+    "icon": ["icons/icon.png"]
+  }
+}

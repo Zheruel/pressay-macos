@@ -16,3 +16,11 @@ LocalFlow.app/
 
 # Generated portable design editor; canonical artboards are committed.
 designs/Pressay-Graphite.html
+
+# Rust and Tauri build output; runtime code ships in bundles, never in git.
+/target/
+/apps/desktop/src-tauri/runtime/
+/apps/desktop/src-tauri/binaries/
+/apps/desktop/src-tauri/gen/
+/apps/desktop/node_modules/
+**/__pycache__/

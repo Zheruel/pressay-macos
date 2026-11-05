@@ -20,7 +20,7 @@ final class PermissionController: ObservableObject {
         }
         var detail: String {
             switch self {
-            case .microphone: "Listens only while you hold your talk key."
+            case .microphone: "Hears your voice during dictation and meetings."
             case .accessibility: "Types the finished text at your cursor."
             case .inputMonitoring: "Notices your talk key in any app."
             }
@@ -32,9 +32,28 @@ final class PermissionController: ObservableObject {
             case .inputMonitoring: "keyboard.fill"
             }
         }
+        var instructions: String {
+            switch self {
+            case .microphone:
+                "Choose Allow in the macOS prompt. If you previously denied access, turn on Pressay in the Microphone list."
+            case .accessibility:
+                "Turn on Pressay in the Accessibility list. If it is missing, drag the app from the floating guide into the list, then turn it on."
+            case .inputMonitoring:
+                "Turn on Pressay in the Input Monitoring list. macOS may ask you to quit and reopen Pressay after changing this permission."
+            }
+        }
+        var recoveryInstructions: String {
+            switch self {
+            case .microphone:
+                "Microphone access must be requested by the app; dragging an app into this list does not grant access. If your microphone is managed, contact your administrator."
+            case .accessibility, .inputMonitoring:
+                "If an old entry no longer works after an update, remove it, add the current Pressay app, turn it on, then reopen Pressay."
+            }
+        }
     }
 
     @Published private(set) var microphoneGranted = false
+    @Published private(set) var microphoneRestricted = false
     @Published private(set) var accessibilityGranted = false
     @Published private(set) var inputMonitoringGranted = false
     #if DEBUG
@@ -42,6 +61,8 @@ final class PermissionController: ObservableObject {
     #endif
     var onStatusChange: (() -> Void)?
     private var monitoringTask: Task<Void, Never>?
+    private lazy var guide = PermissionGuideController(permissions: self)
+    private var onboardingVisible = false
 
     var allGranted: Bool { microphoneGranted && accessibilityGranted && inputMonitoringGranted }
 
@@ -67,7 +88,11 @@ final class PermissionController: ObservableObject {
         }
         #endif
 
-        let microphone = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        let microphoneStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let microphone = microphoneStatus == .authorized
+        if microphoneRestricted != (microphoneStatus == .restricted) {
+            microphoneRestricted = microphoneStatus == .restricted
+        }
         let accessibility = AXIsProcessTrusted()
         let inputMonitoring = CGPreflightListenEventAccess()
         let changed = microphone != microphoneGranted
@@ -76,6 +101,7 @@ final class PermissionController: ObservableObject {
         if microphoneGranted != microphone { microphoneGranted = microphone }
         if accessibilityGranted != accessibility { accessibilityGranted = accessibility }
         if inputMonitoringGranted != inputMonitoring { inputMonitoringGranted = inputMonitoring }
+        guide.refresh()
         if changed { onStatusChange?() }
     }
 
@@ -88,7 +114,7 @@ final class PermissionController: ObservableObject {
                 refresh()
                 // Every tick hits tccd. This is the only refresh: the key-press path runs
                 // inside the CGEventTap callback and can't afford a synchronous one.
-                let delay: Duration = allGranted ? .seconds(10) : .milliseconds(400)
+                let delay: Duration = allGranted && !onboardingVisible ? .seconds(10) : .milliseconds(400)
                 try? await Task.sleep(for: delay)
             }
         }
@@ -155,5 +181,20 @@ final class PermissionController: ObservableObject {
             string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)"
         ) else { return }
         NSWorkspace.shared.open(url)
+        if let kind, !isGranted(kind) {
+            guide.present(kind)
+        }
+    }
+
+    func dismissGuide() { guide.dismiss() }
+
+    func setOnboardingVisible(_ visible: Bool) {
+        guard onboardingVisible != visible else { return }
+        onboardingVisible = visible
+        if !visible { dismissGuide() }
+        // Restart the wait so an existing ten-second idle sleep cannot delay setup status.
+        monitoringTask?.cancel()
+        monitoringTask = nil
+        startMonitoring()
     }
 }
