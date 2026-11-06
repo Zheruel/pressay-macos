@@ -112,6 +112,11 @@ pressay_asr *pressay_asr_load(const char *library, const char *model, int is_oru
 }
 int pressay_asr_run(pressay_asr *h, const float *pcm, size_t count, const char **text,
                     char *error, size_t error_size) {
+    return pressay_asr_run_options(h, pcm, count, nullptr, 0, text, error, error_size);
+}
+int pressay_asr_run_options(pressay_asr *h, const float *pcm, size_t count,
+                           const char *language, int formatting, const char **text,
+                           char *error, size_t error_size) {
     *text = nullptr;
     try {
         if (h->orukeet) {
@@ -132,7 +137,27 @@ int pressay_asr_run(pressay_asr *h, const float *pcm, size_t count, const char *
             transcribe_run_params params;
             CALL(transcribe_run_params_init)(&params);
             params.timestamps = TRANSCRIBE_TIMESTAMPS_NONE;
-            params.language = nullptr; // Automatic detection across the model’s full language set.
+            params.language = language;
+            // Match GGMLTranscriber: stale hints fall back to automatic detection
+            // when the loaded artifact advertises a different language set.
+            if (language) {
+                transcribe_capabilities caps;
+                CALL(transcribe_capabilities_init)(&caps);
+                if (CALL(transcribe_model_get_capabilities)(h->model, &caps) != TRANSCRIBE_OK)
+                    throw std::runtime_error("Could not read speech model capabilities");
+                if (caps.n_languages > 0) {
+                    bool found = false;
+                    for (int i = 0; i < caps.n_languages; ++i)
+                        found = found || std::strcmp(caps.languages[i], language) == 0;
+                    if (!found) params.language = nullptr;
+                }
+            }
+            if (formatting) {
+                if (CALL(transcribe_model_supports)(h->model, TRANSCRIBE_FEATURE_PNC))
+                    params.pnc = TRANSCRIBE_PNC_MODE_ON;
+                if (CALL(transcribe_model_supports)(h->model, TRANSCRIBE_FEATURE_ITN))
+                    params.itn = TRANSCRIBE_ITN_MODE_ON;
+            }
             // Deliberately leave vocabulary/prompt unset: the full glossary
             // degraded MOSS accuracy in the held-out benchmark.
             auto status = CALL(transcribe_run)(h->session, pcm, static_cast<int>(count), &params);

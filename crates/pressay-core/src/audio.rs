@@ -1,7 +1,28 @@
 use crate::{Error, Result};
 pub const SAMPLE_RATE: usize = 16_000;
 pub const MAX_CHUNK_SAMPLES: usize = 25 * SAMPLE_RATE;
+/// Match the shipping host: Qwen benefits from 60 s context; other models use 25 s.
+pub fn chunk_samples(model: &str) -> usize {
+    if model == "whisperTurboGGML" {
+        300 * SAMPLE_RATE
+    } else if ["qwen3ASR17", "qwen3ASR06", "funASRMLTNano", "voxtralMini"].contains(&model) {
+        60 * SAMPLE_RATE
+    } else {
+        MAX_CHUNK_SAMPLES
+    }
+}
 
+pub fn validate_for_model(samples: &[f32], model: &str) -> Result<()> {
+    if model == "whisperTurboGGML"
+        && !samples.is_empty()
+        && samples.len() <= 300 * SAMPLE_RATE
+        && samples.iter().all(|v| v.is_finite())
+    {
+        Ok(())
+    } else {
+        validate(samples)
+    }
+}
 pub fn validate(samples: &[f32]) -> Result<()> {
     if samples.is_empty()
         || samples.len() > 60 * SAMPLE_RATE

@@ -9,6 +9,8 @@ fn main() {
         native.join("vendor/transcribe.h"),
         native.join("vendor/nemo_asr.h"),
         PathBuf::from("native/protocol_io.cpp"),
+        PathBuf::from("native/analysis.cpp"),
+        PathBuf::from("native/transcribe"),
     ] {
         println!("cargo:rerun-if-changed={}", path.display());
     }
@@ -18,6 +20,9 @@ fn main() {
         .include(native.join("include"))
         .file(native.join("PressayNative.cpp"))
         .file("native/protocol_io.cpp")
+        .include(native.join("vendor"))
+        .include("native")
+        .file("native/analysis.cpp")
         .compile("pressay_asr_adapter");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         println!("cargo:rustc-link-lib=dl");

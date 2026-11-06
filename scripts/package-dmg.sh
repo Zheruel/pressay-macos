@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Config/Info.plist")"
-APP="$ROOT/.build/Pressay.app"
-OUTPUT="$ROOT/.build/Pressay-$VERSION.dmg"
+VERSION="${PRESSAY_DMG_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Config/Info.plist")}"
+APP="${PRESSAY_DMG_APP:-$ROOT/.build/Pressay.app}"
+OUTPUT="${PRESSAY_DMG_OUTPUT:-$ROOT/.build/Pressay-$VERSION.dmg}"
 ARTWORK="$ROOT/.build/dmg-artwork"
 TOOLS="$ROOT/.build/dmg-tools"
 NOTARIZE="${PRESSAY_NOTARIZE:-0}"
@@ -19,13 +19,17 @@ if [[ "$NOTARIZE" == 1 && -z "${PRESSAY_NOTARY_PROFILE:-}" ]]; then
 fi
 
 # Explicitly opt out only when repackaging an already built app, such as layout QA.
+if [[ -n "${PRESSAY_DMG_APP:-}" && "${PRESSAY_SKIP_BUILD:-0}" != 1 ]]; then
+    echo "A custom app requires PRESSAY_SKIP_BUILD=1." >&2
+    exit 1
+fi
 if [[ "${PRESSAY_SKIP_BUILD:-0}" != 1 ]]; then
     "$ROOT/scripts/build-app.sh"
 fi
 [[ -d "$APP" ]] || { echo "Missing app: $APP" >&2; exit 1; }
 codesign --verify --deep --strict "$APP"
 APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
-[[ "$APP_VERSION" == "$VERSION" ]] || { echo 'Built app version does not match Config/Info.plist.' >&2; exit 1; }
+[[ "$APP_VERSION" == "$VERSION" ]] || { echo 'Built app version does not match the requested installer version.' >&2; exit 1; }
 
 # Inspect the actual signature, including when build-app selected its own identity.
 AUTHORITY="$(codesign --display --verbose=2 "$APP" 2>&1 | sed -n 's/^Authority=\(Developer ID Application:.*\)/\1/p' | head -n 1)"
@@ -35,7 +39,7 @@ if [[ "$NOTARIZE" == 1 ]]; then
     "$ROOT/scripts/notarize-macos.sh" "$APP"
 fi
 
-mkdir -p "$ARTWORK"
+mkdir -p "$ARTWORK" "${OUTPUT:h}"
 xcrun clang -fobjc-arc -framework AppKit \
     "$ROOT/packaging/macos/dmg/render-background.m" -o "$ARTWORK/render-background"
 "$ARTWORK/render-background" "$ARTWORK"
@@ -56,5 +60,5 @@ if [[ "$NOTARIZE" == 1 ]]; then
     "$ROOT/scripts/notarize-macos.sh" "$OUTPUT"
 fi
 hdiutil verify "$OUTPUT" >/dev/null
-"$TOOLS/bin/python3" "$ROOT/packaging/macos/dmg/verify.py" "$OUTPUT"
+"$TOOLS/bin/python3" "$ROOT/packaging/macos/dmg/verify.py" "$OUTPUT" "${APP:t}"
 echo "$OUTPUT"

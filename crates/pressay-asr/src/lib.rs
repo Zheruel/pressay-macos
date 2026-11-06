@@ -17,8 +17,9 @@ use std::{
 
 pub const SAMPLE_RATE: usize = 16_000;
 pub const MAX_SAMPLES: usize = SAMPLE_RATE * 60;
+pub const MAX_WHISPER_SAMPLES: usize = SAMPLE_RATE * 300;
 // Base64 PCM plus a small JSON envelope. Bound allocation before parsing JSON.
-pub const MAX_REQUEST_BYTES: usize = MAX_SAMPLES * 4 / 3 * 4 + 1024;
+pub const MAX_REQUEST_BYTES: usize = MAX_WHISPER_SAMPLES * 4 / 3 * 4 + 1024;
 pub const MAX_REPLY_BYTES: usize = 1_048_576;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -31,24 +32,49 @@ pub struct Transcript {
 #[serde(deny_unknown_fields)]
 struct Request {
     pcm: String,
+    #[serde(default)]
+    language: Option<String>,
 }
 
 pub trait SpeechEngine {
     fn transcribe(&mut self, samples: &[f32]) -> Result<Transcript, String>;
+    fn transcribe_with_language(
+        &mut self,
+        samples: &[f32],
+        _language: Option<&str>,
+    ) -> Result<Transcript, String> {
+        self.transcribe(samples)
+    }
+    fn max_samples(&self) -> usize {
+        MAX_SAMPLES
+    }
 }
 
 /// Parse the existing Swift worker's JSONL request without trusting audio length,
 /// float bit patterns, or JSON/base64 validity.
 pub fn decode_request(line: &[u8]) -> Result<Vec<f32>, String> {
+    decode_options(line, MAX_SAMPLES).map(|(samples, _)| samples)
+}
+
+fn decode_options(line: &[u8], maximum: usize) -> Result<(Vec<f32>, Option<String>), String> {
     if line.len() > MAX_REQUEST_BYTES {
         return Err("Oversized speech worker request".into());
     }
     let request: Request =
         serde_json::from_slice(line).map_err(|_| "Invalid speech worker request")?;
+    if request.language.as_deref().is_some_and(|language| {
+        !(2..=3).contains(&language.len()) || !language.bytes().all(|b| b.is_ascii_lowercase())
+    }) && request.language.as_deref() != Some("auto")
+    {
+        return Err("Invalid speech language hint".into());
+    }
     let bytes = STANDARD
         .decode(request.pcm)
         .map_err(|_| "Invalid PCM encoding")?;
-    if bytes.is_empty() || bytes.len() % 4 != 0 || bytes.len() / 4 > MAX_SAMPLES {
+    if bytes.is_empty()
+        || bytes.len() % 4 != 0
+        || bytes.len() / 4 > maximum.min(MAX_WHISPER_SAMPLES)
+    {
         return Err("Invalid audio length".into());
     }
     let samples: Vec<f32> = bytes
@@ -60,7 +86,7 @@ pub fn decode_request(line: &[u8]) -> Result<Vec<f32>, String> {
     if samples.iter().any(|s| !s.is_finite()) {
         return Err("Invalid audio samples".into());
     }
-    Ok(samples)
+    Ok((samples, request.language))
 }
 
 /// Serve serial requests until EOF. Recoverable request errors do not corrupt the
@@ -88,7 +114,9 @@ pub fn serve(
             ));
         }
         let start = Instant::now();
-        match decode_request(&line).and_then(|samples| engine.transcribe(&samples)) {
+        match decode_options(&line, engine.max_samples()).and_then(|(samples, language)| {
+            engine.transcribe_with_language(&samples, language.as_deref())
+        }) {
             Ok(result) => {
                 let reply = serde_json::json!({
                     "text": result.text,
@@ -124,10 +152,12 @@ unsafe extern "C" {
         error: *mut c_char,
         error_size: usize,
     ) -> *mut c_void;
-    fn pressay_asr_run(
+    fn pressay_asr_run_options(
         handle: *mut c_void,
         pcm: *const f32,
         count: usize,
+        language: *const c_char,
+        formatting: c_int,
         text: *mut *const c_char,
         error: *mut c_char,
         error_size: usize,
@@ -139,6 +169,7 @@ unsafe extern "C" {
 /// supplies serialization and cancellation, not a mutex around a GPU session.
 pub struct NativeEngine {
     handle: NonNull<c_void>,
+    model_id: String,
     _thread_affinity: PhantomData<Rc<()>>,
 }
 
@@ -172,6 +203,7 @@ impl NativeEngine {
         let handle = NonNull::new(handle).ok_or_else(|| native_error(&error))?;
         Ok(Self {
             handle,
+            model_id: model_id.into(),
             _thread_affinity: PhantomData,
         })
     }
@@ -197,7 +229,8 @@ pub fn runtime_library(model_id: &str, root: &Path) -> Result<PathBuf, String> {
             Ok(root.join("orukeet/lib/libnemo_speech_asr_c.dylib"))
         }
         "orukeet" => Err("The optimized Orukeet runtime is available only on Apple Silicon".into()),
-        "moss" | "parakeetUltra" | "qwen3ASR17" => {
+        "moss" | "parakeetUltra" | "qwen3ASR17" | "qwen3ASR06" | "funASRMLTNano"
+        | "whisperTurboGGML" | "voxtralMini" => {
             let filename = if cfg!(target_os = "windows") {
                 "transcribe.dll"
             } else if cfg!(target_os = "macos") {
@@ -213,21 +246,41 @@ pub fn runtime_library(model_id: &str, root: &Path) -> Result<PathBuf, String> {
 
 impl SpeechEngine for NativeEngine {
     fn transcribe(&mut self, samples: &[f32]) -> Result<Transcript, String> {
+        self.transcribe_with_language(samples, None)
+    }
+    fn max_samples(&self) -> usize {
+        if self.model_id == "whisperTurboGGML" {
+            MAX_WHISPER_SAMPLES
+        } else {
+            MAX_SAMPLES
+        }
+    }
+    fn transcribe_with_language(
+        &mut self,
+        samples: &[f32],
+        language: Option<&str>,
+    ) -> Result<Transcript, String> {
         if samples.is_empty()
-            || samples.len() > MAX_SAMPLES
+            || samples.len() > self.max_samples()
             || samples.iter().any(|s| !s.is_finite())
         {
             return Err("Invalid audio length or samples".into());
         }
         let mut error = [0 as c_char; 1024];
         let mut text = std::ptr::null();
+        let options = run_options(&self.model_id, language)?;
         // SAFETY: handle is exclusively borrowed; audio/error buffers live until
         // return. Returned text belongs to handle until its next native call.
         let status = unsafe {
-            pressay_asr_run(
+            pressay_asr_run_options(
                 self.handle.as_ptr(),
                 samples.as_ptr(),
                 samples.len(),
+                options
+                    .0
+                    .as_ref()
+                    .map_or(std::ptr::null(), |value| value.as_ptr()),
+                i32::from(options.1),
                 &mut text,
                 error.as_mut_ptr(),
                 error.len(),
@@ -251,6 +304,26 @@ impl SpeechEngine for NativeEngine {
     }
 }
 
+fn run_options(model: &str, language: Option<&str>) -> Result<(Option<CString>, bool), String> {
+    let accepts_hint = matches!(model, "funASRMLTNano" | "whisperTurboGGML" | "voxtralMini");
+    let hint = if accepts_hint {
+        language.filter(|language| *language != "auto")
+    } else {
+        None
+    };
+    let language = hint
+        .map(|language| {
+            if !(2..=3).contains(&language.len())
+                || !language.bytes().all(|b| b.is_ascii_lowercase())
+            {
+                return Err("Invalid speech language hint".to_string());
+            }
+            CString::new(language).map_err(|_| "Invalid speech language hint".to_string())
+        })
+        .transpose()?;
+    Ok((language, model == "funASRMLTNano"))
+}
+
 fn native_error(buffer: &[c_char]) -> String {
     // Native adapter always NUL terminates its nonempty error buffer.
     let message = unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_string_lossy();
@@ -264,5 +337,35 @@ fn native_error(buffer: &[c_char]) -> String {
 impl Drop for NativeEngine {
     fn drop(&mut self) {
         unsafe { pressay_asr_free(self.handle.as_ptr()) }
+    }
+}
+
+pub mod analysis;
+
+#[cfg(test)]
+mod option_tests {
+    use super::*;
+
+    #[test]
+    fn only_supported_engines_get_hints_and_only_fun_asr_requests_formatting() {
+        for model in [
+            "orukeet",
+            "moss",
+            "parakeetUltra",
+            "qwen3ASR17",
+            "qwen3ASR06",
+        ] {
+            assert_eq!(run_options(model, Some("en")).unwrap(), (None, false));
+        }
+        for model in ["funASRMLTNano", "whisperTurboGGML", "voxtralMini"] {
+            let (language, formatting) = run_options(model, Some("en")).unwrap();
+            assert_eq!(language.unwrap().to_str().unwrap(), "en");
+            assert_eq!(formatting, model == "funASRMLTNano");
+            assert!(run_options(model, Some("auto")).unwrap().0.is_none());
+            assert!(run_options(model, None).unwrap().0.is_none());
+            for invalid in ["", "english", "e\0n", "EN", "../en"] {
+                assert!(run_options(model, Some(invalid)).is_err());
+            }
+        }
     }
 }

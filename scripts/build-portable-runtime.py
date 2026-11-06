@@ -8,16 +8,21 @@ This builds native code only. It never downloads speech model weights.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 
 REVISION = "41738b58b305c08bdecf5379dccdc19a0f7c3b05"
 REPOSITORY = "https://github.com/handy-computer/transcribe.cpp.git"
 ROOT = Path(__file__).resolve().parent.parent
+PATCH = ROOT / "scripts/patches/transcribe-sortformer-windowed.patch"
+PATCH_SHA256 = "b96f342f86a7a72987700f818ee1f221867b73065d60ff2fcdcf939c15ee0be3"
 
 
 def run(*args: str | Path) -> None:
@@ -49,8 +54,17 @@ def build(output: Path, jobs: int, metal: bool) -> None:
     actual = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
     if actual != REVISION:
         raise SystemExit("Native runtime revision mismatch")
-    if subprocess.run(["git", "-C", str(source), "diff", "--quiet", "HEAD", "--"]).returncode:
-        raise SystemExit(f"Native runtime checkout contains changes; inspect it before rebuilding: {source}")
+    patch = PATCH.read_bytes()
+    if hashlib.sha256(patch).hexdigest() != PATCH_SHA256:
+        raise SystemExit("Sortformer runtime patch checksum mismatch")
+    changes = subprocess.check_output(["git", "-C", str(source), "diff", "--binary", "HEAD", "--"])
+    if changes and changes != patch:
+        raise SystemExit(f"Native runtime checkout contains unexpected changes; inspect it before rebuilding: {source}")
+    if not changes:
+        run("git", "-C", source, "apply", "--check", PATCH)
+        run("git", "-C", source, "apply", PATCH)
+    if subprocess.check_output(["git", "-C", str(source), "diff", "--binary", "HEAD", "--"]) != patch:
+        raise SystemExit("Native runtime patch did not apply exactly")
     options = [
         "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_INSTALL_PREFIX={install}",
         "-DTRANSCRIBE_BUILD_SHARED=ON", "-DTRANSCRIBE_BUILD_TESTS=OFF",
@@ -63,7 +77,9 @@ def build(output: Path, jobs: int, metal: bool) -> None:
     if system == "Linux":
         options += ["-DCMAKE_INSTALL_RPATH=$ORIGIN", "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON"]
     elif system == "Darwin":
-        options += ["-DCMAKE_INSTALL_RPATH=@loader_path", "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON"]
+        minimum = json.loads((ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text())["bundle"]["macOS"]["minimumSystemVersion"]
+        options += ["-DCMAKE_INSTALL_RPATH=@loader_path", "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON",
+                    f"-DCMAKE_OSX_DEPLOYMENT_TARGET={minimum}", f"-DGGML_METAL_MACOSX_VERSION_MIN={minimum}"]
         if metal:
             options += ["-DGGML_METAL_EMBED_LIBRARY=ON"]
     run("cmake", "-S", source, "-B", binary, *options)
@@ -77,6 +93,8 @@ def build(output: Path, jobs: int, metal: bool) -> None:
     expected = "transcribe.dll" if system == "Windows" else "libtranscribe.dylib" if system == "Darwin" else "libtranscribe.so"
     if not any(path.name == expected for path in libraries):
         raise SystemExit(f"Build did not install {expected}; refusing to stage an incomplete runtime")
+    if system == "Darwin":
+        run(sys.executable, ROOT / "scripts/verify-macos-deployment.py", install)
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     # Build all files first. An interrupted compile leaves the last working
@@ -90,6 +108,8 @@ def build(output: Path, jobs: int, metal: bool) -> None:
         if (install / "share/licenses").exists():
             shutil.copytree(install / "share/licenses", staging / "licenses")
         (staging / "revision.txt").write_text(REVISION + "\n", encoding="utf-8")
+        (staging / "pressay-patches.sha256").write_text(PATCH_SHA256 + "  " + PATCH.name + "\n", encoding="utf-8")
+        shutil.copy2(PATCH, staging / PATCH.name)
         previous = output.with_name(output.name + ".previous")
         if previous.exists():
             raise SystemExit(f"Previous runtime backup exists; inspect and remove it before rebuilding: {previous}")

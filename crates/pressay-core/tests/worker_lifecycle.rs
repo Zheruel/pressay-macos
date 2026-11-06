@@ -295,3 +295,22 @@ async fn repeated_truncation_is_bounded_and_pre_cancelled_work_never_spawns() {
     assert_eq!(requests, 2);
     host.stop().await;
 }
+
+#[tokio::test]
+async fn preserves_qwen_long_context_and_other_models_bounded_chunks() {
+    let fixture = Fixture::new();
+    let mut host = fixture.host();
+    let audio = vec![0.2; 40 * SAMPLE_RATE];
+    let cancel = CancellationToken::new();
+    for (model, expected) in [
+        ("qwen3ASR17", "qwen3ASR17:640000"),
+        ("moss", "moss:320000 moss:320000"),
+    ] {
+        let text = host
+            .transcribe(model, fixture.directory.path(), &audio, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(text, expected);
+    }
+    host.stop().await;
+}

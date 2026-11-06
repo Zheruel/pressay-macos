@@ -1,0 +1,378 @@
+{
+  "date": "2026-11-06",
+  "purpose": "Compare isolated Rust and original Swift worker outputs using the same pinned models; small regression sample, not an accuracy or latency benchmark.",
+  "attribution": {
+    "dataset": "FLEURS",
+    "creator": "Google Research and FLEURS contributors",
+    "source": "https://huggingface.co/datasets/google/fleurs",
+    "license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "changes": "Audio converted to mono 16 kHz f32; mixed case concatenates public clips with silence. References unchanged; generated model outputs are included separately."
+  },
+  "runtime_revision": "41738b58b305c08bdecf5379dccdc19a0f7c3b05",
+  "models": [
+    {
+      "id": "orukeet",
+      "name": "Orukeet",
+      "mac_only": true,
+      "artifacts": [
+        {
+          "path": "orukeet-v0.1.0-q8.gguf",
+          "bytes": 714456704,
+          "sha256": "93ce19c6d8244acbfea980eeaf970531d4f216171578ef8e041dcc2d070a45bd",
+          "url": "https://huggingface.co/oruk/orukeet/resolve/555136b50265a132d4cea0d35560c26fc4f657ab/orukeet-v0.1.0-q8.gguf"
+        }
+      ]
+    },
+    {
+      "id": "moss",
+      "name": "MOSS",
+      "mac_only": false,
+      "artifacts": [
+        {
+          "path": "MOSS-Transcribe-Diarize-Q6_K.gguf",
+          "bytes": 768152256,
+          "sha256": "7fd37409dbec9c732f912717f3cd8f4cd2c5083841edfab2f3b670f816512b44",
+          "url": "https://huggingface.co/handy-computer/MOSS-Transcribe-Diarize-gguf/resolve/8c603aa6da33a068e39bbd109786f85786a21834/MOSS-Transcribe-Diarize-Q6_K.gguf"
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "en",
+      "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year.",
+      "frames": 168960,
+      "dataset_id": 1904,
+      "config": "en_us",
+      "pcm_sha256": "e9e56ad21fc203ff1f6e460c6a39424c0732317b1fa53f0cde7b19df3d8f42f0",
+      "matching_source_files": [
+        "1003119935936341070.wav"
+      ]
+    },
+    {
+      "name": "fr",
+      "reference": "L’accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant.",
+      "frames": 163200,
+      "dataset_id": 1987,
+      "config": "fr_fr",
+      "pcm_sha256": "b6f049a185d4a957db142a4dc0c0e4609a1539f69cc79f11d3d32667f601e0b3",
+      "matching_source_files": [
+        "10043298898524273336.wav"
+      ]
+    },
+    {
+      "name": "de",
+      "reference": "Er griff auch alles an, was ins Wasser kam; selbst ein großer Dinosaurier wie der T. Rex war ihm nicht gewachsen.",
+      "frames": 178560,
+      "dataset_id": 1738,
+      "config": "de_de",
+      "pcm_sha256": "b13edd806ff813ce42e52dd2f1a02012b2297406b3768a03150abf0b87753cb3",
+      "matching_source_files": [
+        "1541478847822588926.wav",
+        "10009182821551087671.wav"
+      ]
+    },
+    {
+      "name": "es",
+      "reference": "Fue tanta la cantidad de gente que se concentró, que no todos pudieron acceder al funeral en la Plaza de San Pedro.",
+      "frames": 155520,
+      "dataset_id": 1764,
+      "config": "es_419",
+      "pcm_sha256": "c9bc3ee3304594413aeb6fef3ca8b7558c084245be274bdfb78b3877bd57a325",
+      "matching_source_files": [
+        "1008205615316519958.wav"
+      ]
+    },
+    {
+      "name": "ja",
+      "reference": "インターネットで「敵対的環境コース」について検索すると、おそらく現地企業の住所が出てくるでしょう。",
+      "frames": 167040,
+      "dataset_id": 1828,
+      "config": "ja_jp",
+      "pcm_sha256": "f73d4fe07096f59d1f5ce13fec7f9c2d2164685904d73540e0f784bfcaf26208",
+      "matching_source_files": [
+        "10020345318418093976.wav"
+      ]
+    },
+    {
+      "name": "zh",
+      "reference": "“这并不是告别。这是一个篇章的结束，也是新篇章的开始。”",
+      "frames": 166080,
+      "dataset_id": 1906,
+      "config": "cmn_hans_cn",
+      "pcm_sha256": "3c784155f4f21a00372503208c33d8590817a07cf196c38aa549ff315b0be867",
+      "matching_source_files": [
+        "10026684690566417990.wav"
+      ]
+    },
+    {
+      "name": "mixed_en_fr",
+      "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year. L’accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant.",
+      "frames": 348160,
+      "pcm_sha256": "36a908a525089127372fc5dd40ff45650e2514ce1d450ab79896fa9269e2e68c",
+      "construction": "English clip + 16000 zero samples (1 second) + French clip, 16 kHz mono float32 little endian"
+    }
+  ],
+  "observations": [
+    {
+      "case": "en",
+      "host": "rust",
+      "load_seconds": 0.415556458,
+      "model": "orukeet",
+      "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year.",
+      "seconds": 0.08578425,
+      "text": "However, due to the slow communication channels, styles in the west could lag behind by twenty-five to thirty years."
+    },
+    {
+      "case": "fr",
+      "host": "rust",
+      "load_seconds": 0.415556458,
+      "model": "orukeet",
+      "reference": "L’accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant.",
+      "seconds": 0.065272458,
+      "text": "L'accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant."
+    },
+    {
+      "case": "de",
+      "host": "rust",
+      "load_seconds": 0.415556458,
+      "model": "orukeet",
+      "reference": "Er griff auch alles an, was ins Wasser kam; selbst ein großer Dinosaurier wie der T. Rex war ihm nicht gewachsen.",
+      "seconds": 0.078992875,
+      "text": "Er griff auch alles an, was ins Wasser kam. Selbst ein großer Dinosaurier wie der T-Rex war ihm nicht gewachsen."
+    },
+    {
+      "case": "es",
+      "host": "rust",
+      "load_seconds": 0.415556458,
+      "model": "orukeet",
+      "reference": "Fue tanta la cantidad de gente que se concentró, que no todos pudieron acceder al funeral en la Plaza de San Pedro.",
+      "seconds": 0.063086916,
+      "text": "Fue tanta la cantidad de gente que se concentró que no todos pudieron acceder al funeral en la plaza de San Pedro."
+    },
+    {
+      "case": "ja",
+      "host": "rust",
+      "load_seconds": 0.415556458,
+      "model": "orukeet",
+      "reference": "インターネットで「敵対的環境コース」について検索すると、おそらく現地企業の住所が出てくるでしょう。",
+      "seconds": 0.077343583,
+      "text": "Intern today, tekitai tik kankyo kosency kenzak, ossakinsky yo nože detikori show."
+    },
+    {
+      "case": "zh",
+      "host": "rust",
+      "load_seconds": 0.415556458,
+      "model": "orukeet",
+      "reference": "“这并不是告别。这是一个篇章的结束，也是新篇章的开始。”",
+      "seconds": 0.076132084,
+      "text": "Jobin bosogab, tosia gør pjanjang, yessen pijanjang kæs"
+    },
+    {
+      "case": "mixed_en_fr",
+      "host": "rust",
+      "load_seconds": 0.415556458,
+      "model": "orukeet",
+      "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year. L’accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant.",
+      "seconds": 0.149045208,
+      "text": "However, due to the slow communication channels, styles in the West could lag behind by twenty-five to thirty years. L'accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant."
+    },
+    {
+      "case": "en",
+      "host": "rust",
+      "load_seconds": 3.635877541,
+      "model": "moss",
+      "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year.",
+      "seconds": 0.44890375,
+      "text": "However, due to the slow communication channels, styles in the West could lag behind by 25 to 30 years."
+    },
+    {
+      "case": "fr",
+      "host": "rust",
+      "load_seconds": 3.635877541,
+      "model": "moss",
+      "reference": "L’accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant.",
+      "seconds": 0.483890084,
+      "text": "L'accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant."
+    },
+    {
+      "case": "de",
+      "host": "rust",
+      "load_seconds": 3.635877541,
+      "model": "moss",
+      "reference": "Er griff auch alles an, was ins Wasser kam; selbst ein großer Dinosaurier wie der T. Rex war ihm nicht gewachsen.",
+      "seconds": 0.455477291,
+      "text": "Er griff auch alles an, was ins Wasser kam. Selbst ein großer Dinosaurier wie der T-Rex war ihm nicht gewachsen."
+    },
+    {
+      "case": "es",
+      "host": "rust",
+      "load_seconds": 3.635877541,
+      "model": "moss",
+      "reference": "Fue tanta la cantidad de gente que se concentró, que no todos pudieron acceder al funeral en la Plaza de San Pedro.",
+      "seconds": 0.445037458,
+      "text": "Fue tanta la cantidad de gente que se concentró, que no todos pudieron acceder al funeral en la Plaza de San Pedro."
+    },
+    {
+      "case": "ja",
+      "host": "rust",
+      "load_seconds": 3.635877541,
+      "model": "moss",
+      "reference": "インターネットで「敵対的環境コース」について検索すると、おそらく現地企業の住所が出てくるでしょう。",
+      "seconds": 0.376907334,
+      "text": "インターネットで敵対的環境コースについて検索すると、おそらく現地企業の住所が出てくるでしょう。"
+    },
+    {
+      "case": "zh",
+      "host": "rust",
+      "load_seconds": 3.635877541,
+      "model": "moss",
+      "reference": "“这并不是告别。这是一个篇章的结束，也是新篇章的开始。”",
+      "seconds": 0.337041958,
+      "text": "这并不是告别，这是一个篇章的结束，也是新篇章的开始。"
+    },
+    {
+      "case": "mixed_en_fr",
+      "host": "rust",
+      "load_seconds": 3.635877541,
+      "model": "moss",
+      "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year. L’accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant.",
+      "seconds": 0.608421417,
+      "text": "However, due to the slow communication channels, styles in the west could lag behind by twenty-five to thirty years. L'accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant."
+    },
+    {
+      "case": "en",
+      "host": "swift",
+      "load_seconds": 7.705729,
+      "model": "orukeet",
+      "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year.",
+      "seconds": 0.209393667,
+      "text": "However, due to the slow communication channels, styles in the west could lag behind by twenty-five to thirty years."
+    },
+    {
+      "case": "fr",
+      "host": "swift",
+      "load_seconds": 7.705729,
+      "model": "orukeet",
+      "reference": "L’accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant.",
+      "seconds": 0.100293875,
+      "text": "L'accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant."
+    },
+    {
+      "case": "de",
+      "host": "swift",
+      "load_seconds": 7.705729,
+      "model": "orukeet",
+      "reference": "Er griff auch alles an, was ins Wasser kam; selbst ein großer Dinosaurier wie der T. Rex war ihm nicht gewachsen.",
+      "seconds": 0.103872542,
+      "text": "Er griff auch alles an, was ins Wasser kam. Selbst ein großer Dinosaurier wie der T-Rex war ihm nicht gewachsen."
+    },
+    {
+      "case": "es",
+      "host": "swift",
+      "load_seconds": 7.705729,
+      "model": "orukeet",
+      "reference": "Fue tanta la cantidad de gente que se concentró, que no todos pudieron acceder al funeral en la Plaza de San Pedro.",
+      "seconds": 0.084997584,
+      "text": "Fue tanta la cantidad de gente que se concentró que no todos pudieron acceder al funeral en la plaza de San Pedro."
+    },
+    {
+      "case": "ja",
+      "host": "swift",
+      "load_seconds": 7.705729,
+      "model": "orukeet",
+      "reference": "インターネットで「敵対的環境コース」について検索すると、おそらく現地企業の住所が出てくるでしょう。",
+      "seconds": 0.098701125,
+      "text": "Intern today, tekitai tik kankyo kosency kenzak, ossakinsky yo nože detikori show."
+    },
+    {
+      "case": "zh",
+      "host": "swift",
+      "load_seconds": 7.705729,
+      "model": "orukeet",
+      "reference": "“这并不是告别。这是一个篇章的结束，也是新篇章的开始。”",
+      "seconds": 0.098068333,
+      "text": "Jobin bosogab, tosia gør pjanjang, yessen pijanjang kæs"
+    },
+    {
+      "case": "mixed_en_fr",
+      "host": "swift",
+      "load_seconds": 7.705729,
+      "model": "orukeet",
+      "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year. L’accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant.",
+      "seconds": 0.198065875,
+      "text": "However, due to the slow communication channels, styles in the West could lag behind by twenty-five to thirty years. L'accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant."
+    },
+    {
+      "case": "en",
+      "host": "swift",
+      "load_seconds": 3.781550917,
+      "model": "moss",
+      "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year.",
+      "seconds": 0.450574041,
+      "text": "However, due to the slow communication channels, styles in the West could lag behind by 25 to 30 years."
+    },
+    {
+      "case": "fr",
+      "host": "swift",
+      "load_seconds": 3.781550917,
+      "model": "moss",
+      "reference": "L’accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant.",
+      "seconds": 0.475750375,
+      "text": "L'accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant."
+    },
+    {
+      "case": "de",
+      "host": "swift",
+      "load_seconds": 3.781550917,
+      "model": "moss",
+      "reference": "Er griff auch alles an, was ins Wasser kam; selbst ein großer Dinosaurier wie der T. Rex war ihm nicht gewachsen.",
+      "seconds": 0.46760175,
+      "text": "Er griff auch alles an, was ins Wasser kam. Selbst ein großer Dinosaurier wie der T-Rex war ihm nicht gewachsen."
+    },
+    {
+      "case": "es",
+      "host": "swift",
+      "load_seconds": 3.781550917,
+      "model": "moss",
+      "reference": "Fue tanta la cantidad de gente que se concentró, que no todos pudieron acceder al funeral en la Plaza de San Pedro.",
+      "seconds": 0.451232791,
+      "text": "Fue tanta la cantidad de gente que se concentró, que no todos pudieron acceder al funeral en la Plaza de San Pedro."
+    },
+    {
+      "case": "ja",
+      "host": "swift",
+      "load_seconds": 3.781550917,
+      "model": "moss",
+      "reference": "インターネットで「敵対的環境コース」について検索すると、おそらく現地企業の住所が出てくるでしょう。",
+      "seconds": 0.388773042,
+      "text": "インターネットで敵対的環境コースについて検索すると、おそらく現地企業の住所が出てくるでしょう。"
+    },
+    {
+      "case": "zh",
+      "host": "swift",
+      "load_seconds": 3.781550917,
+      "model": "moss",
+      "reference": "“这并不是告别。这是一个篇章的结束，也是新篇章的开始。”",
+      "seconds": 0.361323,
+      "text": "这并不是告别，这是一个篇章的结束，也是新篇章的开始。"
+    },
+    {
+      "case": "mixed_en_fr",
+      "host": "swift",
+      "load_seconds": 3.781550917,
+      "model": "moss",
+      "reference": "However, due to the slow communication channels, styles in the west could lag behind by 25 to 30 year. L’accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant.",
+      "seconds": 0.644333791,
+      "text": "However, due to the slow communication channels, styles in the west could lag behind by twenty-five to thirty years. L'accident a eu lieu en terrain montagneux, et il semblerait que cela ait été causé par un incendie malveillant."
+    }
+  ],
+  "paired_outputs_equal": 14,
+  "paired_outputs_total": 14,
+  "limits": [
+    "One public clip per language plus one constructed mixed-language case.",
+    "Orukeet output for Japanese and Chinese is poor in both hosts; equality does not imply language support or accuracy.",
+    "No microphone, insertion, private recordings, credentials or local filesystem paths are included."
+  ]
+}

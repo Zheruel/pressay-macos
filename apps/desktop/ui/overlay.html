@@ -6,9 +6,10 @@
     <title>Pressay</title>
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body class="overlay">
-    <span class="live-dot"></span
-    ><span id="overlay-status" role="status">Listening…</span>
+  <body class="overlay" data-phase="starting">
+    <span class="overlay-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span id="overlay-status" role="status">Opening microphone…</span>
+    <button id="overlay-stop" type="button" hidden aria-label="Stop meeting recording">Stop</button>
     <script src="overlay.js"></script>
   </body>
 </html>

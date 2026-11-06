@@ -58,6 +58,11 @@ function setStep(value) {
   $("setup-error").textContent = "";
   if (step === 2) $("practice").focus();
 }
+function microphoneCanPractice(p) {
+  return current?.platform === "macos"
+    ? p.microphone === "granted"
+    : p.microphone !== "denied";
+}
 function openSetup() {
   if (!dialog.open) dialog.showModal();
   const p = current?.permissions;
@@ -65,7 +70,7 @@ function openSetup() {
     p &&
     p.shortcut === "granted" &&
     p.insertion === "granted" &&
-    p.microphone !== "denied";
+    microphoneCanPractice(p);
   setStep(granted ? (current.view.model_ready ? 2 : 1) : 0);
 }
 $("setup-again").onclick = openSetup;
@@ -90,7 +95,7 @@ $("input-device").onchange = () =>
 function size(id) {
   const model = current?.models.find((m) => m.id === id);
   return model
-    ? `${(model.artifacts.reduce((n, a) => n + a.bytes, 0) / 1e9).toFixed(2)} GB · verified download · automatic language detection`
+    ? `${(model.artifacts.reduce((n, a) => n + a.bytes, 0) / 1e9).toFixed(2)} GB · verified download · ${model.languageCaption || "automatic language detection"}`
     : "";
 }
 for (const id of ["model", "setup-model"])
@@ -164,8 +169,15 @@ function renderPermissions(p) {
       const label = element("div");
       label.append(element("strong", title), element("p", detail));
       const button = element("button", "Allow");
-      button.onclick = () =>
-        call("request_permission", { kind }).catch(() => {});
+      button.onclick = async () => {
+        try {
+          if (kind === "accessibility" && current.permissions.wayland)
+            await call("save_settings", {
+              patch: { waylandCurrentCursor: true },
+            });
+          await call("request_permission", { kind });
+        } catch {}
+      };
       const status = element("span", "Allowed", "allowed");
       status.hidden = true;
       row.append(label, button, status);
@@ -183,7 +195,14 @@ function renderPermissions(p) {
         : value === "denied"
           ? "Open settings"
           : "Allow";
-    row.querySelector("button").disabled = value === "unavailable";
+    const cursorChoice =
+      p.wayland &&
+      row.dataset.kind === "accessibility" &&
+      value === "unavailable";
+    if (cursorChoice)
+      row.querySelector("button").textContent = "Enable cursor insertion";
+    row.querySelector("button").disabled =
+      value === "unavailable" && !cursorChoice;
   }
   $("platform-note").textContent =
     p.explanation ||
@@ -191,21 +210,14 @@ function renderPermissions(p) {
       ? "Microphone access is verified when actual audio arrives during practice."
       : "You can change these permissions in system settings at any time.");
   $("permissions-next").disabled =
-    p.wayland ||
-    p.insertion === "denied" ||
+    p.insertion !== "granted" ||
     p.shortcut !== "granted" ||
-    p.microphone === "denied";
+    !microphoneCanPractice(p);
 }
 function render(data) {
   current = data;
   const s = data.view;
-  const busy = [
-    "starting",
-    "recording",
-    "processing",
-    "preparing",
-    "loading",
-  ].includes(s.stage);
+  const busy = s.stage !== "idle";
   const ready =
     s.model_ready &&
     data.permissions.microphone === "granted" &&
@@ -225,9 +237,17 @@ function render(data) {
     starting: "Opening your microphone…",
     recording: "Listening…",
     processing: "Transcribing on your device…",
+    polishing: "Polishing your words…",
     preparing: "Preparing your speech model…",
     loading: "Loading your speech model…",
+    meeting_starting: "Preparing your meeting…",
+    meeting: "Recording your meeting",
+    meeting_finishing: "Finishing the transcript…",
+    meeting_speakers: "Separating voices on your device…",
   };
+  document
+    .querySelectorAll(".shortcut")
+    .forEach((el) => (el.textContent = data.shortcut));
   $("capture-status").textContent = labels[s.stage] || s.stage;
   $("capture-detail").textContent =
     s.stage === "starting"
@@ -251,7 +271,7 @@ function render(data) {
     )
     .toLocaleString();
   for (const block of document.querySelectorAll(".download")) {
-    block.hidden = !["preparing", "loading"].includes(s.stage);
+    block.hidden = !s.progress && !["preparing", "loading"].includes(s.stage);
     if (s.progress) {
       block.querySelector("progress").value =
         s.progress.downloaded / s.progress.total;
@@ -265,60 +285,7 @@ function render(data) {
           : "Checking existing model files…";
     }
   }
-  const history = JSON.stringify(s.history);
-  if (history !== historyVersion) {
-    historyVersion = history;
-    $("history").replaceChildren();
-    if (!s.history.length)
-      $("history").append(
-        element("div", "Your first dictation will appear here.", "empty"),
-      );
-    for (const record of s.history) {
-      const article = element("article");
-      article.append(element("p", record.correction || record.text));
-      const row = element("div", undefined, "row");
-      row.append(
-        element(
-          "small",
-          `${new Date(record.created_at * 1000).toLocaleString()} · ${record.model} · ${Math.round(record.duration)} s`,
-        ),
-      );
-      const actions = element("div");
-      const copy = element("button", "Copy");
-      copy.onclick = () =>
-        call("copy_text", { text: record.correction || record.text }).catch(
-          () => {},
-        );
-      const remove = element("button", "Delete");
-      remove.onclick = () =>
-        call("delete_dictation", { id: record.id }).catch(() => {});
-      actions.append(copy, remove);
-      row.append(actions);
-      article.append(row);
-      $("history").append(article);
-    }
-  }
-  const meetings = JSON.stringify(s.notes);
-  if (meetings !== meetingsVersion) {
-    meetingsVersion = meetings;
-    $("meetings").replaceChildren();
-    if (!s.notes.length)
-      $("meetings").append(
-        element(
-          "div",
-          "Import your Mac data to see existing meetings here.",
-          "empty",
-        ),
-      );
-    for (const note of s.notes) {
-      const article = element("article", undefined, "note");
-      article.append(
-        element("h2", note.title || "Meeting"),
-        element("p", note.body || ""),
-      );
-      $("meetings").append(article);
-    }
-  }
+  renderWorkspace(s);
   if (document.activeElement !== $("vocabulary"))
     $("vocabulary").value = s.settings.vocabulary || "";
   renderPermissions(data.permissions);
@@ -327,7 +294,7 @@ function render(data) {
     step > 0 &&
     (data.permissions.insertion !== "granted" ||
       data.permissions.shortcut !== "granted" ||
-      data.permissions.microphone === "denied")
+      !microphoneCanPractice(data.permissions))
   )
     setStep(0);
   else if (dialog.open && step === 2 && !s.model_ready) setStep(1);
@@ -340,12 +307,7 @@ function render(data) {
   if (!initialized) {
     initialized = true;
     for (const id of ["model", "setup-model"]) {
-      $(id).replaceChildren();
-      for (const m of data.models) {
-        const o = element("option", m.name);
-        o.value = m.id;
-        $(id).append(o);
-      }
+      populateModels(id);
       $(id).value = s.settings.asrModel;
       $(id + "-size").textContent = size($(id).value);
     }

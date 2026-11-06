@@ -8,6 +8,8 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=AVFoundation");
         println!("cargo:rustc-link-lib=framework=ApplicationServices");
         println!("cargo:rustc-link-lib=framework=Cocoa");
+        println!("cargo:rustc-link-lib=framework=EventKit");
+        println!("cargo:rustc-link-lib=framework=CoreAudio");
         println!("cargo:rerun-if-changed=native/macos.m");
     }
     tauri_build::build()

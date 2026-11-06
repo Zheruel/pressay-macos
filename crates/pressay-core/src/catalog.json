@@ -99,5 +99,57 @@
         "url": "https://huggingface.co/mlx-community/Mega-ASR-bf16/resolve/58b2aa4ed62343871f6dba78a4f71db015406152/extras/lora.safetensors"
       }
     ]
+  },
+  {
+    "id": "funASRMLTNano",
+    "name": "Fun-ASR MLT Nano",
+    "mac_only": false,
+    "artifacts": [
+      {
+        "path": "Fun-ASR-MLT-Nano-2512-Q6_K.gguf",
+        "bytes": 690744544,
+        "sha256": "0279ca04a597d723d0ddbb90ffc560ad12e9c9e2caf556886a7eec31da5f8f77",
+        "url": "https://huggingface.co/handy-computer/Fun-ASR-MLT-Nano-2512-gguf/resolve/08f28dadd984030331802b2f9fbd9ecac97bf834/Fun-ASR-MLT-Nano-2512-Q6_K.gguf"
+      }
+    ]
+  },
+  {
+    "id": "whisperTurboGGML",
+    "name": "Whisper V3 Turbo",
+    "mac_only": false,
+    "artifacts": [
+      {
+        "path": "whisper-large-v3-turbo-Q8_0.gguf",
+        "bytes": 886381728,
+        "sha256": "257aa7ec9121c22c167d5e2c49e3e76b4ba0e6e27ebc13074eba0a80f8190220",
+        "url": "https://huggingface.co/handy-computer/whisper-large-v3-turbo-gguf/resolve/18ada752005f5fddef499256f9a458d0b37a203a/whisper-large-v3-turbo-Q8_0.gguf"
+      }
+    ]
+  },
+  {
+    "id": "voxtralMini",
+    "name": "Voxtral Mini 3B",
+    "mac_only": false,
+    "artifacts": [
+      {
+        "path": "Voxtral-Mini-3B-2507-Q4_K_M.gguf",
+        "bytes": 2984721056,
+        "sha256": "3a6717aa8f8989108d260cbd237584289eec43cc987e10133c33643515936205",
+        "url": "https://huggingface.co/handy-computer/Voxtral-Mini-3B-2507-gguf/resolve/3d4e8e74a2ada47b400b2957575b2a9c058efe80/Voxtral-Mini-3B-2507-Q4_K_M.gguf"
+      }
+    ]
+  },
+  {
+    "id": "qwen3ASR06",
+    "name": "Qwen3-ASR 0.6B",
+    "mac_only": false,
+    "artifacts": [
+      {
+        "path": "Qwen3-ASR-0.6B-Q8_0.gguf",
+        "bytes": 850423456,
+        "sha256": "f081b2d5e23bd669d92cc331d722a8a0681943b8e6f34b48996fd5c319b5acd8",
+        "url": "https://huggingface.co/handy-computer/Qwen3-ASR-0.6B-gguf/resolve/7e7c69a577fa2725dfedbe34b5e999336e30a19b/Qwen3-ASR-0.6B-Q8_0.gguf"
+      }
+    ]
   }
 ]

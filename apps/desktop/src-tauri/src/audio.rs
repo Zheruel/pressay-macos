@@ -1,9 +1,9 @@
 //! Native microphone capture. The CPAL stream is created and dropped on its own thread;
 //! the audio callback only downmixes into bounded, fixed-size packets. Resampling and
 //! caller callbacks never run on the audio thread.
+use crate::meeting_capture::StreamingResampler;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample, SampleFormat, SizedSample};
-use rubato::{FftFixedIn, Resampler};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
 use std::sync::Arc;
@@ -24,11 +24,6 @@ struct Packet {
     len: usize,
 }
 
-struct RawCapture {
-    samples: Vec<f32>,
-    sample_rate: usize,
-}
-
 enum Command {
     Finish,
     Cancel,
@@ -39,7 +34,7 @@ enum Command {
 /// not a UI/render or realtime thread. The control loop polls every 5 ms.
 pub struct Capture {
     commands: SyncSender<Command>,
-    thread: Option<JoinHandle<Result<RawCapture, String>>>,
+    thread: Option<JoinHandle<Result<Vec<f32>, String>>>,
 }
 
 impl Capture {
@@ -49,9 +44,14 @@ impl Capture {
         self.thread.as_ref().is_none_or(JoinHandle::is_finished)
     }
 
-    pub fn start(
+    /// Emit continuous 16 kHz mono chunks from the capture owner, never CPAL's
+    /// callback. A slow/disconnected observer is dropped; full capture survives.
+    /// Compare the received sample count with `finish()` to detect fallback.
+    pub fn start_streaming(
         device_name: Option<&str>,
-        on_first_audio: Arc<dyn Fn() + Send + Sync>,
+        on_first_audio: Arc<dyn Fn(usize) + Send + Sync>,
+        observer: Option<SyncSender<Vec<f32>>>,
+        levels: Option<Arc<dyn Fn([f32; 4]) + Send + Sync>>,
     ) -> Result<Self, String> {
         let device_name = device_name.map(str::to_owned);
         let (commands, receive_commands) = mpsc::sync_channel(1);
@@ -64,6 +64,8 @@ impl Capture {
                     on_first_audio,
                     receive_commands,
                     &ready,
+                    observer,
+                    levels,
                 );
                 if let Err(error) = &result {
                     // Reports initialization failures; never blocks if readiness was sent already.
@@ -96,11 +98,9 @@ impl Capture {
             .thread
             .take()
             .ok_or("Microphone session already closed")?;
-        let raw = thread
+        thread
             .join()
-            .map_err(|_| "Microphone thread stopped unexpectedly")??;
-        // Native capture is already closed; no audio-device locks are held while converting.
-        resample_mono(raw.samples, raw.sample_rate)
+            .map_err(|_| "Microphone thread stopped unexpectedly")?
     }
 
     pub fn cancel(mut self) {
@@ -122,27 +122,36 @@ impl Drop for Capture {
 }
 
 pub fn list_inputs() -> Result<Vec<String>, String> {
-    let devices = cpal::default_host()
-        .input_devices()
-        .map_err(|error| format!("Could not list microphones: {error}"))?;
-    let mut names = devices
-        .map(|device| {
-            device
-                .name()
-                .map_err(|error| format!("Could not read microphone name: {error}"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    names.sort();
-    names.dedup();
-    Ok(names)
+    #[cfg(target_os = "macos")]
+    {
+        crate::platform::input_devices()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let devices = cpal::default_host()
+            .input_devices()
+            .map_err(|error| format!("Could not list microphones: {error}"))?;
+        let mut names = devices
+            .map(|device| {
+                device
+                    .name()
+                    .map_err(|error| format!("Could not read microphone name: {error}"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        names.sort();
+        names.dedup();
+        Ok(names)
+    }
 }
 
 fn record(
     device_name: Option<&str>,
-    on_first_audio: Arc<dyn Fn() + Send + Sync>,
+    on_first_audio: Arc<dyn Fn(usize) + Send + Sync>,
     commands: Receiver<Command>,
     ready: &SyncSender<Result<(), String>>,
-) -> Result<RawCapture, String> {
+    observer: Option<SyncSender<Vec<f32>>>,
+    levels: Option<Arc<dyn Fn([f32; 4]) + Send + Sync>>,
+) -> Result<Vec<f32>, String> {
     let host = cpal::default_host();
     let device = if let Some(name) = device_name {
         host.input_devices()
@@ -204,26 +213,20 @@ fn record(
     }
     let started = Instant::now();
     let mut last_audio = started;
-    let mut samples = Vec::with_capacity(sample_rate * 2);
+    let mut pipeline = CapturePipeline::new(sample_rate, observer)?;
     let mut first_audio = true;
+    let mut last_levels = Instant::now() - Duration::from_secs(1);
+    let mut display_levels = [0.0; 4];
     loop {
         match commands.try_recv() {
             Ok(Command::Finish) => {
-                // Drop before draining: no callback can append after the capture boundary.
-                drop(stream);
-                check_failure(&failure, &receive_errors)?;
-                for packet in receive_packets.try_iter() {
-                    append_packet(&mut samples, packet, sample_rate)?;
-                }
-                if samples.is_empty() {
-                    return Err(
-                        "No microphone audio arrived. Check access and your input device.".into(),
-                    );
-                }
-                return Ok(RawCapture {
-                    samples,
-                    sample_rate,
-                });
+                return finish_capture(
+                    stream,
+                    receive_packets,
+                    pipeline,
+                    &failure,
+                    &receive_errors,
+                );
             }
             Ok(Command::Cancel) | Err(TryRecvError::Disconnected) => {
                 return Err("Recording cancelled".into())
@@ -231,8 +234,8 @@ fn record(
             Err(TryRecvError::Empty) => {}
         }
         check_failure(&failure, &receive_errors)?;
-        if started.elapsed() >= Duration::from_secs(MAX_SECONDS as u64) {
-            return Err("Dictation exceeded five minutes. Record a shorter dictation.".into());
+        if started.elapsed() >= Duration::from_secs(MAX_SECONDS as u64) || pipeline.at_limit() {
+            return finish_capture(stream, receive_packets, pipeline, &failure, &receive_errors);
         }
         if last_audio.elapsed() >= AUDIO_TIMEOUT {
             return Err(
@@ -242,12 +245,29 @@ fn record(
         }
         match receive_packets.recv_timeout(POLL_INTERVAL) {
             Ok(packet) => {
-                append_packet(&mut samples, packet, sample_rate)?;
+                if last_levels.elapsed() >= Duration::from_millis(50) && packet.len > 0 {
+                    let rms = (packet.samples[..packet.len]
+                        .iter()
+                        .map(|value| value * value)
+                        .sum::<f32>()
+                        / packet.len as f32)
+                        .sqrt();
+                    display_levels.rotate_left(1);
+                    display_levels[3] = ((rms * 12.0).sqrt()).clamp(0.0, 1.0);
+                    if let Some(callback) = &levels {
+                        callback(display_levels);
+                    }
+                    last_levels = Instant::now();
+                }
+                pipeline.push_packet(packet)?;
                 last_audio = Instant::now();
                 if first_audio {
                     first_audio = false;
                     // Application callbacks (including UI events) cannot block CPAL's callback.
-                    on_first_audio();
+                    on_first_audio(
+                        (pipeline.source_frames as f64 * OUTPUT_RATE as f64 / sample_rate as f64)
+                            .round() as usize,
+                    );
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -256,6 +276,26 @@ fn record(
             }
         }
     }
+}
+
+/// Stop the device before draining its last packets. At the duration bound,
+/// truncate only the crossing packet and preserve every preceding sample.
+fn finish_capture(
+    stream: cpal::Stream,
+    packets: Receiver<Packet>,
+    mut pipeline: CapturePipeline,
+    failure: &AtomicU8,
+    errors: &Receiver<cpal::StreamError>,
+) -> Result<Vec<f32>, String> {
+    drop(stream);
+    check_failure(failure, errors)?;
+    for packet in packets.try_iter() {
+        pipeline.push_packet(packet)?;
+    }
+    if pipeline.source_frames == 0 {
+        return Err("No microphone audio arrived. Check access and your input device.".into());
+    }
+    pipeline.finish()
 }
 
 fn validate_format(sample_rate: usize, channels: usize) -> Result<(), String> {
@@ -345,79 +385,99 @@ fn check_failure(failure: &AtomicU8, errors: &Receiver<cpal::StreamError>) -> Re
     }
 }
 
-fn append_packet(samples: &mut Vec<f32>, packet: Packet, sample_rate: usize) -> Result<(), String> {
-    let limit = sample_rate * MAX_SECONDS;
-    if packet.len > PACKET_FRAMES || samples.len().saturating_add(packet.len) > limit {
-        return Err("Dictation exceeded five minutes. Record a shorter dictation.".into());
-    }
-    if samples.capacity() - samples.len() < packet.len {
-        // Cap allocation growth too, rather than letting Vec double near the five-minute limit.
-        let additional = (sample_rate * 10)
-            .max(packet.len)
-            .min(limit - samples.len());
-        samples
-            .try_reserve_exact(additional)
-            .map_err(|_| "Not enough memory to capture microphone audio")?;
-    }
-    samples.extend_from_slice(&packet.samples[..packet.len]);
-    Ok(())
+/// One conversion path feeds both live recognition and the complete fallback.
+/// Retaining 16 kHz output also bounds memory independently of hardware rate.
+struct CapturePipeline {
+    converter: StreamingResampler,
+    sample_rate: usize,
+    source_frames: usize,
+    samples: Vec<f32>,
+    observer: Option<SyncSender<Vec<f32>>>,
 }
 
+impl CapturePipeline {
+    fn new(sample_rate: usize, observer: Option<SyncSender<Vec<f32>>>) -> Result<Self, String> {
+        validate_format(sample_rate, 1)?;
+        Ok(Self {
+            converter: StreamingResampler::new(sample_rate)?,
+            sample_rate,
+            source_frames: 0,
+            samples: Vec::with_capacity(OUTPUT_RATE * 2),
+            observer,
+        })
+    }
+
+    fn push_packet(&mut self, packet: Packet) -> Result<(), String> {
+        if packet.len > PACKET_FRAMES {
+            return Err("Microphone returned an invalid audio packet".into());
+        }
+        let remaining = self.sample_rate * MAX_SECONDS - self.source_frames;
+        self.push(&packet.samples[..packet.len.min(remaining)])
+    }
+
+    fn at_limit(&self) -> bool {
+        self.source_frames == self.sample_rate * MAX_SECONDS
+    }
+
+    fn push(&mut self, samples: &[f32]) -> Result<(), String> {
+        if self.source_frames.saturating_add(samples.len()) > self.sample_rate * MAX_SECONDS {
+            return Err("Dictation exceeded five minutes. Record a shorter dictation.".into());
+        }
+        if samples.iter().any(|sample| !sample.is_finite()) {
+            return Err("Recording has no valid microphone audio".into());
+        }
+        self.source_frames += samples.len();
+        let converted = self.converter.push(samples)?;
+        self.emit(converted)
+    }
+
+    fn emit(&mut self, chunk: Vec<f32>) -> Result<(), String> {
+        if chunk.is_empty() {
+            return Ok(());
+        }
+        let limit = OUTPUT_RATE * MAX_SECONDS;
+        if self.samples.len().saturating_add(chunk.len()) > limit {
+            return Err("Dictation exceeded five minutes. Record a shorter dictation.".into());
+        }
+        if self.samples.capacity() - self.samples.len() < chunk.len() {
+            self.samples
+                .try_reserve_exact(
+                    (OUTPUT_RATE * 10)
+                        .max(chunk.len())
+                        .min(limit - self.samples.len()),
+                )
+                .map_err(|_| "Not enough memory to capture microphone audio")?;
+        }
+        self.samples.extend_from_slice(&chunk);
+        if self
+            .observer
+            .as_ref()
+            .is_some_and(|sender| sender.try_send(chunk).is_err())
+        {
+            // Never resume after dropping a chunk: the consumer must see channel
+            // closure and fall back to the complete, uninterrupted recording.
+            self.observer = None;
+        }
+        Ok(())
+    }
+
+    fn finish(mut self) -> Result<Vec<f32>, String> {
+        let tail = self.converter.finish()?;
+        self.emit(tail)?;
+        if self.samples.is_empty() {
+            return Err("Recording is too short".into());
+        }
+        Ok(self.samples)
+    }
+}
+
+#[cfg(test)]
 fn resample_mono(samples: Vec<f32>, sample_rate: usize) -> Result<Vec<f32>, String> {
-    validate_format(sample_rate, 1)?;
-    if samples.is_empty()
-        || samples.len() > sample_rate * MAX_SECONDS
-        || samples.iter().any(|s| !s.is_finite())
-    {
-        return Err("Recording has no valid microphone audio".into());
+    let mut pipeline = CapturePipeline::new(sample_rate, None)?;
+    for chunk in samples.chunks(PACKET_FRAMES) {
+        pipeline.push(chunk)?;
     }
-    if sample_rate == OUTPUT_RATE {
-        return Ok(samples);
-    }
-    let wanted = samples.len() * OUTPUT_RATE / sample_rate;
-    if wanted == 0 {
-        return Err("Recording is too short".into());
-    }
-    // FFT resampling includes a low-pass filter. Linear interpolation or frame skipping
-    // would fold frequencies above 8 kHz into the speech band when downsampling.
-    // Choose an even number of rational-rate units. Odd FFT output lengths have a
-    // half-sample filter delay, which rubato's integer output_delay cannot remove.
-    let mut a = sample_rate;
-    let mut b = OUTPUT_RATE;
-    while b != 0 {
-        (a, b) = (b, a % b);
-    }
-    let even_input_unit = 2 * sample_rate / a;
-    let chunk_size = 1_024usize.div_ceil(even_input_unit) * even_input_unit;
-    let mut resampler = FftFixedIn::<f32>::new(sample_rate, OUTPUT_RATE, chunk_size, 1, 1)
-        .map_err(|error| format!("Could not initialize microphone conversion: {error}"))?;
-    let delay = resampler.output_delay();
-    let mut output = Vec::with_capacity(wanted + delay + resampler.output_frames_max());
-    let mut offset = 0;
-    while samples.len() - offset >= resampler.input_frames_next() {
-        let needed = resampler.input_frames_next();
-        let converted = resampler
-            .process(&[&samples[offset..offset + needed]], None)
-            .map_err(|error| format!("Microphone conversion failed: {error}"))?;
-        output.extend_from_slice(&converted[0]);
-        offset += needed;
-    }
-    if offset < samples.len() {
-        let converted = resampler
-            .process_partial(Some(&[&samples[offset..]]), None)
-            .map_err(|error| format!("Microphone conversion failed: {error}"))?;
-        output.extend_from_slice(&converted[0]);
-    }
-    while output.len() < wanted + delay {
-        let converted = resampler
-            .process_partial::<&[f32]>(None, None)
-            .map_err(|error| format!("Microphone conversion failed: {error}"))?;
-        output.extend_from_slice(&converted[0]);
-    }
-    // Remove filter latency and zero-padding without changing the recorded duration.
-    output.copy_within(delay..delay + wanted, 0);
-    output.truncate(wanted);
-    Ok(output)
+    pipeline.finish()
 }
 
 #[cfg(test)]
@@ -481,6 +541,63 @@ mod tests {
     }
 
     #[test]
+    fn live_chunks_match_complete_capture_at_hardware_rates_including_tail() {
+        for rate in [44_100, 48_000] {
+            for count in [100, 1_023, 1_024, 1_025, 20_001, rate + 137] {
+                let original: Vec<_> = (0..count).map(|n| (n as f32 * 0.17).sin() * 0.5).collect();
+                let expected = resample_mono(original.clone(), rate).unwrap();
+                for packet_size in [137, 1_024, 2_003] {
+                    let (sender, receive) = mpsc::sync_channel(512);
+                    let mut pipeline = CapturePipeline::new(rate, Some(sender)).unwrap();
+                    for chunk in original.chunks(packet_size) {
+                        pipeline.push(chunk).unwrap();
+                    }
+                    let mut live: Vec<f32> = receive.try_iter().flatten().collect();
+                    if count > rate {
+                        assert!(!live.is_empty(), "conversion waited until finish");
+                    }
+                    let before_tail = live.len();
+                    let complete = pipeline.finish().unwrap();
+                    live.extend(receive.try_iter().flatten());
+                    assert_eq!(receive.try_recv(), Err(TryRecvError::Disconnected));
+                    assert_eq!(complete.len(), count * OUTPUT_RATE / rate);
+                    assert_eq!(live, complete, "live/fallback differ at {rate}/{count}");
+                    assert_eq!(complete, expected, "packet boundaries changed the timeline");
+                    assert!(
+                        live.len() > before_tail,
+                        "final filter tail was not delivered"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn slow_or_disconnected_live_observer_keeps_complete_capture() {
+        for disconnect in [false, true] {
+            let (sender, receiver) = mpsc::sync_channel(1);
+            let mut receiver = Some(receiver);
+            if disconnect {
+                receiver = None;
+            }
+            let mut pipeline = CapturePipeline::new(OUTPUT_RATE, Some(sender)).unwrap();
+            pipeline.push(&[0.1; 32]).unwrap();
+            pipeline.push(&[0.2; 32]).unwrap();
+            assert!(pipeline.observer.is_none());
+            if let Some(receiver) = &receiver {
+                assert_eq!(receiver.try_recv().unwrap(), vec![0.1; 32]);
+                assert_eq!(receiver.try_recv(), Err(TryRecvError::Disconnected));
+            }
+            pipeline.push(&[0.3; 32]).unwrap();
+            let expected: Vec<_> = [vec![0.1; 32], vec![0.2; 32], vec![0.3; 32]]
+                .into_iter()
+                .flatten()
+                .collect();
+            assert_eq!(pipeline.finish().unwrap(), expected);
+        }
+    }
+
+    #[test]
     fn callback_downmixes_normalizes_and_fails_on_overflow() {
         let (tx, rx) = mpsc::sync_channel(1);
         let failure = AtomicU8::new(0);
@@ -525,10 +642,7 @@ mod tests {
                 let command = rx.recv().unwrap();
                 owner_closed.store(true, Ordering::Release);
                 match command {
-                    Command::Finish => Ok(RawCapture {
-                        samples: vec![0.25; 100],
-                        sample_rate: OUTPUT_RATE,
-                    }),
+                    Command::Finish => Ok(vec![0.25; 100]),
                     Command::Cancel => Err("Recording cancelled".into()),
                 }
             });
@@ -549,15 +663,27 @@ mod tests {
     }
 
     #[test]
-    fn five_minute_sample_bound_never_accepts_a_truncated_packet() {
-        let mut samples = vec![0.0; 16_000 * MAX_SECONDS - 1];
+    fn five_minute_bound_finishes_with_exact_crossing_tail_instead_of_losing_capture() {
+        let mut pipeline = CapturePipeline::new(OUTPUT_RATE, None).unwrap();
+        pipeline
+            .push(&vec![0.0; OUTPUT_RATE * MAX_SECONDS - 1])
+            .unwrap();
         let packet = Packet {
             samples: [0.5; PACKET_FRAMES],
             len: 2,
         };
-        assert!(append_packet(&mut samples, packet, 16_000).is_err());
-        assert_eq!(samples.len(), 16_000 * MAX_SECONDS - 1);
-        assert_eq!(samples.last(), Some(&0.0));
+        pipeline.push_packet(packet).unwrap();
+        assert!(pipeline.at_limit());
+        pipeline
+            .push_packet(Packet {
+                samples: [0.9; PACKET_FRAMES],
+                len: PACKET_FRAMES,
+            })
+            .unwrap();
+        let complete = pipeline.finish().unwrap();
+        assert_eq!(complete.len(), OUTPUT_RATE * MAX_SECONDS);
+        assert_eq!(complete[complete.len() - 2], 0.0);
+        assert_eq!(complete.last(), Some(&0.5));
     }
 
     #[test]

@@ -12,6 +12,10 @@ name = "pressay_asr"
 name = "pressay-asr-worker"
 path = "src/main.rs"
 
+[[bin]]
+name = "pressay-analysis-worker"
+path = "src/analysis_main.rs"
+
 [dependencies]
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }

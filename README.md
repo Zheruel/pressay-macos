@@ -176,10 +176,24 @@ The dictionary starts empty and only contains words you add. Pressay does not le
 
 ## Cross-platform migration preview
 
-The migration to a shared Rust core and Tauri is being developed alongside the
-complete native Mac app. The preview has real local dictation, history and
-vocabulary, with separate storage and an explicit practice flow. It is not yet
-feature-complete and does not replace this release. See the [build instructions](apps/desktop/README.md),
+Pressay Preview implements the shared Rust core and Tauri app for macOS,
+Windows and Linux: local dictation, history/audio, vocabulary, optional Claude
+and ChatGPT cleanup, voice notes, live meetings with speaker separation, meeting
+write-ups, action items and Ask Notes. It includes guided permission setup with
+real practice dictation, configurable hold keys, call-bound automatic stopping,
+launch at login, retention and signed-update integration. Background recognition
+starts at speech pauses; the original trim rules, sounds and live overlay are
+preserved. The catalog includes five recommended models and four Other models,
+with Orukeet and Mega-ASR retained on Mac. Linux includes X11 and consent-based
+Wayland portal paths. Dictation stops and transcribes automatically at five
+minutes; meetings support up to eight hours.
+
+The preview uses its own `dev.localflow.preview` identity and data store, so the
+native Mac app remains available for rollback. Implemented features do not mean
+all platforms have passed physical-device and clean-install acceptance. Wayland
+requires compatible portals and explicit current-cursor insertion consent;
+model availability and native integrations vary by platform. See the
+[build instructions](apps/desktop/README.md),
 [architecture decision](docs/architecture/001-shared-rust-core.md), and
 [validation record](docs/cross-platform-validation.md).
 

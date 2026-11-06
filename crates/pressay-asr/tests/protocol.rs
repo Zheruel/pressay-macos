@@ -183,3 +183,153 @@ fn executable_fails_with_json_instead_of_false_readiness() {
         .contains("runtime is missing"));
     assert!(results[0].get("ready").is_none());
 }
+
+#[test]
+fn secondary_models_use_the_portable_runtime() {
+    for model in [
+        "funASRMLTNano",
+        "whisperTurboGGML",
+        "voxtralMini",
+        "qwen3ASR06",
+    ] {
+        assert_eq!(
+            runtime_library(model, Path::new("runtime")).unwrap(),
+            runtime_library("moss", Path::new("runtime")).unwrap()
+        );
+    }
+}
+
+#[test]
+fn language_is_per_request_and_invalid_hints_never_reach_the_engine() {
+    #[derive(Default)]
+    struct LanguageEngine(Vec<Option<String>>);
+    impl SpeechEngine for LanguageEngine {
+        fn transcribe(&mut self, _: &[f32]) -> Result<Transcript, String> {
+            unreachable!()
+        }
+        fn transcribe_with_language(
+            &mut self,
+            _: &[f32],
+            language: Option<&str>,
+        ) -> Result<Transcript, String> {
+            self.0.push(language.map(str::to_string));
+            Ok(Transcript {
+                text: "fixture".into(),
+                truncated: false,
+            })
+        }
+    }
+    let mut input = request(&[0.5]);
+    for language in ["hr", "auto", "yue", "", "english", "e\0n", "EN", "../en"] {
+        let mut line: Value = serde_json::from_slice(&request(&[0.5])).unwrap();
+        line["language"] = json!(language);
+        input.extend(serde_json::to_vec(&line).unwrap());
+        input.push(b'\n');
+    }
+    let mut engine = LanguageEngine::default();
+    let mut output = vec![];
+    serve(&mut engine, &mut Cursor::new(input), &mut output).unwrap();
+    assert_eq!(
+        engine.0,
+        vec![
+            None,
+            Some("hr".into()),
+            Some("auto".into()),
+            Some("yue".into())
+        ]
+    );
+    assert_eq!(
+        replies(&output)
+            .iter()
+            .filter(|reply| reply.get("error").is_some())
+            .count(),
+        5
+    );
+}
+
+#[test]
+fn whisper_accepts_full_capture_but_other_engines_remain_limited() {
+    struct Whisper;
+    impl SpeechEngine for Whisper {
+        fn transcribe(&mut self, samples: &[f32]) -> Result<Transcript, String> {
+            assert_eq!(samples.len(), pressay_asr::MAX_WHISPER_SAMPLES);
+            Ok(Transcript {
+                text: "full clip".into(),
+                truncated: false,
+            })
+        }
+        fn max_samples(&self) -> usize {
+            pressay_asr::MAX_WHISPER_SAMPLES
+        }
+    }
+    let input = request(&vec![0.; pressay_asr::MAX_WHISPER_SAMPLES]);
+    assert!(input.len() < 32 * 1024 * 1024);
+    let mut output = vec![];
+    serve(&mut Whisper, &mut Cursor::new(&input), &mut output).unwrap();
+    assert_eq!(replies(&output)[1]["text"], "full clip");
+    output.clear();
+    let mut regular = Engine::default();
+    serve(&mut regular, &mut Cursor::new(&input), &mut output).unwrap();
+    assert!(regular.calls.is_empty());
+    assert_eq!(replies(&output)[1]["error"], "Invalid audio length");
+}
+
+#[cfg(unix)]
+#[test]
+fn native_adapter_passes_language_and_gates_formatting_against_actual_abi() {
+    struct Temp(std::path::PathBuf);
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let temp = Temp(std::env::temp_dir().join(format!(
+        "pressay-native-options-{}-{unique}",
+        std::process::id()
+    )));
+    std::fs::create_dir_all(temp.0.join("transcribe")).unwrap();
+    let model = temp.0.join("public-fixture.gguf");
+    std::fs::write(&model, b"not a real model").unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let output = Command::new("c++")
+        .args(["-shared", "-fPIC", "-std=c++17", "-I"])
+        .arg(root.join("../../Runtime/Sources/CNativeASR/vendor"))
+        .arg(root.join("tests/fixtures/options_runtime.cpp"))
+        .arg("-o")
+        .arg(runtime_library("moss", &temp.0).unwrap())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for (id, expected) in [
+        ("funASRMLTNano", "hr:0:2:1"),
+        ("whisperTurboGGML", "hr:0:0:1"),
+        ("voxtralMini", "hr:0:0:1"),
+        ("qwen3ASR06", "auto:0:0:1"),
+    ] {
+        let mut engine = NativeEngine::load(id, &model, &temp.0).unwrap();
+        assert_eq!(
+            engine
+                .transcribe_with_language(&[0.1], Some("hr"))
+                .unwrap()
+                .text,
+            expected
+        );
+        let fallback = engine.transcribe_with_language(&[0.1], Some("ja")).unwrap();
+        assert!(fallback.text.starts_with("auto:"));
+        if id == "whisperTurboGGML" {
+            assert!(engine
+                .transcribe(&vec![0.; pressay_asr::MAX_WHISPER_SAMPLES])
+                .is_ok());
+        } else {
+            assert!(engine.transcribe(&vec![0.; MAX_SAMPLES + 1]).is_err());
+        }
+    }
+}

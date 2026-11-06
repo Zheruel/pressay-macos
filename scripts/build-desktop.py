@@ -3,6 +3,7 @@
 from pathlib import Path
 import argparse
 import hashlib
+import json
 import os
 import platform
 import shutil
@@ -16,8 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DESKTOP = ROOT / "apps/desktop"
 NATIVE = DESKTOP / "src-tauri"
 
-def run(*args, cwd=ROOT):
-    subprocess.run([str(a) for a in args], cwd=cwd, check=True)
+def run(*args, cwd=ROOT, env=None):
+    subprocess.run([str(a) for a in args], cwd=cwd, env=env, check=True)
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -25,6 +26,9 @@ def main():
     args = parser.parse_args()
     system = platform.system()
     metal = system == "Darwin" and platform.machine() == "arm64"
+    if system == "Darwin":
+        minimum = json.loads((NATIVE / "tauri.conf.json").read_text())["bundle"]["macOS"]["minimumSystemVersion"]
+        os.environ["MACOSX_DEPLOYMENT_TARGET"] = minimum
     run(sys.executable, ROOT / "scripts/build-portable-runtime.py", *(["--metal"] if metal else []))
     if metal:
         # Preserve the shipping Mac dictation engine; the portable CPU backend is
@@ -58,16 +62,50 @@ def main():
                 raise RuntimeError("Unexpected Orukeet archive layout")
             shutil.copytree(roots[0], destination, dirs_exist_ok=True)
     run("cargo", "build", "--locked", "--release", "-p", "pressay-asr", "-p", "pressay-desktop")
-    binary = "pressay-asr-worker.exe" if system == "Windows" else "pressay-asr-worker"
     (NATIVE / "binaries").mkdir(exist_ok=True)
-    shutil.copy2(ROOT / "target/release" / binary, NATIVE / "binaries" / binary)
+    for name in ["pressay-asr-worker", "pressay-analysis-worker"]:
+        binary = name + (".exe" if system == "Windows" else "")
+        shutil.copy2(ROOT / "target/release" / binary, NATIVE / "binaries" / binary)
+    if system == "Darwin":
+        arch = "arm64" if platform.machine() == "arm64" else "x86_64"
+        run("xcrun", "swift", "build", "--package-path", ROOT / "Runtime", "--build-system", "swiftbuild", "--disable-sandbox", "-c", "release")
+        runtime_bin = Path(subprocess.check_output(["xcrun", "swift", "build", "--package-path", str(ROOT / "Runtime"), "--build-system", "swiftbuild", "-c", "release", "--show-bin-path"], text=True).strip())
+        shutil.copy2(runtime_bin / "PressayASRWorker", NATIVE / "binaries/PressayASRWorker")
+        metallib = runtime_bin / "mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib"
+        if not metallib.is_file() or not metallib.stat().st_size:
+            raise RuntimeError("Swift MLX build is missing its compiled Metal library")
+        # Helpers launched from Resources/binaries resolve Bundle.main to that
+        # directory. Keep SwiftPM resources beside them, as the pinned MLX loader
+        # requires; include dependency resource bundles, not only MLX's shaders.
+        for bundle in runtime_bin.glob("*.bundle"):
+            shutil.copytree(bundle, NATIVE / "binaries" / bundle.name, dirs_exist_ok=True)
+        run("codesign", "--force", "--sign", os.environ.get("APPLE_SIGNING_IDENTITY", "-"), "--options", "runtime", NATIVE / "binaries/PressayASRWorker")
+        helper = NATIVE / "binaries/PressayMeetingCapture"
+        run("xcrun", "swiftc", "-swift-version", "6", "-target", f"{arch}-apple-macos26.0", "-O", "-parse-as-library", NATIVE / "native/MeetingCapture.swift", "-o", helper)
+        run("codesign", "--force", "--sign", os.environ.get("APPLE_SIGNING_IDENTITY", "-"), "--options", "runtime", helper)
+    if system == "Darwin":
+        run(sys.executable, ROOT / "scripts/verify-macos-deployment.py", NATIVE / "binaries", NATIVE / "runtime", ROOT / "target/release/pressay-desktop")
     if args.no_bundle:
         return
     npm = shutil.which("npm.cmd" if system == "Windows" else "npm")
     if not npm:
         raise RuntimeError("Node.js/npm is required to package the desktop installers")
     run(npm, "ci", cwd=DESKTOP)
-    run(npm, "run", "build", cwd=DESKTOP)
+    if system == "Darwin":
+        # Tauri's default DMG can copy a bundle without a complete ad-hoc app
+        # resource seal. Build only the app, seal it, then use our verified artwork.
+        run(npm, "run", "build", "--", "--bundles", "app", cwd=DESKTOP)
+        settings = json.loads((NATIVE / "tauri.conf.json").read_text())
+        app = ROOT / "target/release/bundle/macos" / (settings["productName"] + ".app")
+        run(sys.executable, ROOT / "scripts/sign-desktop-macos.py", app)
+        dmg = ROOT / "target/release/bundle/dmg" / f"Pressay-Desktop-{settings['version']}-macos-{platform.machine()}.dmg"
+        environment = os.environ | {"PRESSAY_SKIP_BUILD": "1", "PRESSAY_DMG_APP": str(app),
+            "PRESSAY_DMG_VERSION": settings["version"], "PRESSAY_DMG_OUTPUT": str(dmg)}
+        if os.environ.get("APPLE_SIGNING_IDENTITY"):
+            environment["SIGNING_IDENTITY"] = os.environ["APPLE_SIGNING_IDENTITY"]
+        run(ROOT / "scripts/package-dmg.sh", env=environment)
+    else:
+        run(npm, "run", "build", cwd=DESKTOP)
 
 if __name__ == "__main__":
     main()

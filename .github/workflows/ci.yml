@@ -83,10 +83,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libxkbcommon-dev
+          sudo apt-get install -y libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libxkbcommon-dev libdbus-1-dev dbus-daemon xvfb xauth pulseaudio-utils
       - name: Rust formatting
         run: cargo fmt --all --check
       - name: Core, native worker, and audio regression tests
         run: cargo test --workspace --locked
+      - name: Native X11 insertion and clipboard preservation
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cargo test -p pressay-desktop --locked x11_insertion -- --ignored
       - name: Rust diagnostics
         run: cargo clippy --workspace --all-targets --locked -- -D warnings

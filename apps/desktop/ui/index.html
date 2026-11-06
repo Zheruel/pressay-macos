@@ -10,7 +10,7 @@
     <aside class="sidebar">
       <div class="brand">
         <img src="icon.png" alt="" width="38" height="38" />
-        <div>Pressay<small>Cross-platform preview</small></div>
+        <div>Pressay<small>Your voice, your workspace</small></div>
       </div>
       <nav aria-label="Main navigation">
         <button class="nav active" data-page="dictation">
@@ -37,6 +37,13 @@
     </aside>
     <main id="workspace">
       <div id="error" role="alert" hidden></div>
+      <div id="call-banner" class="live-banner" hidden>
+        <span id="call-message"></span
+        ><button id="call-record">Take notes</button
+        ><button id="dismiss-call" aria-label="Dismiss call suggestion">
+          ×
+        </button>
+      </div>
       <section data-panel="dictation">
         <div class="heading">
           <div>
@@ -65,7 +72,27 @@
         </div>
         <div class="section-heading">
           <h2>Recent dictations</h2>
-          <span>Stored on this device</span>
+          <button id="clear-history">Clear history…</button>
+        </div>
+        <div class="history-filters">
+          <input
+            id="history-search"
+            type="search"
+            placeholder="Search your dictations…"
+            aria-label="Search dictations"
+          /><label class="check"
+            ><input id="history-pinned" type="checkbox" />Pinned only</label
+          >
+        </div>
+        <div class="stats secondary">
+          <div><strong id="wpm">—</strong><span>Words per minute</span></div>
+          <div>
+            <strong id="saved-time">0 min</strong
+            ><span>Typing time saved this week</span>
+          </div>
+          <div>
+            <strong id="streak">0 days</strong><span>Dictation streak</span>
+          </div>
         </div>
         <div id="history" class="history"></div>
       </section>
@@ -73,14 +100,48 @@
         <div class="heading">
           <div>
             <h1>Notetaker</h1>
-            <p>Your imported meetings, kept intact.</p>
+            <p>Be present. Keep the details.</p>
+          </div>
+          <div class="button-group">
+            <button id="start-voice">Voice note</button
+            ><button id="start-meeting" class="primary">Record meeting</button
+            ><button id="stop-meeting" class="primary" hidden>
+              Stop recording
+            </button>
           </div>
         </div>
-        <div class="notice">
-          Meeting capture is still being ported. Continue using the native Mac
-          app to record meetings; this preview can read imported notes.
+        <div id="meeting-live" class="live-banner" role="status" hidden>
+          <span class="pulse"></span
+          ><strong id="meeting-live-label">Recording</strong
+          ><span id="meeting-clock">0:00</span
+          ><span>Tell everyone you’re taking notes.</span>
         </div>
-        <div id="meetings"></div>
+        <div class="download" hidden>
+          <progress max="1" value="0"></progress>
+          <p class="download-label" role="status"></p>
+        </div>
+        <button id="cancel-meeting-work" hidden>Cancel preparation</button>
+        <div class="notes-toolbar">
+          <input
+            id="notes-search"
+            type="search"
+            placeholder="Search your meetings…"
+            aria-label="Search meetings"
+          /><button id="ask-all">Ask your meetings</button>
+        </div>
+        <div class="notes-layout">
+          <div id="meetings" class="notes-list"></div>
+          <article id="note-detail" class="note-detail">
+            <div class="empty">
+              <span class="empty-symbol">▤</span>
+              <h2>A little less to remember.</h2>
+              <p>
+                Record a meeting or a voice note. Your transcript stays on your
+                device, ready whenever you need it.
+              </p>
+            </div>
+          </article>
+        </div>
       </section>
       <section data-panel="dictionary" hidden>
         <div class="heading">
@@ -125,6 +186,15 @@
           <label for="model">Dictation model</label
           ><select id="model"></select>
           <p class="muted" id="model-size"></p>
+          <p class="muted">
+            Dictations finish automatically after five minutes. Use Voice note
+            for longer recordings.
+          </p>
+          <label
+            >Dictation language<select id="dictation-language" disabled>
+              <option value="auto">Automatic</option>
+            </select></label
+          >
           <button id="prepare" class="primary">Prepare model</button>
           <div class="download" hidden>
             <progress max="1" value="0"></progress>
@@ -153,10 +223,134 @@
           ><input type="file" id="migration" accept="application/json,.json" />
           <p role="status" id="migration-result"></p>
         </div>
-        <div class="notice">
-          This is a validation preview. It has a separate app identity and data
-          store. The native Mac app remains the complete release, including AI
-          cleanup, meeting capture and updates.
+        <div class="card">
+          <h2>Your talk key</h2>
+          <p>
+            Hold to speak, release to insert. Escape cancels an active
+            dictation.
+          </p>
+          <div class="form-grid">
+            <label
+              >Shortcut type<select id="shortcut-kind">
+                <option value="chord">Key combination</option>
+                <option value="macKey">Mac physical key</option>
+              </select></label
+            ><label
+              >Key combination<input
+                id="shortcut-value"
+                placeholder="Control+Shift+Space"
+            /></label>
+          </div>
+          <button id="save-shortcut">Save shortcut</button
+          ><label class="check" id="wayland-option" hidden
+            ><input id="wayland-cursor" type="checkbox" />Insert at the current
+            cursor using the desktop portal</label
+          >
+          <p id="wayland-help" class="muted" hidden>
+            Wayland does not expose the original focused app. With this option
+            enabled, keep the cursor where you want your words until insertion
+            finishes.
+          </p>
+        </div>
+        <div class="card">
+          <h2>AI, when you want it</h2>
+          <p>
+            Speech recognition stays local. Optional cleanup and meeting
+            write-ups send text to the provider you choose.
+          </p>
+          <label class="check"
+            ><input id="ai-enabled" type="checkbox" />Clean up my
+            dictations</label
+          >
+          <div class="form-grid">
+            <label
+              >Provider<select id="ai-provider">
+                <option value="claude">Claude</option>
+                <option value="chatgpt">ChatGPT / OpenAI</option>
+              </select></label
+            ><label
+              >Connection<select id="ai-connection">
+                <option value="apiKey">API key</option>
+                <option value="subscription">Subscription</option>
+              </select></label
+            >
+          </div>
+          <div id="api-key-row">
+            <label for="api-key">API key</label>
+            <div class="row">
+              <input
+                id="api-key"
+                type="password"
+                autocomplete="off"
+                placeholder="Stored in your operating system’s credential store"
+              /><button id="save-api-key">Save key</button
+              ><button id="remove-api-key">Disconnect</button>
+            </div>
+          </div>
+          <div id="subscription-row" hidden>
+            <p id="subscription-help"></p>
+            <button id="sign-in">Sign in with ChatGPT</button
+            ><button id="cancel-sign-in" hidden>Cancel sign-in</button
+            ><button id="sign-out">Sign out</button>
+          </div>
+          <p id="account-status" role="status"></p>
+          <button id="import-mac-keys" hidden>Use existing Mac API keys</button>
+        </div>
+        <div class="card">
+          <h2>Meeting preferences</h2>
+          <div class="form-grid">
+            <label>Meeting model<select id="meeting-model"></select></label
+            ><label
+              >Stop after<select id="meeting-hours">
+                <option value="1">1 hour</option>
+                <option value="2">2 hours</option>
+                <option value="3">3 hours</option>
+                <option value="4">4 hours</option>
+                <option value="6">6 hours</option>
+                <option value="8">8 hours</option>
+              </select></label
+            >
+          </div>
+          <label
+            >Meeting language<select id="meeting-language" disabled>
+              <option value="auto">Automatic</option>
+            </select></label
+          ><label class="check"
+            ><input id="notes-ai" type="checkbox" />Write notes automatically
+            after recording</label
+          ><label
+            >Notes model<select id="notes-model">
+              <option value="claude:haiku55">Claude Haiku 5.5</option>
+              <option value="claude:sonnet55">Claude Sonnet 5.5</option>
+              <option value="chatgpt:gpt-6.1-sol">GPT-6.1 Sol</option>
+              <option value="chatgpt:gpt-6-luna">GPT-6 Luna</option>
+            </select></label
+          ><label class="check"
+            ><input id="detect-calls" type="checkbox" />Suggest taking notes
+            when a call starts</label
+          >
+        </div>
+        <div class="card">
+          <h2>Keep Pressay close</h2>
+          <label class="check"
+            ><input id="launch-at-login" type="checkbox" />Launch at
+            login</label
+          ><button id="check-updates">Check for updates</button>
+          <p id="update-status" role="status"></p>
+        </div>
+        <div class="card">
+          <h2>Your data is yours</h2>
+          <p>
+            Unpinned dictations are kept for 30 days and their audio for 7 days.
+            Pinned and corrected dictations are kept. Meeting notes stay until
+            you delete them.
+          </p>
+          <button id="export-backup">Export notes and history</button>
+          <p class="muted">Audio stays on this device.</p>
+          <button id="import-mac-audio" hidden>
+            Import original Mac recordings</button
+          ><button id="cancel-audio-import" hidden>Cancel import</button>
+          <p id="audio-import-status" role="status"></p>
         </div>
       </section>
     </main>
@@ -242,6 +436,33 @@
         </div>
       </div>
     </dialog>
+    <dialog id="ask-dialog" aria-labelledby="ask-title">
+      <div class="ask-content">
+        <div class="row">
+          <h2 id="ask-title">Ask your meetings</h2>
+          <button id="close-ask" aria-label="Close">×</button>
+        </div>
+        <p class="muted">
+          Answers use your selected notes and transcripts. Text is sent to your
+          chosen AI provider.
+        </p>
+        <div id="ask-conversation" aria-live="polite"></div>
+        <form id="ask-form">
+          <label for="ask-question">Your question</label
+          ><textarea
+            id="ask-question"
+            rows="3"
+            placeholder="What did we decide?"
+            required
+          ></textarea>
+          <div class="row">
+            <button id="cancel-ask" type="button" hidden>Cancel</button
+            ><button id="submit-ask" class="primary">Ask</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+    <script src="workspace.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

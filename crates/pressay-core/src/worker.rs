@@ -55,6 +55,7 @@ pub struct WorkerHost {
     executable: PathBuf,
     runtime: PathBuf,
     timeout: Duration,
+    language: Option<String>,
     resident: Option<Resident>,
 }
 impl WorkerHost {
@@ -63,8 +64,16 @@ impl WorkerHost {
             executable,
             runtime,
             timeout: Duration::from_secs(180),
+            language: None,
             resident: None,
         }
+    }
+    pub fn set_language(&mut self, language: &str) {
+        self.language = if language.is_empty() || language == "auto" {
+            None
+        } else {
+            Some(language.to_owned())
+        };
     }
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -86,7 +95,15 @@ impl WorkerHost {
             }
         }
         self.stop().await;
-        let mut child = Command::new(&self.executable)
+        let executable = if cfg!(target_os = "macos") && model == "megaASR" {
+            self.executable
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join("PressayASRWorker")
+        } else {
+            self.executable.clone()
+        };
+        let mut child = Command::new(&executable)
             .args([Path::new(model), path, &self.runtime])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -122,14 +139,16 @@ impl WorkerHost {
         samples: Option<&[f32]>,
     ) -> Result<(String, bool)> {
         if let Some(samples) = samples {
-            audio::validate(samples)?;
+            audio::validate_for_model(samples, model)?;
         }
         self.load(model, path).await?;
         let Some(samples) = samples else {
             return Ok((String::new(), false));
         };
         let pcm: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
-        let mut data = serde_json::to_vec(&serde_json::json!({"pcm": STANDARD.encode(pcm)}))?;
+        let mut data = serde_json::to_vec(
+            &serde_json::json!({"pcm": STANDARD.encode(pcm), "language": self.language}),
+        )?;
         data.push(b'\n');
         let resident = self.resident.as_mut().unwrap();
         resident.stdin.write_all(&data).await?;
@@ -175,7 +194,7 @@ impl WorkerHost {
                 self.stop().await;
                 return Err(Error::Cancelled);
             }
-            if samples.len() > audio::MAX_CHUNK_SAMPLES {
+            if samples.len() > audio::chunk_samples(model) {
                 let cut = audio::split_point(samples);
                 chunks.push((&samples[cut..], depth));
                 chunks.push((&samples[..cut], depth));
@@ -211,7 +230,15 @@ impl WorkerHost {
 fn plain_transcript(model: &str, text: &str) -> String {
     let text = text.trim();
     let lower = text.to_lowercase();
-    if ["moss", "megaASR", "qwen3ASR17"].contains(&model)
+    if [
+        "moss",
+        "megaASR",
+        "qwen3ASR17",
+        "qwen3ASR06",
+        "funASRMLTNano",
+        "voxtralMini",
+    ]
+    .contains(&model)
         && text.chars().count() <= 64
         && [
             "i'm sorry, i didn't understand",

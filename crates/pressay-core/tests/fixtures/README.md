@@ -1,0 +1,1 @@
+The `oauth-test-only-*` files form a disposable RSA key pair used exclusively by local OAuth/JWKS fixtures. They are public test material, have never been registered with any provider, and must never be used as application credentials or production signing keys.

@@ -46,6 +46,20 @@ impl Store {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(path)
+            {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
         let db = Connection::open(path)?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         let has_metadata: bool = db.query_row(
@@ -112,6 +126,31 @@ impl Store {
             .execute("DELETE FROM dictations WHERE id=?1", [id])?;
         Ok(())
     }
+    /// Clear every dictation, including pinned/corrected rows. The database
+    /// change is atomic; only this preview's UUID-named audio files are removed.
+    pub fn clear_dictations(&mut self, audio: &crate::recordings::AudioStore) -> Result<usize> {
+        let transaction = self.db.transaction()?;
+        let ids = {
+            let mut query = transaction.prepare("SELECT id FROM dictations")?;
+            let rows = query.query_map([], |row| row.get::<_, String>(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        transaction.execute("DELETE FROM dictations", [])?;
+        transaction.commit()?;
+        let mut failures = 0;
+        for id in &ids {
+            if audio.remove(id).is_err() {
+                failures += 1;
+            }
+        }
+        if failures > 0 {
+            return Err(Error::Message(format!(
+                "History cleared, but {failures} recording files could not be removed from {}",
+                audio.root().display()
+            )));
+        }
+        Ok(ids.len())
+    }
     pub fn save_note(&self, note: &Value) -> Result<()> {
         let id = note
             .get("id")
@@ -129,7 +168,128 @@ impl Store {
             .db
             .prepare("SELECT data FROM notes ORDER BY rowid DESC")?;
         let rows = q.query_map([], |r| r.get::<_, String>(0))?;
-        rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
+        rows.map(|r| {
+            let mut value: Value = serde_json::from_str(&r?)?;
+            if let Ok(note) = serde_json::from_value::<crate::notes::Note>(value.clone()) {
+                value["actions"] =
+                    serde_json::to_value(crate::notes::ActionItem::parse(&note.body))?;
+                value["plainTranscript"] = Value::String(note.transcript());
+            }
+            Ok(value)
+        })
+        .collect()
+    }
+    pub fn dictation(&self, id: &str) -> Result<Dictation> {
+        let data: String =
+            self.db
+                .query_row("SELECT data FROM dictations WHERE id=?1", [id], |r| {
+                    r.get(0)
+                })?;
+        Ok(serde_json::from_str(&data)?)
+    }
+    pub fn edit_dictation(
+        &self,
+        id: &str,
+        correction: Option<&str>,
+        pinned: Option<bool>,
+    ) -> Result<Dictation> {
+        let mut record = self.dictation(id)?;
+        if let Some(text) = correction {
+            if text.len() > 1_000_000 {
+                return Err(Error::Message("Correction is too long".into()));
+            }
+            record.correction = if text.trim().is_empty() {
+                None
+            } else {
+                Some(text.into())
+            };
+        }
+        if let Some(pinned) = pinned {
+            record.pinned = pinned;
+        }
+        self.update_dictation(&record)?;
+        Ok(record)
+    }
+    pub fn update_dictation(&self, record: &Dictation) -> Result<()> {
+        validate_record(record)?;
+        if self.db.execute(
+            "UPDATE dictations SET data=?2 WHERE id=?1",
+            params![record.id, serde_json::to_string(record)?],
+        )? == 0
+        {
+            return Err(Error::Message("This dictation no longer exists".into()));
+        }
+        Ok(())
+    }
+    pub fn note(&self, id: &str) -> Result<crate::notes::Note> {
+        let data: String = self
+            .db
+            .query_row("SELECT data FROM notes WHERE id=?1", [id], |r| r.get(0))?;
+        Ok(serde_json::from_str(&data)?)
+    }
+    pub fn put_note(&self, note: &crate::notes::Note) -> Result<()> {
+        note.validate()?;
+        self.save_note(&serde_json::to_value(note)?)
+    }
+    pub fn delete_note(&self, id: &str) -> Result<()> {
+        self.db.execute("DELETE FROM notes WHERE id=?1", [id])?;
+        Ok(())
+    }
+    pub fn patch_note(&self, id: &str, patch: &Value) -> Result<crate::notes::Note> {
+        let mut note = self.note(id)?;
+        note.apply_patch(patch)?;
+        self.put_note(&note)?;
+        Ok(note)
+    }
+    pub fn snapshot(&self) -> Result<Snapshot> {
+        let mut q = self
+            .db
+            .prepare("SELECT data FROM dictations ORDER BY created_at")?;
+        let records = q
+            .query_map([], |r| r.get::<_, String>(0))?
+            .map(|r| Ok(serde_json::from_str(&r?)?))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Snapshot {
+            schema: 1,
+            source: uuid::Uuid::new_v4().to_string(),
+            settings: self.settings()?,
+            dictations: records,
+            notes: self.notes()?,
+        })
+    }
+    /// Remove only managed audio through AudioStore. Legacy paths are never deleted.
+    /// Pinned and corrected records are retained, matching the existing app.
+    pub fn retain(&self, at: f64, audio: &crate::recordings::AudioStore) -> Result<()> {
+        let mut q = self
+            .db
+            .prepare("SELECT data FROM dictations WHERE created_at<?1")?;
+        let rows = q.query_map([at - 7. * 86400.], |r| r.get::<_, String>(0))?;
+        let records = rows
+            .map(|r| Ok(serde_json::from_str::<Dictation>(&r?)?))
+            .collect::<Result<Vec<_>>>()?;
+        drop(q);
+        for mut record in records {
+            if record.pinned || record.correction.as_ref().is_some_and(|c| !c.is_empty()) {
+                continue;
+            }
+            audio.remove(&record.id)?;
+            if record.created_at < at - 30. * 86400. {
+                self.delete_dictation(&record.id)?;
+            } else if record.legacy.get("managedAudio").is_some() {
+                record
+                    .legacy
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("managedAudio");
+                self.update_dictation(&record)?;
+            }
+        }
+        let mut query = self.db.prepare("SELECT id FROM dictations")?;
+        let referenced = query
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<std::collections::HashSet<_>, _>>()?;
+        audio.prune_orphans(&referenced, at)?;
+        Ok(())
     }
     pub fn import(&mut self, snapshot: &Snapshot) -> Result<bool> {
         if snapshot.schema != 1 || snapshot.source.is_empty() || !snapshot.settings.is_object() {
@@ -203,6 +363,62 @@ fn validate_record(record: &Dictation) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn clear_all_includes_pins_corrections_and_rows_beyond_history_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("core.db")).unwrap();
+        let audio = crate::recordings::AudioStore::new(dir.path().join("recordings")).unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        audio.save(&id, &[0.1; 160]).unwrap();
+        let record = Dictation {
+            id: id.clone(),
+            created_at: 1.,
+            duration: 1.,
+            model: "unknown-old-model".into(),
+            raw: "raw".into(),
+            text: "text".into(),
+            correction: Some("corrected".into()),
+            pinned: true,
+            target: None,
+            latency: 0.,
+            legacy: serde_json::json!({"audioPath":"/source/original.wav"}),
+        };
+        store.add(&record).unwrap();
+        // IDs are intentionally imported strings: clearing must never treat
+        // them as filesystem paths, and cannot use the 10,000-row UI query.
+        store.db.execute("WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10001) INSERT INTO dictations SELECT '../original-'||x, x, ?1 FROM n", [serde_json::to_string(&record).unwrap()]).unwrap();
+        store
+            .save_settings(&serde_json::json!({"vocabulary":"Keep me"}))
+            .unwrap();
+        store
+            .save_note(&serde_json::json!({"id":"note","body":"Keep notes"}))
+            .unwrap();
+        assert_eq!(store.clear_dictations(&audio).unwrap(), 10002);
+        assert!(store.history(1).unwrap().is_empty());
+        assert!(!audio.root().join(format!("{id}.wav")).exists());
+        assert_eq!(store.settings().unwrap()["vocabulary"], "Keep me");
+        assert_eq!(store.notes().unwrap().len(), 1);
+        assert_eq!(store.clear_dictations(&audio).unwrap(), 0);
+    }
+    #[test]
+    fn clear_reports_audio_cleanup_failure_after_atomic_history_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("core.db")).unwrap();
+        let audio = crate::recordings::AudioStore::new(dir.path().join("recordings")).unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        std::fs::create_dir(audio.root().join(format!("{id}.wav"))).unwrap();
+        store
+            .db
+            .execute("INSERT INTO dictations VALUES (?1,1,'{}')", [&id])
+            .unwrap();
+        assert!(store
+            .clear_dictations(&audio)
+            .unwrap_err()
+            .to_string()
+            .contains("1 recording files"));
+        assert!(store.history(1).unwrap().is_empty());
+    }
+
     #[test]
     fn import_rolls_back_on_bad_note_and_is_idempotent() {
         let dir = tempfile::tempdir().unwrap();

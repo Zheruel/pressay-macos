@@ -1,0 +1,28 @@
+[
+  {
+    "id": "sileroVAD",
+    "name": "Silero VAD 6.2",
+    "mac_only": false,
+    "artifacts": [
+      {
+        "path": "silero-vad-v6.2-F32.gguf",
+        "bytes": 1241056,
+        "sha256": "0d871a800c420fdd5d1b17a3aea4296d1c39608f0ff4a9295eb76457eb1c88e6",
+        "url": "https://huggingface.co/handy-computer/silero-vad-v6.2-gguf/resolve/a9b2d61c20ae4ddf3644edb34969e8185a485448/silero-vad-v6.2-F32.gguf"
+      }
+    ]
+  },
+  {
+    "id": "sortformer",
+    "name": "Sortformer 4-speaker v2.1",
+    "mac_only": false,
+    "artifacts": [
+      {
+        "path": "diar_streaming_sortformer_4spk-v2.1-F16.gguf",
+        "bytes": 236606560,
+        "sha256": "62faec7b99ad23e323087597604b50728abe85089b6364970b019a845547bf99",
+        "url": "https://huggingface.co/handy-computer/diar_streaming_sortformer_4spk-v2.1-gguf/resolve/60ebab3ef7cae9869be0abcde13360347e96ba03/diar_streaming_sortformer_4spk-v2.1-F16.gguf"
+      }
+    ]
+  }
+]

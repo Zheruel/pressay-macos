@@ -1,1 +1,4 @@
 Runtime/Sources/CNativeASR/vendor/* linguist-vendored
+
+# Preserve literal unified-diff context in the pinned upstream patch.
+scripts/patches/*.patch -whitespace
