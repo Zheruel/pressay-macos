@@ -494,12 +494,16 @@ mod tests {
         std::fs::write(&audio_path, [1, 2, 3, 4]).unwrap();
         assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
         assert_eq!(std::fs::read(&audio_path).unwrap(), [1, 2, 3, 4]);
+        // Parallel worker tests can fork while this descriptor is open. Release
+        // the lock explicitly so a child awaiting exec cannot briefly retain it.
+        lock.unlock().unwrap();
         drop(lock);
         // Two cleanup processes may observe this same stale pair. Once the
         // lifetime lock is held, a second cleaner cannot unlink either file.
         let first_cleanup = lock_stale_spool_file(&lock_path).unwrap().unwrap().unwrap();
         assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
         assert!(audio_path.exists());
+        first_cleanup.unlock().unwrap();
         drop(first_cleanup);
         assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 1);
         assert!(!lock_path.exists());
@@ -509,6 +513,7 @@ mod tests {
         legacy.try_lock().unwrap();
         assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
         assert!(legacy_path.exists());
+        legacy.unlock().unwrap();
         drop(legacy);
         assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 1);
 

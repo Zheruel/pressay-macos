@@ -28,6 +28,8 @@ pub struct Practice {
     pub received_audio: bool,
     pub recognized_text: String,
     pub inserted: bool,
+    #[serde(default)]
+    pub in_app: bool,
     pub observed_text: String,
 }
 impl Practice {
@@ -35,8 +37,9 @@ impl Practice {
         readiness.ready()
             && self.received_audio
             && self.inserted
+            && self.in_app
             && !self.recognized_text.trim().is_empty()
-            && self.observed_text.contains(self.recognized_text.trim())
+            && self.observed_text.trim() == self.recognized_text.trim()
     }
 }
 #[cfg(test)]
@@ -54,11 +57,24 @@ mod tests {
             received_audio: true,
             recognized_text: "Hello".into(),
             inserted: true,
+            in_app: true,
             ..Default::default()
         };
         assert!(!p.complete(&r));
         p.observed_text = "Hello".into();
         assert!(p.complete(&r));
+        p.in_app = false;
+        assert!(
+            !p.complete(&r),
+            "Dictation in another app is not practice evidence"
+        );
+        p.in_app = true;
+        p.observed_text = "Before Hello after".into();
+        assert!(
+            !p.complete(&r),
+            "Practice must match the completed dictation"
+        );
+        p.observed_text = "Hello".into();
         r.microphone = Permission::Denied;
         assert!(!p.complete(&r));
     }

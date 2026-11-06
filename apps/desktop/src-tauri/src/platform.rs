@@ -41,6 +41,7 @@ extern "C" {
         detail: *const std::ffi::c_char,
         levels: *const f32,
     );
+    fn pressay_overlay_elapsed(elapsed: f64);
     fn pressay_set_stop_callback(callback: extern "C" fn());
     fn pressay_export_reminders(
         json: *const std::ffi::c_char,
@@ -196,6 +197,30 @@ pub fn focused_target() -> Result<u64, String> {
             return Ok(crate::wayland::target());
         }
         targets::capture()
+    }
+}
+/// Practice only accepts a dictation that started and finished in this app.
+pub fn target_is_current_app(target: u64, app: &tauri::AppHandle) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app;
+        target != 0 && unsafe { pressay_target_process(target) } == std::process::id() as i32
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        #[cfg(target_os = "linux")]
+        if is_wayland() {
+            use tauri::Manager;
+            // Wayland hides global focus. The app can still know whether its
+            // own practice window has focus; require it at both boundaries.
+            return target != 0
+                && ["main", "onboarding"].iter().any(|label| {
+                    app.get_webview_window(label)
+                        .is_some_and(|window| window.is_focused().unwrap_or(false))
+                });
+        }
+        let _ = app;
+        targets::belongs_to_process(target, std::process::id())
     }
 }
 /// Reacquire a replaced editor or moved caret at key release, only while the
@@ -358,6 +383,14 @@ pub fn overlay_state(stage: &str, detail: Option<&str>, levels: [f32; 4]) {
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (stage, detail, levels);
+}
+pub fn overlay_elapsed(elapsed: f64) {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        pressay_overlay_elapsed(elapsed);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = elapsed;
 }
 #[cfg(target_os = "macos")]
 static STOP_MEETING: std::sync::Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>> =
@@ -596,6 +629,13 @@ mod targets {
             .unwrap()
             .get(&token)
             .is_some_and(|target| target.focus.foreground == window)
+    }
+    pub fn belongs_to_process(token: u64, process: u32) -> bool {
+        registry()
+            .lock()
+            .unwrap()
+            .get(&token)
+            .is_some_and(|target| !target.invalidated && target.focus.process == process)
     }
     pub fn release(token: u64) {
         registry().lock().unwrap().remove(&token);

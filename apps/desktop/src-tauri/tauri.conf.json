@@ -12,10 +12,13 @@
       {
         "label": "main",
         "title": "Pressay Preview",
-        "width": 1060,
-        "height": 760,
-        "minWidth": 760,
-        "minHeight": 600
+        "width": 1080,
+        "height": 740,
+        "minWidth": 900,
+        "minHeight": 620,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "visible": false
       }
     ],
     "security": {

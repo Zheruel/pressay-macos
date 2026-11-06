@@ -79,10 +79,6 @@ int pressay_input_status(void) { return CGPreflightListenEventAccess() ? 1 : 2; 
 @property NSMutableArray *observers;
 @property PressayPanel *guide;
 @property int guideKind;
-@property PressayPanel *overlay;
-@property NSTextField *overlayLabel;
-@property NSArray<NSView *> *overlayBars;
-@property NSButton *overlayStop;
 - (void)notify:(int)event detail:(int)detail;
 - (void)stop;
 - (BOOL)createTap;
@@ -127,6 +123,9 @@ static NSTextField *textLabel(NSString *value, NSRect frame, CGFloat size, NSFon
     label.accessibilityLabel = value;
     return label;
 }
+extern void pressay_island_update(const char *, const char *, const float *);
+extern void pressay_island_elapsed(double);
+extern void pressay_island_shutdown(void);
 typedef void (*PressayStopCallback)(void);
 static PressayStopCallback stopMeetingCallback;
 void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMeetingCallback = callback; }); }
@@ -149,7 +148,7 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
     for (id observer in self.observers) [[NSWorkspace sharedWorkspace].notificationCenter removeObserver:observer];
     self.observers = nil;
     self.callback = NULL; self.context = NULL;
-    [self.overlay orderOut:nil];
+    pressay_island_shutdown();
 }
 - (BOOL)createTap {
     if (self.tap) return CGEventTapIsEnabled(self.tap);
@@ -218,7 +217,7 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
 }
 - (void)suspend {
     self.pressed = NO; self.blockedUntilRelease = YES; self.busy = NO;
-    [self.overlay orderOut:nil]; [self notify:4 detail:0];
+    pressay_island_shutdown(); [self notify:4 detail:0];
 }
 - (void)showInFinder:(id)sender { [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[NSBundle.mainBundle.bundleURL]]; }
 - (void)closeGuide:(id)sender { [self.guide orderOut:nil]; }
@@ -315,51 +314,10 @@ void pressay_open_permission(int kind) {
     });
 }
 void pressay_overlay(const char *stage, const char *detail, const float *levels) {
-    NSString *phase = stage ? [NSString stringWithUTF8String:stage] : @"idle";
-    NSString *message = detail ? [NSString stringWithUTF8String:detail] : @"";
-    float values[4]; for (int i=0;i<4;i++) values[i] = levels && isfinite(levels[i]) ? fmaxf(0, fminf(1, levels[i])) : 0;
-    NSArray<NSNumber *> *bars = @[@(values[0]),@(values[1]),@(values[2]),@(values[3])];
-    onMain(^{
-        PressayNative *owner = instance();
-        if (![@[@"starting", @"recording", @"processing", @"polishing", @"meeting", @"meeting_finishing", @"success", @"error", @"cancelled"] containsObject:phase]) { [owner.overlay orderOut:nil]; return; }
-        if (!owner.overlay) {
-            owner.overlay = [[PressayPanel alloc] initWithContentRect:NSMakeRect(0, 0, 360, 58) styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel backing:NSBackingStoreBuffered defer:NO];
-            owner.overlay.level = NSStatusWindowLevel; owner.overlay.opaque = NO;
-            owner.overlay.backgroundColor = NSColor.clearColor; owner.overlay.hasShadow = YES;
-            owner.overlay.hidesOnDeactivate = NO;
-            owner.overlay.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary;
-            NSVisualEffectView *view = [[NSVisualEffectView alloc] initWithFrame:NSMakeRect(0, 0, 360, 58)];
-            view.material = NSVisualEffectMaterialHUDWindow; view.blendingMode = NSVisualEffectBlendingModeBehindWindow;
-            view.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-            view.state = NSVisualEffectStateActive; view.wantsLayer = YES; view.layer.cornerRadius = 23; view.layer.masksToBounds = YES;
-            owner.overlayLabel = textLabel(@"", NSMakeRect(60, 17, 236, 24), 13, NSFontWeightMedium);
-            owner.overlayLabel.textColor = NSColor.whiteColor;
-            owner.overlayLabel.lineBreakMode = NSLineBreakByTruncatingTail;
-            owner.overlayLabel.alignment = NSTextAlignmentCenter; [view addSubview:owner.overlayLabel];
-            NSMutableArray *wave = [NSMutableArray new];
-            for (int i=0;i<4;i++) { NSView *bar = [[NSView alloc] initWithFrame:NSMakeRect(22+i*7,25,4,8)]; bar.wantsLayer=YES;bar.layer.cornerRadius=2;[view addSubview:bar];[wave addObject:bar]; }
-            owner.overlayBars = wave;
-            owner.overlayStop = [NSButton buttonWithTitle:@"Stop" target:owner action:@selector(stopMeeting)];
-            owner.overlayStop.frame=NSMakeRect(300,15,48,28);owner.overlayStop.bezelStyle=NSBezelStyleRounded;
-            owner.overlayStop.accessibilityLabel=@"Stop meeting recording";[view addSubview:owner.overlayStop];
-            owner.overlay.contentView = view;
-        }
-        BOOL meeting=[phase isEqualToString:@"meeting"];
-        BOOL error=[phase isEqualToString:@"error"];
-        BOOL success=[phase isEqualToString:@"success"];
-        NSString *label = message.length ? message : [phase isEqualToString:@"recording"] ? @"Listening · Esc to cancel" : [phase isEqualToString:@"starting"] ? @"Opening microphone…" : meeting ? @"Meeting recording" : [phase isEqualToString:@"meeting_finishing"] ? @"Finishing meeting…" : success ? @"Inserted" : error ? @"Saved in History" : [phase isEqualToString:@"cancelled"] ? @"Cancelled" : [phase isEqualToString:@"polishing"] ? @"Polishing your words…" : @"Transcribing · Esc to cancel";
-        owner.overlayLabel.stringValue = label; owner.overlayLabel.accessibilityLabel = label;
-        owner.overlayStop.hidden = !meeting; owner.overlay.ignoresMouseEvents = !meeting;
-        owner.overlayLabel.frame = NSMakeRect(60,17,meeting ? 236 : 278,24);
-        NSColor *color = meeting || error ? NSColor.systemOrangeColor : success ? NSColor.systemGreenColor : NSColor.systemPurpleColor;
-        for (NSUInteger i=0;i<4;i++) { NSView *bar=owner.overlayBars[i]; CGFloat height=6+24*bars[i].floatValue;bar.frame=NSMakeRect(22+i*7,29-height/2,4,height);bar.layer.backgroundColor=color.CGColor; }
-        NSScreen *screen=NSScreen.mainScreen ?: NSScreen.screens.firstObject;
-        NSRect frame=screen.frame;
-        CGFloat top=NSMaxY(frame)-MAX(screen.safeAreaInsets.top, (CGFloat)10)-58;
-        [owner.overlay setFrameOrigin:NSMakePoint(NSMidX(frame)-180,top)];
-        [owner.overlay orderFrontRegardless];
-    });
+    pressay_island_update(stage, detail, levels);
 }
+void pressay_overlay_elapsed(double elapsed) { pressay_island_elapsed(elapsed); }
+void pressay_overlay_stop_meeting(void) { if (stopMeetingCallback) stopMeetingCallback(); }
 
 // A token retains only the original AX element/selection, never its text. Tokens
 // are short lived and bounded even if a cancelled caller forgets to release one.

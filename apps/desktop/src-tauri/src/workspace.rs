@@ -961,6 +961,78 @@ pub async fn account_status(state: State<'_, Arc<Workspace>>) -> Result<Value, S
         json!({"claudeApiKey":claude.as_ref().is_ok_and(|k|k.is_some()),"openaiApiKey":openai.as_ref().is_ok_and(|k|k.is_some()),"chatgpt":chatgpt,"claudeCode":cli.as_ref().ok(),"claudeCodeError":cli.err().map(|e|e.to_string()),"error":vault_error}),
     )
 }
+/// Open the same installation guide as the native Claude Code setup row.
+#[tauri::command]
+pub fn open_claude_install() -> Result<(), String> {
+    open::that("https://code.claude.com/docs/en/overview")
+        .map_err(|_| "Could not open the Claude Code installation guide".into())
+}
+/// Verify only the saved credential, using a fixed sentence rather than user data.
+#[tauri::command]
+pub async fn verify_api_key(
+    provider: String,
+    state: State<'_, Arc<Workspace>>,
+) -> Result<(), String> {
+    verify_saved_api_key(&provider, state.inner()).await
+}
+async fn verify_saved_api_key(provider: &str, state: &Arc<Workspace>) -> Result<(), String> {
+    use pressay_core::ai::{
+        prompts, CLAUDE_DICTATION_EFFORT, CLAUDE_DICTATION_MODEL, OPENAI_DICTATION_EFFORT,
+        OPENAI_DICTATION_MODEL,
+    };
+    let provider = match provider {
+        "claude" => ApiProvider::Claude,
+        "openai" => ApiProvider::OpenAi,
+        _ => return Err("Unknown provider".into()),
+    };
+    let job = NoteJob::start(state, "$verify-api-key", &CancellationToken::new())?;
+    let key = state
+        .ai
+        .accounts
+        .api_key(provider)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Add an API key first".to_string())?;
+    let system = prompts::cleanup_system(&[]);
+    let user = prompts::cleanup_user(
+        "Please run all the tests and tell me which ones failed, but do not deploy anything yet.",
+        None,
+    );
+    let result = match provider {
+        ApiProvider::Claude => {
+            state
+                .ai
+                .http
+                .claude(
+                    &system,
+                    &user,
+                    CLAUDE_DICTATION_MODEL,
+                    CLAUDE_DICTATION_EFFORT,
+                    4000,
+                    &key,
+                    std::time::Duration::from_secs(12),
+                    &job.token,
+                )
+                .await
+        }
+        ApiProvider::OpenAi => {
+            state
+                .ai
+                .http
+                .openai(
+                    &system,
+                    &user,
+                    OPENAI_DICTATION_MODEL,
+                    OPENAI_DICTATION_EFFORT,
+                    false,
+                    &key,
+                    std::time::Duration::from_secs(15),
+                    &job.token,
+                )
+                .await
+        }
+    };
+    result.map(|_| ()).map_err(|e| e.to_string())
+}
 fn cancel_account_work(app: &AppHandle, state: &Workspace) {
     state.cancel_note_jobs();
     let shared = app.state::<Arc<Shared>>();
@@ -1487,6 +1559,47 @@ mod ai_tests {
             .await
             .unwrap();
         }
+    }
+    #[tokio::test]
+    async fn key_verification_uses_only_a_fixed_sentence_and_rejects_missing_credentials() {
+        let fixture = Fixture::new(Duration::ZERO).await;
+        let id = fixture.note();
+        assert_eq!(
+            verify_saved_api_key("unknown", &fixture.workspace).await,
+            Err("Unknown provider".into())
+        );
+        assert_eq!(
+            verify_saved_api_key("openai", &fixture.workspace).await,
+            Err("Add an API key first".into())
+        );
+        assert!(fixture.requests.lock().unwrap().is_empty());
+        verify_saved_api_key("claude", &fixture.workspace)
+            .await
+            .unwrap();
+        let requests = fixture.requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0]["model"], "claude-haiku-5-5");
+        let request = requests[0].to_string();
+        assert!(request.contains("Please run all the tests"));
+        assert!(!request.contains("Kubernetis"));
+        assert!(!request.contains(&id));
+        assert!(fixture.workspace.jobs.lock().unwrap().is_empty());
+    }
+    #[tokio::test]
+    async fn key_verification_is_cancelled_and_releases_its_shutdown_job() {
+        let fixture = Fixture::new(Duration::from_secs(30)).await;
+        let workspace = fixture.workspace.clone();
+        let task = tokio::spawn(async move { verify_saved_api_key("claude", &workspace).await });
+        fixture.wait_requests(1).await;
+        fixture.workspace.cancel_all();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err("Cancelled".into())
+        );
+        assert!(fixture.workspace.jobs.lock().unwrap().is_empty());
     }
     #[test]
     fn provider_selection_follows_available_notes_connections_and_source_defaults() {

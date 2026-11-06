@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod app_metadata;
 mod audio;
 mod dictation;
 mod engine;
@@ -7,8 +8,10 @@ mod lifecycle;
 mod meeting;
 mod meeting_capture;
 mod migration_audio;
+mod onboarding_window;
 mod platform;
 mod shortcuts;
+mod tray;
 #[cfg(target_os = "linux")]
 mod wayland;
 mod workspace;
@@ -28,6 +31,7 @@ struct Status {
     models: Vec<serde_json::Value>,
     shortcut: String,
     platform: &'static str,
+    locale: Option<String>,
     jobs: Vec<String>,
 }
 #[tauri::command]
@@ -36,6 +40,7 @@ fn status(app: tauri::AppHandle, state: State<'_, Arc<Shared>>) -> Status {
     let shortcut = view.shortcut_label.clone();
     Status {
         platform: std::env::consts::OS,
+        locale: app_metadata::locale(),
         jobs: app.state::<Arc<workspace::Workspace>>().job_ids(),
         view,
         permissions: platform::permissions(
@@ -128,6 +133,12 @@ async fn complete_onboarding(
     rx.await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn begin_practice(state: State<'_, Arc<Shared>>) -> Result<(), String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    state.send(Command::BeginPractice(tx))?;
+    rx.await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn delete_dictation(id: String, state: State<'_, Arc<Shared>>) -> Result<(), String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     state.send(Command::Delete(id, tx))?;
@@ -211,6 +222,14 @@ async fn change_shortcut(
     )
     .await
 }
+#[tauri::command]
+async fn show_workspace(page: String, app: tauri::AppHandle) -> Result<(), String> {
+    if page == "onboarding" {
+        tray::tray_hide(app.clone())?;
+        return onboarding_window::open_onboarding(app).await;
+    }
+    tray::open_workspace(&app, &page)
+}
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -233,14 +252,21 @@ fn main() {
             cancel,
             request_permission,
             input_devices,
+            app_metadata::history_app_metadata,
             input_device_selection,
             save_settings,
             complete_onboarding,
+            begin_practice,
+            onboarding_window::open_onboarding,
+            onboarding_window::close_onboarding,
             delete_dictation,
             workspace::clear_history,
             import_migration,
             copy_text,
             quit,
+            show_workspace,
+            tray::tray_hide,
+            tray::tray_resize,
             start_meeting,
             stop_meeting,
             change_shortcut,
@@ -260,6 +286,8 @@ fn main() {
             workspace::write_note,
             workspace::ask_notes,
             workspace::account_status,
+            workspace::verify_api_key,
+            workspace::open_claude_install,
             workspace::save_api_key,
             workspace::import_mac_api_keys,
             migration_audio::import_mac_audio,
@@ -355,6 +383,11 @@ fn main() {
             })
             .map_err(std::io::Error::other)?;
             app.manage(controller);
+            onboarding_window::install(
+                app.handle(),
+                !settings["onboardingComplete"].as_bool().unwrap_or(false),
+            )
+            .map_err(std::io::Error::other)?;
             lifecycle::watch_calls(app.handle().clone(), shared.clone());
             workspace::resume_pending_writeups(
                 app.handle().clone(),
@@ -367,7 +400,8 @@ fn main() {
                 tauri::WebviewUrl::App("overlay.html".into()),
             )
             .title("Pressay dictation")
-            .inner_size(360., 58.)
+            .inner_size(560., 150.)
+            .transparent(true)
             .decorations(false)
             .resizable(false)
             .always_on_top(true)
@@ -379,41 +413,9 @@ fn main() {
             if let Some(overlay) = app.get_webview_window("overlay") {
                 let _ = overlay.set_ignore_cursor_events(true);
             }
-            let show =
-                tauri::menu::MenuItem::with_id(app, "show", "Open Pressay", true, None::<&str>)?;
-            let quit =
-                tauri::menu::MenuItem::with_id(app, "quit", "Quit Pressay", true, None::<&str>)?;
-            let menu = tauri::menu::Menu::with_items(app, &[&show, &quit])?;
-            let mut tray = tauri::tray::TrayIconBuilder::new()
-                .menu(&menu)
-                .tooltip("Pressay Preview")
-                .on_menu_event(|app, event| match event.id().as_ref() {
-                    "show" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
-                    "quit" => {
-                        let app = app.clone();
-                        let state = app.state::<Arc<Shared>>().inner().clone();
-                        tauri::async_runtime::spawn(async move {
-                            if state.shutdown().await.is_ok() {
-                                app.exit(0);
-                            } else if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
-                        });
-                    }
-                    _ => {}
-                });
-            if let Some(icon) = app.default_window_icon() {
-                tray = tray.icon(icon.clone());
-            }
-            // Without a tray, keep normal close-to-quit behavior so the app cannot
-            // strand an invisible microphone process on desktops without a tray host.
-            let has_tray = tray.build(app).is_ok();
+            // Keep close-to-quit behavior on desktops without a tray host.
+            let has_tray = tray::install(app).is_ok();
+            engine::track_overlay(app.handle().clone(), shared.clone());
             if has_tray {
                 if let Some(window) = app.get_webview_window("main") {
                     let w = window.clone();
@@ -434,6 +436,12 @@ fn main() {
                 .as_bool()
                 .unwrap_or(false)
             {
+                if !(has_tray && std::env::args().any(|a| a == "--background")) {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
                 let model = shared.view.lock().unwrap().settings["asrModel"]
                     .as_str()
                     .unwrap_or("parakeetUltra")

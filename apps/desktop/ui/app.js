@@ -1,6 +1,39 @@
 "use strict";
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
+const setupWindow = new URLSearchParams(window.location.search).has(
+  "onboarding",
+);
+let setupWindowVisible = setupWindow;
+if (setupWindow) document.body.classList.add("onboarding-window");
+const appMetadata = Object.create(null),
+  metadataRequested = new Set();
+let metadataPending = false;
+async function refreshAppMetadata(history) {
+  if (metadataPending) return;
+  const targets = [
+    ...new Set(
+      history
+        .map((record) => record.target)
+        .filter((target) => target && !metadataRequested.has(target)),
+    ),
+  ].slice(0, 128);
+  if (!targets.length) return;
+  metadataPending = true;
+  targets.forEach((target) => metadataRequested.add(target));
+  try {
+    Object.assign(
+      appMetadata,
+      (await invoke("history_app_metadata", { targets })) || {},
+    );
+    renderRecent(current.view.history, current.shortcut);
+    renderHistory(current.view);
+  } catch {
+    /* A missing application icon must not interrupt dictation. */
+  } finally {
+    metadataPending = false;
+  }
+}
 let current,
   step = 0,
   historyVersion = "",
@@ -24,6 +57,8 @@ async function call(command, args = {}) {
 function navigate(page) {
   const changed =
     document.querySelector("[data-page].active")?.dataset.page !== page;
+  if (changed && typeof stopShortcutCapture === "function")
+    stopShortcutCapture();
   document
     .querySelectorAll("[data-panel]")
     .forEach((p) => (p.hidden = p.dataset.panel !== page));
@@ -41,31 +76,86 @@ $("home-record-meeting").onclick = () => {
   navigate("meetings");
   $("start-meeting").click();
 };
-function setStep(value) {
-  step = value;
-  document
-    .querySelectorAll("[data-setup]")
-    .forEach((p) => (p.hidden = Number(p.dataset.setup) !== step));
-  document.querySelectorAll("[data-step]").forEach((p) => {
-    p.classList.toggle("current", Number(p.dataset.step) === step);
-    p.setAttribute(
-      "aria-current",
-      Number(p.dataset.step) === step ? "step" : "false",
-    );
+let setupPracticeEpoch = 0,
+  setupPracticeReady = false,
+  setupPracticeAttempt = false,
+  setupShortcutActive = false,
+  setupShortcutSaving = false,
+  setupShortcutEpoch = 0,
+  setupShortcutTimer,
+  setupPreparationRequested = null,
+  setupOperationError = "";
+const setupPermissionKinds = ["microphone", "accessibility", "shortcut"];
+function setupFailure(error) {
+  setupOperationError = String(error);
+  $("setup-error").textContent = setupOperationError;
+}
+function setupPermissionAllowed(index, p = current?.permissions) {
+  if (!p) return false;
+  return index === 0
+    ? microphoneCanPractice(p)
+    : p[index === 1 ? "insertion" : "shortcut"] === "granted";
+}
+function firstMissingSetupPermission() {
+  const index = setupPermissionKinds.findIndex(
+    (_, index) => !setupPermissionAllowed(index),
+  );
+  return index < 0 ? 4 : index + 1;
+}
+async function setStep(value) {
+  if (setupShortcutActive) await stopSetupShortcut();
+  step = Math.max(0, Math.min(5, value));
+  const epoch = ++setupPracticeEpoch;
+  document.querySelectorAll("[data-setup]").forEach((panel) => {
+    panel.hidden =
+      panel.dataset.setup === "permissions"
+        ? !(step >= 1 && step <= 3)
+        : Number(panel.dataset.setup) !== step;
   });
+  document
+    .querySelectorAll("[data-step]")
+    .forEach((bar) =>
+      bar.classList.toggle("complete", Number(bar.dataset.step) <= step),
+    );
   $("setup-back").hidden = step === 0;
-  $("setup-title").textContent = [
-    "A few permissions. Then it’s your turn.",
-    "Your voice, recognized locally.",
-    "Make your first words appear.",
-  ][step];
-  $("setup-description").textContent = [
-    "You stay in control. Allow Pressay to hear you and type where you’re working.",
-    "Choose a speech model. We’ll show you its download and preparation progress.",
-    "Click the field below. Hold your shortcut, speak naturally, then release.",
-  ][step];
+  $("setup-welcome-next").hidden = step !== 0;
+  $("permissions-next").hidden = step < 1 || step > 3;
+  $("model-next").hidden = step !== 4;
+  $("finish-setup").hidden = step !== 5;
+  setupOperationError = "";
   $("setup-error").textContent = "";
-  if (step === 2) $("practice").focus();
+  $("onboarding").querySelector(".setup-scroll").scrollTop = 0;
+  if (step === 5) {
+    setupPracticeReady = false;
+    setupPracticeAttempt = false;
+    $("practice").value = "";
+    $("practice").disabled = true;
+    renderSetup();
+    try {
+      await call("begin_practice");
+      if (step === 5 && epoch === setupPracticeEpoch && dialog.open) {
+        setupPracticeReady = true;
+        $("practice").disabled = false;
+        $("practice").focus();
+      }
+    } catch (error) {
+      setupFailure(error);
+    }
+  }
+  renderSetup();
+  if (step !== 5 && dialog.open)
+    $("setup-title").focus({ preventScroll: true });
+  if (
+    step === 4 &&
+    !selectedModelReady() &&
+    current?.view.stage === "idle" &&
+    setupPreparationRequested !== $("setup-model").value
+  ) {
+    setupPreparationRequested = $("setup-model").value;
+    call("prepare_model", { id: setupPreparationRequested }).catch(
+      setupFailure,
+    );
+  }
 }
 function microphoneCanPractice(p) {
   return current?.platform === "macos"
@@ -73,28 +163,200 @@ function microphoneCanPractice(p) {
     : p.microphone !== "denied";
 }
 function openSetup() {
+  if (!setupWindow) return call("open_onboarding").catch(() => {});
+  setupWindowVisible = true;
   if (!dialog.open) {
     $("setup-model").value = current.view.settings.asrModel;
     $("setup-model-size").textContent = size($("setup-model").value);
     dialog.showModal();
+    call("autostart_status")
+      .then((enabled) => {
+        $("setup-login").checked = enabled;
+      })
+      .catch(() => {});
   }
-  const p = current?.permissions;
-  const granted =
-    p &&
-    p.shortcut === "granted" &&
-    p.insertion === "granted" &&
-    microphoneCanPractice(p);
-  setStep(granted ? (selectedModelReady() ? 2 : 1) : 0);
+  setStep(0);
 }
-$("setup-again").onclick = openSetup;
-$("close-setup").onclick = () => dialog.close();
-$("setup-back").onclick = () => setStep(Math.max(0, step - 1));
-$("permissions-next").onclick = () => setStep(1);
-$("model-next").onclick = () => {
-  if (selectedModelReady()) setStep(2);
+if ($("setup-again")) $("setup-again").onclick = openSetup;
+async function closeSetup() {
+  await stopSetupShortcut();
+  try {
+    if (setupWindow) await call("close_onboarding");
+    setupWindowVisible = false;
+    dialog.close();
+  } catch (error) {
+    setupFailure(error);
+  }
+}
+$("close-setup").onclick = closeSetup;
+dialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeSetup();
+});
+window.__TAURI__.event.listen("pressay-onboarding-open", () => {
+  if (!setupWindow) return;
+  setupWindowVisible = true;
+  refresh().then(openSetup);
+});
+window.__TAURI__.event.listen("pressay-onboarding-hidden", () => {
+  if (!setupWindow) return;
+  setupWindowVisible = false;
+  ++setupPracticeEpoch;
+  stopSetupShortcut();
+  dialog.close();
+});
+window.addEventListener("pagehide", stopSetupShortcut);
+dialog.addEventListener("close", () => {
+  ++setupPracticeEpoch;
+  stopSetupShortcut();
+});
+dialog.addEventListener("keydown", (event) => {
+  if (
+    event.key !== "Enter" ||
+    event.defaultPrevented ||
+    setupShortcutActive ||
+    ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(event.target.tagName)
+  )
+    return;
+  const primary = [...dialog.querySelectorAll(".setup-footer .primary")].find(
+    (button) => !button.hidden && !button.disabled,
+  );
+  if (primary) {
+    event.preventDefault();
+    primary.click();
+  }
+});
+$("setup-back").onclick = () => setStep(step - 1);
+$("setup-welcome-next").onclick = () => setStep(firstMissingSetupPermission());
+$("permissions-next").onclick = () => {
+  if (setupPermissionAllowed(step - 1)) setStep(step + 1);
 };
+$("model-next").onclick = () => {
+  if (selectedModelReady() && firstMissingSetupPermission() === 4) setStep(5);
+};
+$("setup-practice-retry").onclick = () => setStep(5);
+async function requestSetupPermission() {
+  const kind = setupPermissionKinds[step - 1];
+  if (!kind) return;
+  try {
+    if (kind === "accessibility" && current.permissions.wayland)
+      await call("save_settings", { patch: { waylandCurrentCursor: true } });
+    if (kind === "shortcut" && current.platform !== "macos")
+      await call("change_shortcut", {
+        binding: savedShortcut(current.view.settings),
+      });
+    else await call("request_permission", { kind });
+  } catch (error) {
+    setupFailure(error);
+  }
+}
+$("setup-allow").onclick = requestSetupPermission;
+$("setup-permission-recover").onclick = requestSetupPermission;
+$("setup-login").onchange = async () => {
+  const enabled = $("setup-login").checked;
+  try {
+    await call("launch_at_login", { enabled });
+  } catch (error) {
+    $("setup-login").checked = !enabled;
+    setupFailure(error);
+  }
+};
+async function stopSetupShortcut() {
+  if (!setupShortcutActive) return;
+  setupShortcutActive = false;
+  ++setupShortcutEpoch;
+  setupShortcutCandidate = null;
+  $("setup-shortcut-status").textContent = "";
+  clearTimeout(setupShortcutTimer);
+  try {
+    await call("set_shortcut_capture", {
+      active: false,
+      kind: savedShortcut(current.view.settings).kind,
+    });
+  } catch {}
+  renderSetup();
+}
+async function saveSetupShortcut(binding) {
+  if (!setupShortcutActive) return;
+  setupShortcutSaving = true;
+  await stopSetupShortcut();
+  try {
+    await call("change_shortcut", { binding });
+    $("setup-shortcut-status").textContent = "";
+  } catch {
+    $("setup-shortcut-status").textContent =
+      "Shortcut was not saved. Try recording it again.";
+  } finally {
+    setupShortcutSaving = false;
+    renderSetup();
+  }
+}
+$("setup-shortcut").onclick = async () => {
+  if (setupShortcutActive) return stopSetupShortcut();
+  setupShortcutActive = true;
+  const epoch = ++setupShortcutEpoch;
+  const kind = savedShortcut(current.view.settings).kind;
+  renderSetup();
+  try {
+    await call("set_shortcut_capture", { active: true, kind });
+    if (
+      !setupShortcutActive ||
+      epoch !== setupShortcutEpoch ||
+      !dialog.open ||
+      step !== 4
+    ) {
+      await call("set_shortcut_capture", { active: false, kind });
+      return;
+    }
+    $("setup-shortcut-status").textContent =
+      "Press a key or key combination, then release. Escape cancels.";
+    setupShortcutTimer = setTimeout(stopSetupShortcut, 30000);
+  } catch (error) {
+    setupShortcutActive = false;
+    setupFailure(error);
+    renderSetup();
+  }
+};
+let setupShortcutCandidate = null;
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (!setupShortcutActive) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.key === "Escape") {
+      stopSetupShortcut();
+      return;
+    }
+    if (savedShortcut(current.view.settings).kind === "chord") {
+      const binding = chordForEvent(event);
+      if (binding) setupShortcutCandidate = { binding, code: event.code };
+    }
+  },
+  true,
+);
+document.addEventListener(
+  "keyup",
+  (event) => {
+    if (!setupShortcutActive) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (setupShortcutCandidate?.code === event.code) {
+      const binding = setupShortcutCandidate.binding;
+      setupShortcutCandidate = null;
+      saveSetupShortcut(binding);
+    }
+  },
+  true,
+);
+window.__TAURI__.event.listen("pressay-shortcut-captured", ({ payload }) => {
+  if (!setupShortcutActive) return;
+  if (payload.cancelled) stopSetupShortcut();
+  else if (payload.binding) saveSetupShortcut(payload.binding);
+});
+window.addEventListener("blur", stopSetupShortcut);
 $("cancel").onclick = () => call("cancel").catch(() => {});
-$("quit").onclick = () => call("quit").catch(() => {});
+if ($("quit")) $("quit").onclick = () => call("quit").catch(() => {});
 let dictionaryRows = [],
   dictionarySaved = null,
   dictionaryDirty = false,
@@ -136,7 +398,7 @@ async function saveDictionary() {
     await call("save_settings", { patch: { vocabulary: source } });
     dictionarySaved = source;
     dictionaryDirty = dictionarySource() !== source;
-    $("dictionary-result").textContent = dictionaryDirty ? "Saving…" : "Saved";
+    $("dictionary-result").textContent = dictionaryDirty ? "Saving…" : "";
     saved = true;
   } catch {
     $("dictionary-result").textContent =
@@ -241,24 +503,32 @@ for (const id of ["model", "setup-model"])
   $(id).onchange = () => {
     $(id + "-size").textContent = size($(id).value);
     $("model-next").disabled = !selectedModelReady();
+    renderSetup();
+    if (id === "model") {
+      call("prepare_model", { id: $(id).value }).catch(() => {});
+    }
   };
 $("prepare").onclick = () =>
   call("prepare_model", { id: $("model").value }).catch(() => {});
-$("setup-prepare").onclick = () =>
-  call("prepare_model", { id: $("setup-model").value }).catch(() => {});
+$("setup-prepare").onclick = () => {
+  setupOperationError = "";
+  call("prepare_model", { id: $("setup-model").value }).catch(setupFailure);
+};
 function practiceReady() {
   const p = current?.view.practice;
   return !!(
+    setupPracticeReady &&
+    setupPracticeAttempt &&
     p?.received_audio &&
     p?.inserted &&
+    p?.in_app &&
     p?.recognized_text.trim() &&
-    $("practice").value.includes(p.recognized_text.trim())
+    $("practice").value.trim() === p.recognized_text.trim() &&
+    selectedModelReady() &&
+    firstMissingSetupPermission() === 4
   );
 }
-$("practice").addEventListener(
-  "input",
-  () => ($("finish-setup").disabled = !practiceReady()),
-);
+$("practice").addEventListener("input", renderSetup);
 $("practice").addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
@@ -268,7 +538,7 @@ $("practice").addEventListener("keydown", (event) => {
 $("finish-setup").onclick = async () => {
   try {
     await call("complete_onboarding", { observed: $("practice").value });
-    dialog.close();
+    await closeSetup();
   } catch {}
 };
 $("migration").onchange = async () => {
@@ -290,75 +560,213 @@ function element(tag, text, className) {
   if (className) el.className = className;
   return el;
 }
-function renderPermissions(p) {
-  const list = $("permission-list");
-  if (!list.children.length) {
-    for (const [kind, title, detail] of [
-      ["microphone", "Microphone", "To hear you while you dictate."],
-      [
-        "accessibility",
-        "Text insertion",
-        "To type your finished words at the cursor.",
-      ],
-      [
-        "shortcut",
-        "Global shortcut",
-        "To notice your talk key in another app.",
-      ],
-    ]) {
-      const row = element("div", undefined, "permission");
-      row.dataset.kind = kind;
-      const label = element("div");
-      label.append(element("strong", title), element("p", detail));
-      const button = element("button", "Allow");
-      button.onclick = async () => {
-        try {
-          if (kind === "accessibility" && current.permissions.wayland)
-            await call("save_settings", {
-              patch: { waylandCurrentCursor: true },
-            });
-          await call("request_permission", { kind });
-        } catch {}
-      };
-      const status = element("span", "Allowed", "allowed");
-      status.hidden = true;
-      row.append(label, button, status);
-      list.append(row);
-    }
-  }
-  for (const row of list.children) {
+function renderPermissions() {
+  renderSetup();
+}
+function renderSetup() {
+  if (!current) return;
+  const mac = current.platform === "macos";
+  const p = current.permissions;
+  const s = current.view;
+  const permission = step >= 1 && step <= 3;
+  const permissionTitles = [
+    "Microphone",
+    mac ? "Accessibility" : p.wayland ? "Keyboard control" : "Text insertion",
+    mac ? "Input Monitoring" : "Global shortcut",
+  ];
+  const permissionDetails = [
+    "Hears your voice during dictation and meetings.",
+    "Types the finished text at your cursor.",
+    "Notices your talk key in any app.",
+  ];
+  if (
+    step === 5 &&
+    setupPracticeReady &&
+    ["starting", "recording"].includes(s.stage)
+  )
+    setupPracticeAttempt = true;
+  const complete = practiceReady();
+  $("setup-step-label").textContent =
+    step === 0 ? "WELCOME TO PRESSAY" : `STEP ${step} OF 5`;
+  $("setup-title").textContent = permission
+    ? permissionTitles[step - 1]
+    : step === 0
+      ? "Your voice. Your words."
+      : step === 4
+        ? "Prepare your speech model"
+        : complete
+          ? "You’re ready to dictate"
+          : "Give it a try";
+  $("setup-description").textContent = permission
+    ? permissionDetails[step - 1]
+    : step === 0
+      ? "Hold a key, say what’s on your mind, and release. Pressay types it where you’re working."
+      : step === 4
+        ? `Speech recognition runs on your ${mac ? "Mac" : "device"}. The model downloads once, then works offline.`
+        : complete
+          ? "Your microphone, speech model and text insertion worked together. You can now dictate in other apps."
+          : `Click the field below. Hold ${current.shortcut}, speak after the sound, then release to type.`;
+  $("setup-private-copy").textContent =
+    `Your speech is transcribed on your ${mac ? "Mac" : "device"}. No account is required.`;
+  $("setup-permissions-copy").textContent = mac
+    ? "Three macOS permissions let Pressay hear you, notice your talk key, and type at your cursor."
+    : "We’ll check microphone access, your talk key, and text insertion at your cursor.";
+  $("setup-login-detail").textContent = mac
+    ? "Ready every time you open your Mac."
+    : "Ready every time you sign in.";
+  if (permission) {
+    const index = step - 1;
     const value =
-      p[row.dataset.kind === "accessibility" ? "insertion" : row.dataset.kind];
-    row.querySelector("button").hidden = value === "granted";
-    row.querySelector(".allowed").hidden = value !== "granted";
-    row.querySelector("button").textContent =
-      value === "unavailable"
-        ? "Unavailable"
-        : value === "denied"
-          ? "Open settings"
-          : "Allow";
-    const cursorChoice =
-      p.wayland &&
-      row.dataset.kind === "accessibility" &&
-      value === "unavailable";
-    if (cursorChoice)
-      row.querySelector("button").textContent = "Enable cursor insertion";
-    row.querySelector("button").disabled =
-      value === "unavailable" && !cursorChoice;
+      p[index === 1 ? "insertion" : index === 2 ? "shortcut" : "microphone"];
+    const cursorChoice = index === 1 && p.wayland && value !== "granted";
+    $("setup-permission-icon").setAttribute(
+      "href",
+      ["#setup-mic", "#setup-access", "#setup-keyboard"][index],
+    );
+    $("setup-permission-status").textContent =
+      value === "granted"
+        ? "Allowed"
+        : index === 0 && !mac && value === "unknown"
+          ? "Checked during practice"
+          : value === "unavailable" && !cursorChoice
+            ? "Unavailable"
+            : "Not allowed yet";
+    $("setup-permission-status").classList.toggle(
+      "allowed",
+      value === "granted",
+    );
+    const macInstructions = [
+      "Choose Allow in the macOS prompt. If you previously denied access, turn on Pressay in the Microphone list.",
+      "Turn on Pressay in the Accessibility list. If it is missing, drag the app from the floating guide into the list, then turn it on.",
+      "Turn on Pressay in the Input Monitoring list. macOS may ask you to quit and reopen Pressay after changing this permission.",
+    ];
+    const portableInstructions = [
+      "Your microphone opens only when you hold your talk key. We’ll verify real audio during practice; allow microphone access if your desktop asks.",
+      p.wayland
+        ? "You can explicitly enable keyboard control and approve your desktop’s consent prompt. This inserts at the current cursor; Wayland cannot verify the original app or field. Keep your intended field focused until insertion finishes."
+        : "Pressay types into the field you chose. If the application changes before insertion, your words stay in History for you to copy.",
+      p.wayland
+        ? "Approve the global shortcut in your desktop’s consent prompt. If your desktop does not provide GlobalShortcuts, this check remains unavailable."
+        : "Your talk key works while another app is active. If another app uses the same shortcut, choose a different one in General settings.",
+    ];
+    $("setup-permission-instructions").textContent = (
+      mac ? macInstructions : portableInstructions
+    )[index];
+    $("setup-allow").hidden =
+      value === "granted" || (index === 0 && !mac && value === "unknown");
+    $("setup-allow").disabled = value === "unavailable" && !cursorChoice;
+    $("setup-allow").textContent = cursorChoice
+      ? "Enable cursor insertion"
+      : mac
+        ? index === 0
+          ? "Allow microphone"
+          : "Open System Settings"
+        : "Review access";
+    $("platform-note").textContent =
+      !mac && p.explanation
+        ? p.explanation
+        : mac
+          ? "This page updates automatically when access changes. You can revoke access at any time in System Settings."
+          : index === 0
+            ? "A permission indicator alone does not prove recording works. Your first real dictation completes that check."
+            : "This page updates automatically when access changes.";
+    $("setup-permission-recover").hidden = !mac;
+    $("setup-permission-recovery").textContent = mac
+      ? index === 0
+        ? "Microphone access must be requested by the app; dragging an app into this list does not grant access. If your microphone is managed, contact your administrator."
+        : "If an old entry no longer works after an update, remove it, add the current Pressay app, turn it on, then reopen Pressay."
+      : index === 0
+        ? "Check your selected microphone and your desktop’s privacy settings if audio does not arrive."
+        : "If access was revoked, approve it again before continuing. You can close setup and keep your saved dictations in History.";
+    $("permissions-next").disabled = !setupPermissionAllowed(index);
   }
-  $("platform-note").textContent =
-    p.explanation ||
-    (p.microphone === "unknown"
-      ? "Microphone access is verified when actual audio arrives during practice."
-      : "You can change these permissions in system settings at any time.");
-  $("permissions-next").disabled =
-    p.insertion !== "granted" ||
-    p.shortcut !== "granted" ||
-    !microphoneCanPractice(p);
+  $("setup-shortcut").textContent = setupShortcutActive
+    ? "Press a key…"
+    : current.shortcut;
+  $("setup-shortcut").disabled =
+    setupShortcutSaving || (s.stage !== "idle" && !setupShortcutActive);
+  for (const option of $("setup-model").options) {
+    const model = current.models.find((model) => model.id === option.value);
+    if (model && option.textContent !== model.name)
+      option.textContent = model.name;
+  }
+  $("setup-model-ready").hidden = !selectedModelReady();
+  $("setup-model-status").textContent = selectedModelReady()
+    ? "Ready"
+    : s.stage === "loading"
+      ? "Loading and warming the model…"
+      : s.stage === "preparing"
+        ? "Preparing your speech model…"
+        : "Prepare the model to continue.";
+  $("setup-prepare").hidden =
+    selectedModelReady() || ["preparing", "loading"].includes(s.stage);
+  $("model-next").disabled =
+    !selectedModelReady() ||
+    firstMissingSetupPermission() !== 4 ||
+    setupShortcutActive ||
+    setupShortcutSaving;
+  $("finish-setup").disabled = !complete;
+  $("practice-status").textContent = s.stage.startsWith("meeting")
+    ? "Stop the Notetaker before practicing dictation"
+    : s.stage === "recording"
+      ? "Microphone is receiving audio"
+      : s.stage === "starting"
+        ? "Waiting for microphone audio…"
+        : "Microphone is off";
+  $("setup-practice-mic").setAttribute(
+    "href",
+    s.stage === "recording" ? "#setup-mic" : "#setup-mic-off",
+  );
+  $("practice-status").parentElement.classList.toggle(
+    "is-live",
+    s.stage === "recording",
+  );
+  $("setup-practice-evidence").textContent = complete
+    ? "✓ Speech captured, transcribed and inserted"
+    : "Use your talk key for this check. Typing or pasting a sample sentence won’t complete it.";
+  $("setup-practice-evidence").classList.toggle("setup-success", complete);
+  $("setup-error").textContent =
+    setupOperationError || (step >= 4 ? s.error || s.shortcut_error || "" : "");
+}
+function renderSetupWindow(data) {
+  const s = data.view;
+  if (!initialized) {
+    initialized = true;
+    populateModels("setup-model");
+    $("setup-model").value = s.settings.asrModel;
+    $("setup-model-size").textContent = size(s.settings.asrModel);
+    if (setupWindowVisible) openSetup();
+  }
+  $("setup-prepare").disabled = s.stage !== "idle";
+  const download = dialog.querySelector(".download");
+  download.hidden = !s.progress && !["preparing", "loading"].includes(s.stage);
+  if (s.progress) {
+    download.querySelector("progress").value =
+      s.progress.downloaded / s.progress.total;
+    download.querySelector(".download-label").textContent =
+      `${Math.round((s.progress.downloaded / s.progress.total) * 100)}%`;
+  } else {
+    download.querySelector("progress").removeAttribute("value");
+    download.querySelector(".download-label").textContent =
+      s.stage === "loading"
+        ? "Loading and warming the model…"
+        : "Checking existing model files…";
+  }
+  if (dialog.open && step >= 4 && firstMissingSetupPermission() !== 4)
+    setStep(firstMissingSetupPermission());
+  else if (dialog.open && step === 5 && !selectedModelReady()) setStep(4);
+  renderSetup();
 }
 function render(data) {
   current = data;
+  if (setupWindow) {
+    document.body.dataset.platform = data.platform;
+    renderSetupWindow(data);
+    return;
+  }
+  document.body.dataset.platform = data.platform;
   const s = data.view;
+  refreshAppMetadata(s.history);
   const busy = s.stage !== "idle";
   $("capture-hero").hidden = !busy;
   $("home-record-meeting").disabled = busy;
@@ -439,21 +847,10 @@ function render(data) {
   renderRecent(s.history, data.shortcut);
   syncDictionary(s.settings.vocabulary || "");
   renderPermissions(data.permissions);
-  if (
-    dialog.open &&
-    step > 0 &&
-    (data.permissions.insertion !== "granted" ||
-      data.permissions.shortcut !== "granted" ||
-      !microphoneCanPractice(data.permissions))
-  )
-    setStep(0);
-  else if (dialog.open && step === 2 && !selectedModelReady()) setStep(1);
-  $("finish-setup").disabled = !practiceReady();
-  $("practice-status").textContent = busy
-    ? labels[s.stage]
-    : practiceReady()
-      ? "It worked. Those words traveled from your microphone to this field."
-      : "Hold the shortcut, speak, then release.";
+  if (dialog.open && step >= 4 && firstMissingSetupPermission() !== 4)
+    setStep(firstMissingSetupPermission());
+  else if (dialog.open && step === 5 && !selectedModelReady()) setStep(4);
+  renderSetup();
   if (!initialized) {
     initialized = true;
     for (const id of ["model", "setup-model"]) {
@@ -462,12 +859,12 @@ function render(data) {
       $(id + "-size").textContent = size($(id).value);
     }
     refreshInputDevices().catch(() => {});
-    if (!s.settings.onboardingComplete) openSetup();
+    // Native startup opens the separate setup window when onboarding is incomplete.
   }
 }
 function renderRecent(history, shortcut) {
   const records = history.slice(0, 6);
-  const version = JSON.stringify([records, shortcut]);
+  const version = JSON.stringify([records, shortcut, appMetadata]);
   if (version === recentVersion) return;
   recentVersion = version;
   const list = $("recent-dictations");
@@ -483,25 +880,63 @@ function renderRecent(history, shortcut) {
   }
   for (const record of records) {
     const row = element("article", undefined, "recent-row");
+    const metadata = appMetadata[record.target];
+    const icon = element(
+      metadata?.icon?.startsWith("data:image/") ? "img" : "span",
+      undefined,
+      "app-icon",
+    );
+    icon.setAttribute("aria-hidden", "true");
+    if (icon.tagName === "IMG") {
+      icon.src = metadata.icon;
+      icon.alt = "";
+    } else {
+      icon.classList.add("placeholder");
+      icon.textContent = "▢";
+    }
     const content = element("div");
+    const age = Math.max(
+      0,
+      Math.round((Date.now() / 1000 - record.created_at) / 60),
+    );
+    const relative = new Intl.RelativeTimeFormat(navigator.language, {
+      numeric: "auto",
+    }).format(
+      age < 60
+        ? -age
+        : age < 1440
+          ? -Math.round(age / 60)
+          : -Math.round(age / 1440),
+      age < 60 ? "minute" : age < 1440 ? "hour" : "day",
+    );
     content.append(
       element("p", record.correction || record.text),
-      element("small", new Date(record.created_at * 1000).toLocaleString()),
+      element(
+        "small",
+        [historyAppName(record), relative, `${Math.round(record.duration)} sec`]
+          .filter(Boolean)
+          .join(" · "),
+      ),
     );
-    const copy = element("button", "Copy", "quiet");
+    const copy = element("button", undefined, "quiet copy-icon");
+    copy.append(historyIcon("copy"));
     copy.setAttribute("aria-label", "Copy dictation");
     copy.onclick = async () => {
       try {
         await call("copy_text", { text: record.correction || record.text });
-        copy.textContent = "Copied";
+        copy.textContent = "✓";
+        setTimeout(() => {
+          if (copy.isConnected) copy.replaceChildren(historyIcon("copy"));
+        }, 1200);
       } catch {}
     };
-    row.append(content, copy);
+    row.append(icon, content, copy);
     list.append(row);
   }
 }
 let polling = false;
 async function refresh() {
+  if (setupWindow && !setupWindowVisible) return;
   if (polling) return;
   polling = true;
   try {
@@ -513,6 +948,17 @@ async function refresh() {
   }
 }
 window.__TAURI__.event.listen("pressay-state", refresh);
-window.addEventListener("focus", () => refreshInputDevices().catch(() => {}));
+window.__TAURI__.event.listen("pressay-navigate", ({ payload }) => {
+  if (setupWindow) return;
+  if (payload === "onboarding") openSetup();
+  else if (document.querySelector(`[data-page="${payload}"]`))
+    navigate(payload);
+});
+window.addEventListener("focus", () => {
+  if (setupWindow) {
+    setupWindowVisible = true;
+    refresh();
+  } else refreshInputDevices().catch(() => {});
+});
 setInterval(refresh, 1000);
 refresh();

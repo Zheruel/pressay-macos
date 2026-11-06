@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop",
   "description": "Local Pressay window and dictation status events only",
-  "windows": ["main", "overlay"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+  "windows": ["main", "overlay", "tray", "onboarding"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "core:window:allow-start-dragging"]
 }

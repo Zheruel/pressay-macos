@@ -4,12 +4,62 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pressay</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="overlay-parity.css" />
   </head>
-  <body class="overlay" data-phase="starting">
-    <span class="overlay-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-    <span id="overlay-status" role="status">Opening microphone…</span>
-    <button id="overlay-stop" type="button" hidden aria-label="Stop meeting recording">Stop</button>
+  <body data-phase="idle">
+    <div id="island" aria-label="Pressay dictation">
+      <svg id="island-background" aria-hidden="true">
+        <path id="island-shape" />
+      </svg>
+      <div id="island-content">
+        <div class="island-ears">
+          <div class="island-leading">
+            <span class="island-glyph" aria-hidden="true">
+              <svg class="glyph-mic" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="11" />
+                <path
+                  d="M9 6a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V6Zm-2 5a5 5 0 0 0 10 0M12 16v4m-3 0h6"
+                />
+              </svg>
+              <span class="glyph-dot"></span>
+              <svg class="glyph-processing" viewBox="0 0 24 24">
+                <path d="M4 10v4m4-8v12m4-16v20m4-16v12m4-8v4" />
+              </svg>
+              <svg class="glyph-polishing" viewBox="0 0 24 24">
+                <path
+                  d="m12 3 2.8 6.2L21 12l-6.2 2.8L12 21l-2.8-6.2L3 12l6.2-2.8L12 3Zm7-2 1.2 2.8L23 5l-2.8 1.2L19 9l-1.2-2.8L15 5l2.8-1.2L19 1Z"
+                />
+              </svg>
+              <svg class="glyph-success" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="11" />
+                <path d="m7 12 3.5 3.5L17 9" />
+              </svg>
+            </span>
+            <span id="island-timer" aria-hidden="true">0:00</span>
+          </div>
+          <div class="island-notch" aria-hidden="true"></div>
+          <div class="island-trailing">
+            <span class="overlay-wave" aria-hidden="true"
+              ><i></i><i></i><i></i><i></i><i></i></span
+            ><span id="overlay-status" role="status"></span>
+          </div>
+        </div>
+        <div id="island-banner" hidden>
+          <span aria-hidden="true">⚠</span
+          ><span id="island-error" role="status"></span>
+        </div>
+        <div id="island-meeting-controls" hidden>
+          <span id="island-meeting-label">Taking notes</span
+          ><button
+            id="overlay-stop"
+            type="button"
+            aria-label="Stop meeting recording"
+          >
+            <span aria-hidden="true">■</span> Stop
+          </button>
+        </div>
+      </div>
+    </div>
     <script src="overlay.js"></script>
   </body>
 </html>

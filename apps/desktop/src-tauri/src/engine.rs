@@ -30,6 +30,7 @@ pub enum Command {
     Cancel,
     CaptureEnded,
     Settings(Value, Reply),
+    BeginPractice(Reply),
     Complete(String, Reply),
     Delete(String, Reply),
     Import(String, Reply),
@@ -172,11 +173,12 @@ impl Shared {
 }
 static OVERLAY_EPOCH: AtomicU64 = AtomicU64::new(0);
 pub fn update(app: &AppHandle, shared: &Shared, change: impl FnOnce(&mut ViewState)) {
-    let (snapshot, previous) = {
+    let (snapshot, previous, had_active_note) = {
         let mut s = shared.view.lock().unwrap();
         let previous = s.stage.clone();
+        let had_active_note = s.active_note.is_some();
         change(&mut s);
-        (s.clone(), previous)
+        (s.clone(), previous, had_active_note)
     };
     let _ = app.emit("pressay-state", &snapshot);
     let busy =
@@ -184,11 +186,16 @@ pub fn update(app: &AppHandle, shared: &Shared, change: impl FnOnce(&mut ViewSta
     if let Some(controller) = app.try_state::<crate::shortcuts::ShortcutController>() {
         controller.set_busy(busy);
     }
+    let meeting_saved = snapshot.stage == "idle"
+        && previous == "meeting_finishing"
+        && had_active_note
+        && snapshot.error.is_none();
     let phase = if snapshot.stage == "idle" && snapshot.error.is_some() {
         "error"
-    } else if snapshot.stage == "idle"
-        && ["processing", "polishing"].contains(&previous.as_str())
-        && snapshot.practice.inserted
+    } else if meeting_saved
+        || (snapshot.stage == "idle"
+            && ["processing", "polishing"].contains(&previous.as_str())
+            && snapshot.practice.inserted)
     {
         "success"
     } else if snapshot.stage == "idle"
@@ -199,8 +206,13 @@ pub fn update(app: &AppHandle, shared: &Shared, change: impl FnOnce(&mut ViewSta
         &snapshot.stage
     };
     let epoch = OVERLAY_EPOCH.fetch_add(1, Ordering::AcqRel) + 1;
-    platform::overlay_state(phase, snapshot.error.as_deref(), snapshot.audio_levels);
-    let _ = app.emit("pressay-overlay", json!({"stage":phase,"error":snapshot.error,"audio_levels":snapshot.audio_levels,"meeting_elapsed":snapshot.meeting_elapsed}));
+    platform::overlay_elapsed(snapshot.meeting_elapsed);
+    let detail = snapshot
+        .error
+        .as_deref()
+        .or(meeting_saved.then_some("Saved"));
+    platform::overlay_state(phase, detail, snapshot.audio_levels);
+    let _ = app.emit("pressay-overlay", json!({"stage":phase,"error":snapshot.error,"overlay_message":meeting_saved.then_some("Saved"),"audio_levels":snapshot.audio_levels,"meeting_elapsed":snapshot.meeting_elapsed}));
     if let Some(overlay) = app.get_webview_window("overlay") {
         let visible = [
             "starting",
@@ -214,26 +226,105 @@ pub fn update(app: &AppHandle, shared: &Shared, change: impl FnOnce(&mut ViewSta
             "cancelled",
         ]
         .contains(&phase);
-        let _ = overlay.set_ignore_cursor_events(phase != "meeting");
+        if !["meeting", "meeting_finishing"].contains(&phase) {
+            let _ = overlay.set_ignore_cursor_events(true);
+        }
         if visible {
+            if !overlay.is_visible().unwrap_or(false) {
+                if let Ok(Some(monitor)) = overlay.current_monitor() {
+                    let position = monitor.position();
+                    let width = monitor.size().width as f64;
+                    let scale = monitor.scale_factor();
+                    let _ = overlay.set_position(tauri::PhysicalPosition::new(
+                        position.x + ((width - 560. * scale) / 2.) as i32,
+                        position.y,
+                    ));
+                }
+            }
             let _ = overlay.show();
         } else {
-            let _ = overlay.hide();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(450)).await;
+                if OVERLAY_EPOCH.load(Ordering::Acquire) == epoch {
+                    let _ = overlay.hide();
+                }
+            });
         }
     }
     if ["success", "error", "cancelled"].contains(&phase) {
         let app = app.clone();
-        let milliseconds = if phase == "error" { 4000 } else { 1000 };
+        let milliseconds = if phase == "error" {
+            2600
+        } else if meeting_saved {
+            1200
+        } else if phase == "success" {
+            900
+        } else {
+            0
+        };
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(milliseconds)).await;
             if OVERLAY_EPOCH.load(Ordering::Acquire) == epoch {
                 platform::overlay_state("idle", None, [0.; 4]);
+                let _ = app.emit("pressay-overlay", json!({"stage":"idle"}));
+                tokio::time::sleep(std::time::Duration::from_millis(450)).await;
+                if OVERLAY_EPOCH.load(Ordering::Acquire) != epoch {
+                    return;
+                }
                 if let Some(overlay) = app.get_webview_window("overlay") {
                     let _ = overlay.hide();
                 }
             }
         });
     }
+}
+
+/// A transparent meeting stage must intercept clicks only over its island.
+/// Native macOS handles this inside the SwiftUI panel; other desktops poll the
+/// global pointer without keyboard hooks or focus changes.
+pub fn track_overlay(app: AppHandle, shared: Arc<Shared>) {
+    #[cfg(target_os = "macos")]
+    let _ = (app, shared);
+    #[cfg(not(target_os = "macos"))]
+    tauri::async_runtime::spawn(async move {
+        let mut hovering = false;
+        while !shared.is_shutting_down() {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let Some(window) = app.get_webview_window("overlay") else {
+                break;
+            };
+            let meeting = ["meeting", "meeting_finishing"]
+                .contains(&shared.view.lock().unwrap().stage.as_str());
+            let inside = if meeting && window.is_visible().unwrap_or(false) {
+                match (
+                    window.cursor_position(),
+                    window.outer_position(),
+                    window.scale_factor(),
+                ) {
+                    (Ok(cursor), Ok(origin), Ok(scale)) => {
+                        let width = if hovering { 258. } else { 142. };
+                        let height = if hovering { 76. } else { 32. };
+                        let x = (cursor.x - origin.x as f64) / scale;
+                        let y = (cursor.y - origin.y as f64) / scale;
+                        ((560. - width) / 2. ..=(560. + width) / 2.).contains(&x)
+                            && (0. ..=height).contains(&y)
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            };
+            if inside != hovering {
+                hovering = inside;
+                let _ = window.set_ignore_cursor_events(!inside);
+                let _ = window.emit("pressay-overlay-hover", json!({"hover":inside}));
+            }
+        }
+        if let Some(window) = app.get_webview_window("overlay") {
+            let _ = window.set_ignore_cursor_events(true);
+            let _ = window.hide();
+        }
+    });
 }
 
 fn failed(app: &AppHandle, shared: &Shared, error: impl ToString) {
@@ -330,6 +421,7 @@ pub fn launch(
                 match queued.command {
                     Command::StartMeeting(_, reply)
                     | Command::Settings(_, reply)
+                    | Command::BeginPractice(reply)
                     | Command::Complete(_, reply)
                     | Command::Delete(_, reply)
                     | Command::Import(_, reply) => {
@@ -341,6 +433,15 @@ pub fn launch(
             }
             let command = queued.command;
             match command {
+                Command::BeginPractice(reply) => {
+                    let result = if state.view.lock().unwrap().stage != "idle" {
+                        Err("Finish the current operation before practicing".into())
+                    } else {
+                        update(&app, &state, |s| s.practice = Practice::default());
+                        Ok(())
+                    };
+                    let _ = reply.send(result);
+                }
                 Command::StartMeeting(kind, reply) => {
                     let result = if capture.is_some()
                         || meeting.as_ref().is_some_and(|m| !m.task.is_finished())
@@ -507,10 +608,12 @@ pub fn launch(
                     });
                     let start = Instant::now();
                     state.microphone_worked.store(false, Ordering::Release);
+                    let practice_in_app = platform::target_is_current_app(target, &app);
                     update(&app, &state, |s| {
                         s.stage = "starting".into();
                         s.error = None;
                         s.practice = Practice::default();
+                        s.practice.in_app = practice_in_app;
                         s.first_sample_ms = None;
                         s.release_to_text_ms = None;
                     });
@@ -807,6 +910,7 @@ pub fn launch(
                             };
                             let history = store.history(10000);
                             state.start_pending.store(false, Ordering::Release);
+                            let practice_in_app = platform::target_is_current_app(target, &app);
                             update(&app, &state, |s| {
                                 s.stage = "idle".into();
                                 if let Ok(history) = history.as_ref() {
@@ -814,6 +918,7 @@ pub fn launch(
                                 }
                                 s.practice.recognized_text = text;
                                 s.practice.inserted = error.is_none();
+                                s.practice.in_app &= practice_in_app;
                                 s.error = error.or(warning);
                                 if let Err(error) = history {
                                     s.error = Some(format!("Dictation was saved, but History could not refresh: {error}"));

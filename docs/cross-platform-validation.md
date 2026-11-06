@@ -65,9 +65,13 @@ cargo test -p pressay-desktop --locked wayland
 xvfb-run -a cargo test -p pressay-desktop --locked x11_insertion -- --ignored --nocapture
 ```
 
-First-run integration checks caught and fixed missing updater configuration and synchronous microphone enumeration. Native enumeration now reads CoreAudio metadata without opening an audio unit. With explicit user approval, the packaged Preview received Microphone, Input Monitoring and Accessibility access. All three grants were recognized by onboarding after removing/re-adding obsolete ad-hoc Accessibility and Input Monitoring entries and reopening Preview; tightly scoped TCC logs confirmed a code-requirement mismatch. The original app’s permission entries were left intact. The Preview used an isolated disposable profile and no account credentials. The rebuilt app loaded the verified cached Orukeet model and reached practice with all three permissions recognized. A separate `Control+Shift+Space` shortcut was seeded in the disposable profile while Preview was stopped to avoid activating the original app; this does not validate the physical shortcut recorder. AppleScript/System Events provided UI inspection after the native control service failed. A live spoken practice response is still pending; microphone-to-editor acceptance is not claimed.
+First-run integration checks caught and fixed missing updater configuration and synchronous microphone enumeration. Native enumeration now reads CoreAudio metadata without opening an audio unit. With explicit user approval, the packaged Preview received Microphone, Input Monitoring and Accessibility access. All three grants were recognized by onboarding after removing/re-adding obsolete ad-hoc Accessibility and Input Monitoring entries and reopening Preview; tightly scoped TCC logs confirmed a code-requirement mismatch. The original app’s permission entries were left intact. The Preview used an isolated disposable profile and no account credentials. The rebuilt app loaded the verified cached Orukeet model and reached practice with all three permissions recognized. A separate `Control+Shift+Space` shortcut was seeded in the disposable profile while Preview was stopped to avoid activating the original app; this does not validate the physical shortcut recorder. AppleScript/System Events provided UI inspection after the native control service failed. The user then reported that live dictation appeared to work. The disposable profile contained two real Orukeet dictations (approximately 1.3 and 2.9 seconds). This confirms capture and recognition, with user-reported insertion; it does not establish completed onboarding, which remained incomplete in that profile. Preview was stopped and its original profile restored. No transcript text or private audio is included here.
 
-The UX follow-up preserves the original six destinations, Home metrics/recent dictations, editable Dictionary rows, General Dictation/Notetaker tabs and connected-account notes controls. Tests run the actual UI against synthetic IPC and exercise failed-save draft retention, shortcut recording/cancellation, missing microphone identity, recovered permissions, and selected-model preparation gates. Meeting cancellation tests verify that skipping speaker separation preserves the completed transcript and automatic write-up, while cancellation before transcription completes discards the recording. These component checks do not establish physical microphone/editor or audible-cue acceptance.
+The visual reference is the **existing native Pressay app**. The shared shell uses its six destinations, window/sidebar measurements, colors, typography, grouped controls, Home metrics, Dictionary autosave, History app icons/search, General tabs, full-page notes and Ask capsule. Model selection prepares immediately. Setup opens in its own 540×720 window with welcome, three permission screens, model preparation and real practice; it accepts only a fresh dictation that began and inserted in this app with exactly matching practice text. macOS uses the original SwiftUI notch-island geometry, with a corresponding portable island and hover Stop control. The tray uses the original 348-pixel panel on macOS/Windows; Linux uses a native menu because its tray API does not provide click coordinates.
+
+The final local Rust workspace run passed 186 tests, and strict workspace Clippy passed. Actual frontend code against synthetic IPC passed twelve WebKit screen/theme accessibility scans, all six setup steps, thirteen settings/History scenario groups, notes editing/transcripts/actions, tray actions, and delayed credential-save recovery. Navigation cancels shortcut capture, including navigation from the tray; failed shortcut/Dictionary saves keep drafts. Setup tests reject typed, stale, other-app and prefixed-text completion and cover closing while capture activation is pending. These tests do not replace physical Windows/Wayland or screen-reader acceptance.
+
+Native island fixtures rendered sixteen phase/notch/hover states and exercised nonactivation, click-through and cleanup. The portable island fixture exercised five bars, elapsed time, hover Stop, finishing/success/error and reduced motion. A relocated Cargo-linked binary ran with system Swift runtime libraries and no `DYLD_*` override. On Windows/Wayland, pointer queries and overlay positioning remain compositor-dependent and require physical acceptance.
 
 ## Packaging and visual inspection
 
@@ -75,13 +79,22 @@ Native Swift app builds and nested-signature verification passed. The native DMG
 
 An earlier packaged preview launched, exposed its initial accessibility tree and prepared Orukeet from verified cached weights. The native welcome/microphone guide was inspected through a separate debug fixture; simulated fixture status is not an OS permission grant. Real UI JavaScript has also been inspected with mock data in dark/light and narrower layouts.
 
-![Native Mac onboarding](assets/cross-platform/macos-onboarding.png)
-![Native microphone guidance](assets/cross-platform/macos-permissions.png)
-![Current desktop Home, synthetic fixture](assets/cross-platform/desktop-home.png)
-![Current desktop General, synthetic fixture](assets/cross-platform/desktop-general.png)
-![Current desktop Dictionary, synthetic fixture](assets/cross-platform/desktop-dictionary.png)
-![Current desktop notes, synthetic fixture](assets/cross-platform/desktop-notes.png)
-![Current desktop onboarding, synthetic fixture](assets/cross-platform/desktop-onboarding-current.png)
+A relocated packaged Mac app launched through Launch Services with a disposable synthetic profile. The separate setup window rendered the welcome and permission screens; closing it restored the main window. The tray opened from another foreground app, stayed within the display, and reopened setup through its real command. The original Preview profile was restored after quitting the fixture. Directly executing the relocated binary outside Launch Services failed path resolution; normal app launch passed.
+
+The comparisons below use matching synthetic content in the native Swift app and shared WebKit UI. Native traffic lights/window corners are supplied by macOS; browser fixtures omit them. Dates and readiness reflect each fixture's state, and text rasterization can differ. The packaged welcome image is the real Tauri window. The native reference's extra bottom title-bar strip is not reproduced.
+
+| Screen | Native Pressay reference | Shared desktop |
+| --- | --- | --- |
+| Home | ![Native Home](assets/cross-platform/reference-home.png) | ![Desktop Home](assets/cross-platform/desktop-home.png) |
+| General | ![Native General](assets/cross-platform/reference-general.png) | ![Desktop General](assets/cross-platform/desktop-general.png) |
+| Dictionary | ![Native Dictionary](assets/cross-platform/reference-dictionary.png) | ![Desktop Dictionary](assets/cross-platform/desktop-dictionary.png) |
+| History | ![Native History](assets/cross-platform/reference-history.png) | ![Desktop History](assets/cross-platform/desktop-history.png) |
+| Notetaker | ![Native Notetaker](assets/cross-platform/reference-notes.png) | ![Desktop Notetaker](assets/cross-platform/desktop-notes.png) |
+| AI Cleanup | ![Native AI Cleanup](assets/cross-platform/reference-ai.png) | ![Desktop AI Cleanup](assets/cross-platform/desktop-ai.png) |
+| Setup | ![Native setup](assets/cross-platform/reference-onboarding.png) | ![Packaged setup](assets/cross-platform/desktop-onboarding-current.png) |
+| Tray | ![Native tray](assets/cross-platform/reference-tray.png) | ![Desktop tray](assets/cross-platform/desktop-tray.png) |
+
+![Meeting island, native rendering fixture at 2×](assets/cross-platform/desktop-meeting-island.png)
 
 These screenshots contain synthetic/empty content and no credentials or private transcripts. A WebView tree or automated accessibility scan does not substitute for a screen-reader/IME session.
 
