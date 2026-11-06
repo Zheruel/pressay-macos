@@ -78,6 +78,40 @@ async fn input_devices() -> Result<Vec<String>, String> {
         .await
         .map_err(|e| e.to_string())?
 }
+#[derive(Serialize)]
+struct InputDeviceSelection {
+    devices: Vec<String>,
+    selected: Option<String>,
+    unavailable: bool,
+}
+#[tauri::command]
+async fn input_device_selection(
+    state: State<'_, Arc<Shared>>,
+) -> Result<InputDeviceSelection, String> {
+    let settings = state.view.lock().unwrap().settings.clone();
+    tokio::task::spawn_blocking(move || {
+        let devices = audio::list_inputs()?;
+        let saved = settings["inputDevice"]
+            .as_str()
+            .filter(|name| !name.is_empty());
+        let legacy = settings["inputDeviceUID"]
+            .as_str()
+            .filter(|uid| !uid.is_empty());
+        let selected = saved
+            .map(str::to_owned)
+            .or_else(|| legacy.and_then(platform::input_device_name_for_uid));
+        let unavailable = selected
+            .as_ref()
+            .map_or(legacy.is_some(), |name| !devices.contains(name));
+        Ok(InputDeviceSelection {
+            devices,
+            selected,
+            unavailable,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 #[tauri::command]
 async fn save_settings(patch: Value, state: State<'_, Arc<Shared>>) -> Result<(), String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -169,13 +203,13 @@ async fn change_shortcut(
         return Err("Finish the current operation first".into());
     }
     let controller = app.state::<shortcuts::ShortcutController>();
-    let old = controller.binding();
-    controller.rebind(binding.clone())?;
-    if let Err(e) = save_settings(serde_json::json!({"shortcut":binding}), state).await {
-        let _ = controller.rebind(old);
-        return Err(e);
-    }
-    Ok(())
+    shortcuts::change_binding(
+        controller.binding(),
+        binding,
+        |candidate| controller.rebind(candidate),
+        |candidate| save_settings(serde_json::json!({"shortcut":candidate}), state),
+    )
+    .await
 }
 fn main() {
     tauri::Builder::default()
@@ -199,6 +233,7 @@ fn main() {
             cancel,
             request_permission,
             input_devices,
+            input_device_selection,
             save_settings,
             complete_onboarding,
             delete_dictation,
@@ -209,6 +244,7 @@ fn main() {
             start_meeting,
             stop_meeting,
             change_shortcut,
+            shortcuts::set_shortcut_capture,
             lifecycle::launch_at_login,
             lifecycle::autostart_status,
             lifecycle::check_update,
@@ -312,9 +348,7 @@ fn main() {
                             .store(available, Ordering::Release);
                         engine::update(&callback_app, &callback_shared, |s| {
                             s.shortcut_label = trigger;
-                            if error.is_some() {
-                                s.error = error;
-                            }
+                            s.shortcut_error = error;
                         });
                     }
                 }

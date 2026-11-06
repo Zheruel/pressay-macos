@@ -10,7 +10,7 @@ Recorded 2026-11-06 for the isolated preview and native Mac onboarding changes. 
 - Focused meeting checks pass for partial/aligned VAD flush, route-gap origins, hysteresis/frame order, 12-second utterances, exact lead/tail timing, first-appearance voice numbering and majority overlap. Capture tests include real helper-process stop/drain/drop and final-duration clipping accepted by the bounded audio spool.
 - Analysis lifecycle tests kill and reap a cancelled or malformed worker. Spool tests verify owner-only files, sparse timeline gaps, duration bounds, deletion and locked orphan cleanup that preserves active files and unrelated paths.
 - A later Mac run passed 57 desktop tests and 77 core unit tests plus core integration suites. Added coverage includes current/stale call binding, two-minute warning timing, silent/discarded note handling, pending-write-up eligibility/idempotence, deletion beyond the UI's 10,000-row history limit, and seven-day orphan-audio cleanup preserving referenced files and links. Later changes still require their own CI run.
-- JavaScript syntax checks pass. Axe reported zero WCAG 2A/2AA/2.1AA violations on dictation, notes, settings and onboarding using the real UI JavaScript with mocked IPC. This does not test a screen reader or native WebView accessibility end to end.
+- JavaScript syntax checks pass. Axe reported zero WCAG 2A/2AA/2.1AA violations on Home, notes, Dictionary, General and onboarding using the real UI JavaScript with mocked IPC. This does not test a screen reader or native WebView accessibility end to end.
 
 Migration tests export 501 original records without retention deleting any, compare History.store/WAL/SHM and notes byte-for-byte, preserve unknown models and legacy vocabulary, exclude credentials, require mode-0600 output, and prevent overwriting source data through direct paths or symlinks. No real user history was exported for these tests.
 
@@ -53,7 +53,7 @@ A three-hour silent recording completed analysis in 37.20 seconds at 819,488 KiB
 | Linux X11 | Xvfb + real libxdo generated key events; clipboard selection ownership stayed unchanged; WM_CLASS target identification and focus-change refusal passed | Real application/IME behavior, every clipboard format or physical desktop acceptance |
 | Linux portals | Private `dbus-daemon` with a mock portal exercised production wire serialization, early responses, hold/release, Unicode key press/release, control-text refusal and revocation with no further insertion | Actual GNOME/KDE consent, compositor policies, layouts or real Wayland editor insertion |
 | Mac MLX resources | A relocated app probe linked the exact Cmlx object used by the Swift worker and completed a real Metal 1,024-element vector addition; removing its adjacent resource bundle caused the expected failure, restoring it passed | Mega-ASR model loading, transcription accuracy or full model inference |
-| Mac input/overlay | Native code checks, synthetic CGEvent objects without posting input, and AppKit structure checks for nonactivating/click-through overlay and interactive guide | Real Input Monitoring/Accessibility grants, Right Option/Fn operation, lock behavior or insertion into an editor |
+| Mac input/overlay | Real Preview Microphone, Input Monitoring and Accessibility grants recognized in onboarding; native code checks, synthetic CGEvent objects without posting input, and AppKit structure checks for nonactivating/click-through overlay and interactive guide | Physical hold/release, lock behavior or insertion into an editor are separate acceptance checks |
 | Windows native adapters | Cross-target API checks cover capture/platform/session integration | A Windows runtime, real WASAPI devices, UAC/editor behavior or clean-machine acceptance |
 
 Native capture includes Mac CoreAudio taps, Windows WASAPI loopback and Linux PulseAudio/PipeWire monitor processes. Their implementation and fixture tests do not establish actual device routing, Bluetooth behavior or echo quality. Mac has voice-processing fallback; Windows/Linux adapters currently lack echo cancellation. Linux alignment uses monotonic/sample-count timing rather than validated shared hardware clocks.
@@ -65,7 +65,9 @@ cargo test -p pressay-desktop --locked wayland
 xvfb-run -a cargo test -p pressay-desktop --locked x11_insertion -- --ignored --nocapture
 ```
 
-The final local macOS pass includes 58 desktop tests and strict workspace Clippy. First-run integration checks caught and fixed missing updater configuration and synchronous microphone enumeration. Native enumeration now reads CoreAudio metadata without opening an audio unit. The subsequent app process started without those failures, but the computer-control service returned `cgWindowNotFound`; live permission, editor and audible-cue acceptance are not claimed. No OS privacy grants were changed.
+First-run integration checks caught and fixed missing updater configuration and synchronous microphone enumeration. Native enumeration now reads CoreAudio metadata without opening an audio unit. With explicit user approval, the packaged Preview received Microphone, Input Monitoring and Accessibility access. All three grants were recognized by onboarding after removing/re-adding obsolete ad-hoc Accessibility and Input Monitoring entries and reopening Preview; tightly scoped TCC logs confirmed a code-requirement mismatch. The original app’s permission entries were left intact. The Preview used an isolated disposable profile and no account credentials. The rebuilt app loaded the verified cached Orukeet model and reached practice with all three permissions recognized. A separate `Control+Shift+Space` shortcut was seeded in the disposable profile while Preview was stopped to avoid activating the original app; this does not validate the physical shortcut recorder. AppleScript/System Events provided UI inspection after the native control service failed. A live spoken practice response is still pending; microphone-to-editor acceptance is not claimed.
+
+The UX follow-up preserves the original six destinations, Home metrics/recent dictations, editable Dictionary rows, General Dictation/Notetaker tabs and connected-account notes controls. Tests run the actual UI against synthetic IPC and exercise failed-save draft retention, shortcut recording/cancellation, missing microphone identity, recovered permissions, and selected-model preparation gates. Meeting cancellation tests verify that skipping speaker separation preserves the completed transcript and automatic write-up, while cancellation before transcription completes discards the recording. These component checks do not establish physical microphone/editor or audible-cue acceptance.
 
 ## Packaging and visual inspection
 
@@ -75,6 +77,9 @@ An earlier packaged preview launched, exposed its initial accessibility tree and
 
 ![Native Mac onboarding](assets/cross-platform/macos-onboarding.png)
 ![Native microphone guidance](assets/cross-platform/macos-permissions.png)
+![Current desktop Home, synthetic fixture](assets/cross-platform/desktop-home.png)
+![Current desktop General, synthetic fixture](assets/cross-platform/desktop-general.png)
+![Current desktop Dictionary, synthetic fixture](assets/cross-platform/desktop-dictionary.png)
 ![Current desktop notes, synthetic fixture](assets/cross-platform/desktop-notes.png)
 ![Current desktop onboarding, synthetic fixture](assets/cross-platform/desktop-onboarding-current.png)
 

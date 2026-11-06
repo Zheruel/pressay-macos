@@ -42,6 +42,7 @@ struct Queued {
 pub struct ViewState {
     pub stage: String,
     pub shortcut_label: String,
+    pub shortcut_error: Option<String>,
     pub error: Option<String>,
     pub model_ready: bool,
     pub progress: Option<download::Progress>,
@@ -65,7 +66,7 @@ pub struct Shared {
     shutdown: CancellationToken,
     stopped: CancellationToken,
     shutdown_error: Mutex<Option<String>>,
-    meeting_stop: Mutex<Option<(CancellationToken, CancellationToken)>>,
+    meeting_stop: Mutex<Option<(CancellationToken, crate::meeting::Cancellation)>>,
     pub microphone_worked: AtomicBool,
     pub shortcut_registered: AtomicBool,
 }
@@ -140,6 +141,13 @@ impl Shared {
     }
     pub fn cancel(&self) {
         platform::cancel_pending_insertions();
+        // Capture the user's intent now, before the actor can advance from
+        // recording to optional speaker analysis while this command is queued.
+        if !self.shutdown.is_cancelled() {
+            if let Some((_, cancellation)) = self.meeting_stop.lock().unwrap().clone() {
+                cancellation.cancel();
+            }
+        }
         self.generation.fetch_add(1, Ordering::AcqRel);
         self.cancel.lock().unwrap().cancel();
         self.cancel_wake.notify_one();
@@ -262,6 +270,7 @@ pub fn launch(
         view: Mutex::new(ViewState {
             stage: "idle".into(),
             shortcut_label: crate::shortcuts::Binding::default().label(),
+            shortcut_error: None,
             error: None,
             model_ready: false,
             progress: None,
@@ -1110,6 +1119,7 @@ mod tests {
                 view: Mutex::new(ViewState {
                     stage: "idle".into(),
                     shortcut_label: crate::shortcuts::Binding::default().label(),
+                    shortcut_error: None,
                     error: None,
                     model_ready: true,
                     progress: None,
@@ -1144,7 +1154,7 @@ mod tests {
         let (shared, _rx) = shared(1);
         shared.view.lock().unwrap().active_note = Some("saved-partial-meeting".into());
         let stop = CancellationToken::new();
-        let cancel = CancellationToken::new();
+        let cancel = crate::meeting::Cancellation::new();
         *shared.meeting_stop.lock().unwrap() = Some((stop.clone(), cancel.clone()));
         shared
             .tx
@@ -1155,8 +1165,25 @@ mod tests {
             .unwrap();
         shared.send(Command::StopMeeting).unwrap();
         assert!(stop.is_cancelled());
-        assert!(!cancel.is_cancelled());
+        assert!(!cancel.is_discarded());
         assert_eq!(shared.generation.load(Ordering::Acquire), 0);
+    }
+
+    #[tokio::test]
+    async fn meeting_discard_is_signalled_before_the_actor_drains_its_queue() {
+        let (shared, _rx) = shared(1);
+        let cancellation = crate::meeting::Cancellation::new();
+        *shared.meeting_stop.lock().unwrap() =
+            Some((CancellationToken::new(), cancellation.clone()));
+        shared
+            .tx
+            .try_send(Queued {
+                generation: 0,
+                command: Command::Stop,
+            })
+            .unwrap();
+        shared.send(Command::Cancel).unwrap();
+        assert!(cancellation.is_discarded());
     }
 
     #[tokio::test]
@@ -1216,9 +1243,16 @@ mod tests {
     #[tokio::test]
     async fn shutdown_waits_for_native_cleanup_acknowledgement() {
         let (shared, _rx) = shared(8);
+        let meeting_cancel = crate::meeting::Cancellation::new();
+        *shared.meeting_stop.lock().unwrap() =
+            Some((CancellationToken::new(), meeting_cancel.clone()));
         let stopping = shared.clone();
         let task = tokio::spawn(async move { stopping.shutdown().await });
         shared.shutdown.cancelled().await;
+        assert!(
+            !meeting_cancel.is_discarded(),
+            "Quitting must drain and save the meeting"
+        );
         assert!(!task.is_finished());
         assert!(!shared.shutdown_complete());
         assert!(shared.send(Command::Start).is_err());

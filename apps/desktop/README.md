@@ -19,6 +19,8 @@ Installers land in `target/release/bundle`. The build stages the pinned native r
 
 The manual `Desktop preview installers` workflow builds macOS, Windows and Linux artifacts without publishing a release. Signing, notarization and the signed desktop update channel need explicit release configuration; see [release setup](../../docs/releases.md). A local preview build does not imply trusted signing or an active update feed.
 
+On macOS, rebuilding an ad-hoc preview changes its signature. If System Settings shows access enabled but Preview still reports it missing, remove Preview's stale entry and add the current built app again under Accessibility (called Device Control and Data Access on newer macOS) and Input Monitoring, then quit and reopen Preview if prompted. Keep the original Pressay app's entries unchanged. This was reproduced during local permission testing; a stable Developer ID signature is part of release validation.
+
 For development on macOS/Linux, use the staged workers explicitly so meeting analysis and Mac MLX resources resolve beside the selected ASR worker:
 
 ```sh

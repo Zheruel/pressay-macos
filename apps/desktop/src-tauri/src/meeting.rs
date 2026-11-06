@@ -14,7 +14,7 @@ use pressay_core::{
 use std::{
     collections::VecDeque,
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Manager};
@@ -22,8 +22,48 @@ use tokio_util::sync::CancellationToken;
 
 pub struct Session {
     pub stop: CancellationToken,
-    pub cancel: CancellationToken,
+    pub cancel: Cancellation,
     pub task: tokio::task::JoinHandle<()>,
+}
+/// User cancellation is destructive only until capture and transcription have
+/// both finished. Serialize that transition with cancellation so a queued UI
+/// command cannot discard a complete transcript when it meant to skip analysis.
+#[derive(Clone)]
+pub struct Cancellation {
+    discard: CancellationToken,
+    speakers: CancellationToken,
+    transcript_complete: Arc<Mutex<bool>>,
+}
+impl Cancellation {
+    pub fn new() -> Self {
+        let discard = CancellationToken::new();
+        Self {
+            speakers: discard.child_token(),
+            discard,
+            transcript_complete: Arc::new(Mutex::new(false)),
+        }
+    }
+    pub fn cancel(&self) {
+        let complete = self.transcript_complete.lock().unwrap();
+        if *complete {
+            self.speakers.cancel();
+        } else {
+            self.discard.cancel();
+        }
+    }
+    fn complete_transcript(&self, succeeded: bool) -> bool {
+        let mut complete = self.transcript_complete.lock().unwrap();
+        *complete = succeeded && !self.discard.is_cancelled();
+        *complete
+    }
+    pub fn is_discarded(&self) -> bool {
+        self.discard.is_cancelled()
+    }
+}
+impl Default for Cancellation {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 pub fn start(
     app: AppHandle,
@@ -33,7 +73,7 @@ pub fn start(
     kind: String,
 ) -> Session {
     let stop = CancellationToken::new();
-    let cancel = CancellationToken::new();
+    let cancel = Cancellation::new();
     let stopping = stop.clone();
     let cancelled = cancel.clone();
     let task = tokio::spawn(async move {
@@ -61,14 +101,16 @@ pub fn start(
             }
         });
         let _ = workspace.refresh(&app);
-        if !cancelled.is_cancelled() && !shared.is_shutting_down() {
+        if !cancelled.is_discarded() && !shared.is_shutting_down() {
             let model = shared.view.lock().unwrap().settings["asrModel"]
                 .as_str()
                 .unwrap_or("parakeetUltra")
                 .to_string();
             let _ = shared.send(engine::Command::Prepare(model));
         }
-        if result.is_ok() && !cancelled.is_cancelled() && !shared.is_shutting_down() {
+        // Skipping speaker separation does not opt out of configured AI notes.
+        // Keep the normal write-up path and its durable retry state consistent.
+        if result.is_ok() && !cancelled.is_discarded() && !shared.is_shutting_down() {
             let app = app.clone();
             let shared = shared.clone();
             let workspace = workspace.clone();
@@ -77,11 +119,15 @@ pub fn start(
                     return;
                 }
                 if let Some(id) = id {
-                    if let Err(e) =
-                        crate::workspace::write_up_recording(&id, &app, &workspace, &cancelled)
-                            .await
+                    if let Err(e) = crate::workspace::write_up_recording(
+                        &id,
+                        &app,
+                        &workspace,
+                        &cancelled.discard,
+                    )
+                    .await
                     {
-                        if !shared.is_shutting_down() {
+                        if !shared.is_shutting_down() && !cancelled.is_discarded() {
                             engine::update(&app, &shared, |s| {
                                 s.error = Some(format!("Transcript saved. {e}"))
                             });
@@ -102,8 +148,9 @@ async fn run(
     runtime: PathBuf,
     kind: &str,
     stop: &CancellationToken,
-    cancel: &CancellationToken,
+    cancellation: &Cancellation,
 ) -> Result<(), String> {
+    let cancel = &cancellation.discard;
     let settings = shared.view.lock().unwrap().settings.clone();
     let input_device = if let Some(name) = settings["inputDevice"]
         .as_str()
@@ -435,15 +482,15 @@ async fn run(
         }
     };
     host.stop().await;
-    let complete_transcript = failure.is_none() && !cancel.is_cancelled();
-    if failure.is_none() && !cancel.is_cancelled() && !shared.is_shutting_down() {
+    let complete_transcript = cancellation.complete_transcript(failure.is_none());
+    if complete_transcript && !cancellation.speakers.is_cancelled() && !shared.is_shutting_down() {
         if let (Some(mut spool), Some(path)) = (spool, speaker_path) {
             if spool.duration().as_secs() > 0 {
                 engine::update(app, shared, |s| s.stage = "meeting_speakers".into());
                 let result = async {
                     let pcm = spool.seal().map_err(|e| e.to_string())?;
                     let mut speaker_host = AnalysisHost::new(analysis_executable, analysis_runtime);
-                    let speaker_cancel = cancel.child_token();
+                    let speaker_cancel = cancellation.speakers.child_token();
                     tokio::select! {
                         result = speaker_host.diarize(&path, &pcm, &speaker_cancel) => result.map_err(|e| e.to_string()),
                         _ = async {
@@ -461,6 +508,10 @@ async fn run(
                 let store = workspace.store.lock().unwrap();
                 let mut latest = store.note(&id).map_err(|e| e.to_string())?;
                 match result {
+                    _ if cancellation.speakers.is_cancelled() => {
+                        latest.notice =
+                            Some("Speaker separation skipped. Your transcript was saved.".into());
+                    }
                     Ok(segments) => latest.assign_voices(&segments),
                     Err(e) => latest.notice = Some(format!("Transcript saved. {e}")),
                 }
@@ -547,6 +598,113 @@ impl VoiceTrack {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn skipping_speaker_analysis_preserves_transcript_and_configured_writeup() {
+        let cancellation = super::Cancellation::new();
+        let speaker_job = cancellation.speakers.child_token();
+        let writeup_job = cancellation.discard.child_token();
+        let mut note = pressay_core::notes::Note::new("meeting");
+        note.add_line(pressay_core::notes::TranscriptLine {
+            speaker: pressay_core::notes::Speaker::Others,
+            start: 0.,
+            end: Some(3.),
+            text: "Keep the complete meeting transcript.".into(),
+            voice: None,
+        })
+        .unwrap();
+        note.my_notes = "Also keep my notes".into();
+        let complete = cancellation.complete_transcript(true);
+        cancellation.cancel();
+        assert!(complete);
+        assert!(!cancellation.is_discarded());
+        assert!(speaker_job.is_cancelled());
+        assert!(!writeup_job.is_cancelled());
+        assert!(
+            note.needs_write_up,
+            "Configured write-up remains eligible now and after restart"
+        );
+        assert!(!super::discard_finished_note(
+            &note,
+            complete,
+            cancellation.is_discarded()
+        ));
+        assert_eq!(note.lines[0].text, "Keep the complete meeting transcript.");
+        assert_eq!(note.my_notes, "Also keep my notes");
+    }
+    #[test]
+    fn capture_cancel_remains_destructive_even_if_actor_receives_it_after_capture_ends() {
+        let cancellation = super::Cancellation::new();
+        cancellation.cancel();
+        assert!(!cancellation.complete_transcript(true));
+        assert!(cancellation.is_discarded());
+        let note = pressay_core::notes::Note::new("meeting");
+        assert!(super::discard_finished_note(
+            &note,
+            false,
+            cancellation.is_discarded()
+        ));
+    }
+    #[test]
+    fn cancellation_and_completion_have_one_serialized_winner() {
+        for _ in 0..100 {
+            let cancellation = super::Cancellation::new();
+            let complete = std::thread::scope(|scope| {
+                let task = scope.spawn(|| cancellation.complete_transcript(true));
+                cancellation.cancel();
+                task.join().unwrap()
+            });
+            assert_eq!(complete, !cancellation.is_discarded());
+            assert!(cancellation.speakers.is_cancelled());
+        }
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn skipping_reaps_an_inflight_speaker_worker_without_discarding_capture() {
+        let directory = tempfile::tempdir().unwrap();
+        let worker = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../crates/pressay-core/tests/fixtures/analysis-worker.sh");
+        std::fs::write(
+            directory.path().join("response.sh"),
+            "printf started > \"$3/started\"\nexec sleep 120\n",
+        )
+        .unwrap();
+        let pid_path = directory.path().join("pid");
+        let pcm_path = directory.path().join("public-silence.f32");
+        std::fs::write(&pcm_path, [0_u8; 64000]).unwrap();
+        let cancellation = super::Cancellation::new();
+        assert!(cancellation.complete_transcript(true));
+        let signal = cancellation.clone();
+        let started = directory.path().join("started");
+        let skip = tokio::spawn(async move {
+            let observed = tokio::time::timeout(Duration::from_secs(3), async {
+                while !started.exists() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await;
+            // Always release a waiting worker, even if the fixture failed.
+            signal.cancel();
+            observed.unwrap();
+        });
+        let mut host = AnalysisHost::new(worker, directory.path().into());
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            host.diarize(&pid_path, &pcm_path, &cancellation.speakers.child_token()),
+        )
+        .await
+        .unwrap();
+        skip.await.unwrap();
+        assert!(matches!(result, Err(pressay_core::Error::Cancelled)));
+        assert!(!cancellation.is_discarded());
+        let pid = std::fs::read_to_string(pid_path).unwrap();
+        assert!(!std::process::Command::new("kill")
+            .args(["-0", pid.trim()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success());
+    }
     #[test]
     fn duration_warning_starts_exactly_two_minutes_before_limit() {
         let limit = std::time::Duration::from_secs(3600);

@@ -9,28 +9,33 @@
   <body>
     <aside class="sidebar">
       <div class="brand">
-        <img src="icon.png" alt="" width="38" height="38" />
-        <div>Pressay<small>Your voice, your workspace</small></div>
+        <img src="icon.png" alt="" width="31" height="31" />
+        <div>Pressay</div>
       </div>
       <nav aria-label="Main navigation">
-        <button class="nav active" data-page="dictation">
-          <span aria-hidden="true">◉</span> Dictation
-        </button>
-        <button class="nav" data-page="meetings">
-          <span aria-hidden="true">▤</span> Notetaker
-        </button>
-        <button class="nav" data-page="dictionary">
-          <span aria-hidden="true">Aa</span> Dictionary
-        </button>
-        <button class="nav" data-page="general">
-          <span aria-hidden="true">⚙</span> General
-        </button>
+        <div class="nav-group">
+          <button class="nav active" data-page="dictation" aria-current="page">
+            Home
+          </button>
+          <button class="nav" data-page="meetings">Notetaker</button>
+          <button class="nav" data-page="history">History</button>
+        </div>
+        <div class="nav-group">
+          <button class="nav" data-page="dictionary">Dictionary</button>
+        </div>
+        <div class="nav-group">
+          <button class="nav" data-page="general">General</button>
+          <button class="nav" data-page="ai">AI Cleanup</button>
+        </div>
       </nav>
       <div class="sidebar-bottom">
         <div id="readiness">
           <span class="status-dot"></span
           ><span id="readiness-label">Set up Pressay</span>
         </div>
+        <p id="sidebar-model" class="sidebar-model">
+          On-device speech recognition
+        </p>
         <button class="quiet" id="setup-again">Open setup</button
         ><button class="quiet" id="quit">Quit Pressay</button>
       </div>
@@ -44,25 +49,51 @@
           ×
         </button>
       </div>
-      <section data-panel="dictation">
-        <div class="heading">
-          <div>
-            <h1>Dictation</h1>
-            <p>Your voice, ready to write.</p>
+      <section data-panel="dictation" aria-label="Home">
+        <div class="home-top">
+          <div class="stats home-stats">
+            <div>
+              <span>Words this week</span><strong id="weekly-words">0</strong>
+            </div>
+            <div>
+              <span>Time saved this week</span
+              ><strong id="saved-time">0 min</strong>
+            </div>
+            <div><span>Speaking pace</span><strong id="wpm">—</strong></div>
+            <div><span>Streak</span><strong id="streak">0 days</strong></div>
           </div>
-          <kbd class="shortcut">Ctrl + Shift + Space</kbd>
+          <button id="home-record-meeting">Start Notetaker</button>
         </div>
-        <div class="hero">
-          <span class="mic-mark" aria-hidden="true">◉</span>
+        <div class="hero" id="capture-hero" role="status" hidden>
           <div>
             <h2 id="capture-status">Hold. Speak. Release.</h2>
-            <p id="capture-detail">
-              Your words appear at the cursor. Speech stays on this device.
-            </p>
+            <p id="capture-detail">Your words appear at the cursor.</p>
           </div>
           <button id="cancel" hidden>Cancel</button>
         </div>
-        <div class="stats">
+        <div class="section-heading">
+          <h2>Recent dictations</h2>
+          <button id="view-history" class="quiet">View history</button>
+        </div>
+        <div id="recent-dictations" class="history recent-dictations"></div>
+      </section>
+      <section data-panel="history" hidden>
+        <div class="heading">
+          <h1>History</h1>
+          <button id="clear-history" class="quiet">Clear history…</button>
+        </div>
+        <div class="history-filters">
+          <input
+            id="history-search"
+            type="search"
+            placeholder="Search dictations"
+            aria-label="Search dictations"
+          />
+          <label class="check"
+            ><input id="history-pinned" type="checkbox" />Pinned only</label
+          >
+        </div>
+        <div class="stats history-stats">
           <div><strong id="words">0</strong><span>Words dictated</span></div>
           <div><strong id="count">0</strong><span>Dictations</span></div>
           <div>
@@ -70,31 +101,10 @@
             ><span>Last release to insertion</span>
           </div>
         </div>
-        <div class="section-heading">
-          <h2>Recent dictations</h2>
-          <button id="clear-history">Clear history…</button>
-        </div>
-        <div class="history-filters">
-          <input
-            id="history-search"
-            type="search"
-            placeholder="Search your dictations…"
-            aria-label="Search dictations"
-          /><label class="check"
-            ><input id="history-pinned" type="checkbox" />Pinned only</label
-          >
-        </div>
-        <div class="stats secondary">
-          <div><strong id="wpm">—</strong><span>Words per minute</span></div>
-          <div>
-            <strong id="saved-time">0 min</strong
-            ><span>Typing time saved this week</span>
-          </div>
-          <div>
-            <strong id="streak">0 days</strong><span>Dictation streak</span>
-          </div>
-        </div>
         <div id="history" class="history"></div>
+        <p class="muted">
+          Unpinned dictations are kept for 30 days; audio for 7 days.
+        </p>
       </section>
       <section data-panel="meetings" hidden>
         <div class="heading">
@@ -147,113 +157,385 @@
         <div class="heading">
           <div>
             <h1>Dictionary</h1>
-            <p>Your names and terms, spelled your way.</p>
+            <p>Set the spelling of names and terms.</p>
           </div>
+          <button id="add-word" class="primary">Add word</button>
         </div>
-        <div class="card">
-          <h2>Words that matter to you</h2>
-          <p>
-            One term per line. Add a common mishearing after <code>&lt;=</code>.
-            Your dictionary starts empty.
-          </p>
-          <label for="vocabulary">Personal vocabulary</label
-          ><textarea
-            id="vocabulary"
-            rows="12"
-            spellcheck="false"
-            placeholder="Supabase&#10;myRepository &lt;= my repository"
-          ></textarea>
-          <div class="row">
-            <p id="dictionary-result" role="status"></p>
-            <button class="primary" id="save-vocabulary">
-              Save dictionary
+        <div id="dictionary-empty" class="empty" hidden>
+          <h2>No words yet</h2>
+          <p>Add names and terms you want Pressay to spell correctly.</p>
+          <button id="add-first-word" class="primary">
+            Add your first word
+          </button>
+        </div>
+        <div id="dictionary-table" class="dictionary-table">
+          <div class="dictionary-columns" aria-hidden="true">
+            <span>WORD</span><span>SOUNDS LIKE</span><span></span>
+          </div>
+          <div id="dictionary-rows"></div>
+        </div>
+        <p id="dictionary-help" class="muted">
+          Pressay writes each word with this spelling. Under Sounds like, add
+          what it gets misheard as.
+        </p>
+        <p id="dictionary-result" role="status"></p>
+        <button id="retry-dictionary" hidden>Retry saving</button>
+      </section>
+      <section data-panel="general" hidden>
+        <div class="heading general-heading">
+          <h1>General</h1>
+          <div
+            class="settings-tabs"
+            role="tablist"
+            aria-label="General settings"
+          >
+            <button
+              id="general-dictation-tab"
+              role="tab"
+              aria-selected="true"
+              aria-controls="general-dictation"
+              data-general-tab="dictation"
+            >
+              Dictation
+            </button>
+            <button
+              id="general-notetaker-tab"
+              role="tab"
+              aria-selected="false"
+              aria-controls="general-notetaker"
+              data-general-tab="notetaker"
+              tabindex="-1"
+            >
+              Notetaker
             </button>
           </div>
         </div>
+        <div
+          id="general-dictation"
+          role="tabpanel"
+          aria-labelledby="general-dictation-tab"
+        >
+          <section class="settings-section" aria-labelledby="keyboard-heading">
+            <h2 id="keyboard-heading">Keyboard</h2>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="shortcut-kind">Hold to talk</label>
+                  <p>Release to type. Press Esc to cancel.</p>
+                </div>
+                <div class="setting-control shortcut-controls">
+                  <select id="shortcut-kind" aria-label="Shortcut type">
+                    <option value="macKey">Single key</option>
+                    <option value="chord">Key combination</option></select
+                  ><button id="record-shortcut">Record key…</button>
+                </div>
+              </div>
+              <div class="setting-row shortcut-editor">
+                <div class="setting-copy">
+                  <label for="shortcut-mac-key" id="shortcut-mac-row"
+                    >Hold key</label
+                  ><label for="shortcut-value" id="shortcut-chord-row" hidden
+                    >Key combination</label
+                  >
+                </div>
+                <div class="setting-control">
+                  <select id="shortcut-mac-key" aria-label="Hold key">
+                    <option value="61">⌥ Right Option</option>
+                    <option value="58">⌥ Left Option</option>
+                    <option value="54">⌘ Right Command</option>
+                    <option value="55">⌘ Left Command</option>
+                    <option value="56">⇧ Left Shift</option>
+                    <option value="60">⇧ Right Shift</option>
+                    <option value="59">⌃ Left Control</option>
+                    <option value="62">⌃ Right Control</option>
+                    <option value="63">Fn</option>
+                    <option value="49">Space</option></select
+                  ><input
+                    id="shortcut-value"
+                    aria-label="Key combination"
+                    placeholder="Control+Shift+Space"
+                    hidden
+                  />
+                </div>
+              </div>
+              <div class="setting-row shortcut-actions">
+                <p id="shortcut-status" role="status" class="muted"></p>
+                <div class="setting-control">
+                  <button id="save-shortcut">Save shortcut</button
+                  ><button id="reset-shortcut" hidden>Discard changes</button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="settings-section" aria-labelledby="audio-heading">
+            <h2 id="audio-heading">Audio</h2>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="input-device">Microphone</label>
+                  <p>Opens while you dictate. Closes on release or cancel.</p>
+                  <p id="input-device-status" role="status"></p>
+                </div>
+                <div class="setting-control">
+                  <select id="input-device">
+                    <option value="">System default</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section
+            class="settings-section"
+            aria-labelledby="transcription-heading"
+          >
+            <h2 id="transcription-heading">Transcription</h2>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="model">Speech model</label>
+                  <p id="model-size"></p>
+                </div>
+                <div class="setting-control"><select id="model"></select></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="dictation-language">Language</label>
+                </div>
+                <div class="setting-control">
+                  <select id="dictation-language" disabled>
+                    <option value="auto">Automatic</option>
+                  </select>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy"><span>Status</span></div>
+                <div class="setting-control">
+                  <span id="general-model-status" role="status">Not loaded</span
+                  ><button id="prepare">Prepare model</button>
+                </div>
+              </div>
+              <div class="download settings-download" hidden>
+                <progress max="1" value="0"></progress>
+                <p role="status" class="download-label"></p>
+              </div>
+            </div>
+            <p class="settings-footnote">
+              Dictations finish automatically after five minutes. Use Voice note
+              for longer recordings.
+            </p>
+          </section>
+          <section
+            class="settings-section"
+            aria-labelledby="permissions-heading"
+          >
+            <h2 id="permissions-heading">Permissions</h2>
+            <div class="settings-group" id="general-permissions"></div>
+            <label class="check settings-footnote" id="wayland-option" hidden
+              ><input id="wayland-cursor" type="checkbox" />Insert at the
+              current cursor using the desktop portal</label
+            >
+            <p id="wayland-help" class="settings-footnote" hidden>
+              Wayland does not expose the original focused app. Keep the cursor
+              where you want your words until insertion finishes.
+            </p>
+          </section>
+          <section class="settings-section" aria-labelledby="startup-heading">
+            <h2 id="startup-heading">Startup</h2>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="launch-at-login">Open at login</label>
+                </div>
+                <input
+                  id="launch-at-login"
+                  class="settings-switch"
+                  type="checkbox"
+                />
+              </div>
+            </div>
+          </section>
+          <section class="settings-section" aria-labelledby="updates-heading">
+            <h2 id="updates-heading">App updates</h2>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span>Pressay updates</span>
+                  <p id="update-status" role="status"></p>
+                </div>
+                <button id="check-updates">Check for updates</button>
+              </div>
+            </div>
+          </section>
+          <section class="settings-section" aria-labelledby="data-heading">
+            <h2 id="data-heading">Your data</h2>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="migration">Import a copy</label>
+                  <p>
+                    Settings, all saved dictations and meeting notes. Original
+                    Mac files are kept.
+                  </p>
+                  <p role="status" id="migration-result"></p>
+                </div>
+                <div class="setting-control">
+                  <input
+                    type="file"
+                    id="migration"
+                    accept="application/json,.json"
+                  />
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <span>Export a copy</span>
+                  <p>
+                    Settings, history and notes. Audio stays on this device.
+                  </p>
+                </div>
+                <button id="export-backup">Export notes and history</button>
+              </div>
+              <div class="setting-row" id="original-audio-row">
+                <div class="setting-copy">
+                  <span>Original Mac recordings</span>
+                  <p id="audio-import-status" role="status"></p>
+                </div>
+                <div class="setting-control">
+                  <button id="import-mac-audio" hidden>Import recordings</button
+                  ><button id="cancel-audio-import" hidden>
+                    Cancel import
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p class="settings-footnote">
+              Unpinned dictations are kept for 30 days and audio for seven days.
+              Pinned and corrected entries are kept. Meeting notes stay until
+              you delete them.
+            </p>
+          </section>
+        </div>
+        <div
+          id="general-notetaker"
+          role="tabpanel"
+          aria-labelledby="general-notetaker-tab"
+          hidden
+        >
+          <section
+            class="settings-section"
+            aria-labelledby="meeting-transcription-heading"
+          >
+            <h2 id="meeting-transcription-heading">Transcription</h2>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="meeting-model">Meeting speech model</label>
+                  <p>Runs locally while you record.</p>
+                </div>
+                <div class="setting-control">
+                  <select id="meeting-model"></select>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="meeting-language">Language</label>
+                </div>
+                <div class="setting-control">
+                  <select id="meeting-language" disabled>
+                    <option value="auto">Automatic</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section
+            class="settings-section"
+            aria-labelledby="meeting-notes-heading"
+          >
+            <h2 id="meeting-notes-heading">Meeting notes</h2>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="notes-ai">Write up notes with AI</label>
+                  <p>Summaries, decisions and action items.</p>
+                </div>
+                <input
+                  id="notes-ai"
+                  class="settings-switch"
+                  type="checkbox"
+                  disabled
+                />
+              </div>
+              <div class="setting-row" id="notes-connect-row">
+                <div class="setting-copy">
+                  <span>Connect meeting AI</span>
+                  <p id="notes-connection-help">
+                    Requires an Anthropic API key or a ChatGPT subscription.
+                  </p>
+                </div>
+                <button id="notes-connect-ai">Set up AI Cleanup</button>
+              </div>
+              <div class="setting-row" id="notes-model-row" hidden>
+                <div class="setting-copy">
+                  <label for="notes-model">AI model</label>
+                  <p id="notes-model-help">
+                    Uses an account connected in AI Cleanup.
+                  </p>
+                </div>
+                <div class="setting-control">
+                  <select id="notes-model" disabled></select>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="settings-section" aria-labelledby="calls-heading">
+            <h2 id="calls-heading">Calls</h2>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="detect-calls"
+                    >Offer to take notes when a call starts</label
+                  >
+                </div>
+                <input
+                  id="detect-calls"
+                  class="settings-switch"
+                  type="checkbox"
+                />
+              </div>
+            </div>
+          </section>
+          <section class="settings-section" aria-labelledby="recording-heading">
+            <h2 id="recording-heading">While recording</h2>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <label for="meeting-hours">Stop after</label>
+                  <p>A reminder appears two minutes before the limit.</p>
+                </div>
+                <div class="setting-control">
+                  <select id="meeting-hours">
+                    <option value="1">1 hour</option>
+                    <option value="2">2 hours</option>
+                    <option value="3">3 hours</option>
+                    <option value="4">4 hours</option>
+                    <option value="6">6 hours</option>
+                    <option value="8">8 hours</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
       </section>
-      <section data-panel="general" hidden>
+      <section data-panel="ai" hidden>
         <div class="heading">
           <div>
-            <h1>General</h1>
-            <p>Make Pressay work for you.</p>
+            <h1>AI Cleanup</h1>
+            <p>Polish your words without changing what you meant.</p>
           </div>
         </div>
         <div class="card">
-          <h2>Speech recognition</h2>
-          <p>
-            Models run locally. Downloads are pinned and checked before loading.
-          </p>
-          <label for="model">Dictation model</label
-          ><select id="model"></select>
-          <p class="muted" id="model-size"></p>
-          <p class="muted">
-            Dictations finish automatically after five minutes. Use Voice note
-            for longer recordings.
-          </p>
-          <label
-            >Dictation language<select id="dictation-language" disabled>
-              <option value="auto">Automatic</option>
-            </select></label
-          >
-          <button id="prepare" class="primary">Prepare model</button>
-          <div class="download" hidden>
-            <progress max="1" value="0"></progress>
-            <p role="status" class="download-label"></p>
-          </div>
-        </div>
-        <div class="card">
-          <h2>Microphone</h2>
-          <label for="input-device">Input device</label
-          ><select id="input-device">
-            <option value="">System default</option>
-          </select>
-          <p>
-            Pressay opens the microphone when you hold the shortcut and closes
-            it on release or cancellation.
-          </p>
-        </div>
-        <div class="card">
-          <h2>Bring your data with you</h2>
-          <p>
-            Import a migration export from the native Mac app. Existing settings
-            and history are preserved. Your original Mac files are never
-            replaced.
-          </p>
-          <label for="migration">Pressay migration JSON</label
-          ><input type="file" id="migration" accept="application/json,.json" />
-          <p role="status" id="migration-result"></p>
-        </div>
-        <div class="card">
-          <h2>Your talk key</h2>
-          <p>
-            Hold to speak, release to insert. Escape cancels an active
-            dictation.
-          </p>
-          <div class="form-grid">
-            <label
-              >Shortcut type<select id="shortcut-kind">
-                <option value="chord">Key combination</option>
-                <option value="macKey">Mac physical key</option>
-              </select></label
-            ><label
-              >Key combination<input
-                id="shortcut-value"
-                placeholder="Control+Shift+Space"
-            /></label>
-          </div>
-          <button id="save-shortcut">Save shortcut</button
-          ><label class="check" id="wayland-option" hidden
-            ><input id="wayland-cursor" type="checkbox" />Insert at the current
-            cursor using the desktop portal</label
-          >
-          <p id="wayland-help" class="muted" hidden>
-            Wayland does not expose the original focused app. With this option
-            enabled, keep the cursor where you want your words until insertion
-            finishes.
-          </p>
-        </div>
-        <div class="card">
-          <h2>AI, when you want it</h2>
           <p>
             Speech recognition stays local. Optional cleanup and meeting
             write-ups send text to the provider you choose.
@@ -295,62 +577,6 @@
           </div>
           <p id="account-status" role="status"></p>
           <button id="import-mac-keys" hidden>Use existing Mac API keys</button>
-        </div>
-        <div class="card">
-          <h2>Meeting preferences</h2>
-          <div class="form-grid">
-            <label>Meeting model<select id="meeting-model"></select></label
-            ><label
-              >Stop after<select id="meeting-hours">
-                <option value="1">1 hour</option>
-                <option value="2">2 hours</option>
-                <option value="3">3 hours</option>
-                <option value="4">4 hours</option>
-                <option value="6">6 hours</option>
-                <option value="8">8 hours</option>
-              </select></label
-            >
-          </div>
-          <label
-            >Meeting language<select id="meeting-language" disabled>
-              <option value="auto">Automatic</option>
-            </select></label
-          ><label class="check"
-            ><input id="notes-ai" type="checkbox" />Write notes automatically
-            after recording</label
-          ><label
-            >Notes model<select id="notes-model">
-              <option value="claude:haiku55">Claude Haiku 5.5</option>
-              <option value="claude:sonnet55">Claude Sonnet 5.5</option>
-              <option value="chatgpt:gpt-6.1-sol">GPT-6.1 Sol</option>
-              <option value="chatgpt:gpt-6-luna">GPT-6 Luna</option>
-            </select></label
-          ><label class="check"
-            ><input id="detect-calls" type="checkbox" />Suggest taking notes
-            when a call starts</label
-          >
-        </div>
-        <div class="card">
-          <h2>Keep Pressay close</h2>
-          <label class="check"
-            ><input id="launch-at-login" type="checkbox" />Launch at
-            login</label
-          ><button id="check-updates">Check for updates</button>
-          <p id="update-status" role="status"></p>
-        </div>
-        <div class="card">
-          <h2>Your data is yours</h2>
-          <p>
-            Unpinned dictations are kept for 30 days and their audio for 7 days.
-            Pinned and corrected dictations are kept. Meeting notes stay until
-            you delete them.
-          </p>
-          <button id="export-backup">Export notes and history</button>
-          <p class="muted">Audio stays on this device.</p>
-          <button id="import-mac-audio" hidden>
-            Import original Mac recordings</button
-          ><button id="cancel-audio-import" hidden>Cancel import</button>
-          <p id="audio-import-status" role="status"></p>
         </div>
       </section>
     </main>

@@ -9,7 +9,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex,
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tokio_util::sync::CancellationToken;
 
@@ -100,7 +100,89 @@ impl Binding {
                 59 => "Left Control".into(),
                 62 => "Right Control".into(),
                 63 => "Fn".into(),
-                _ => format!("Mac key {key_code}"),
+                49 => "Space".into(),
+                36 => "Return".into(),
+                76 => "Enter".into(),
+                48 => "Tab".into(),
+                51 => "Delete".into(),
+                117 => "Forward Delete".into(),
+                114 => "Help".into(),
+                115 => "Home".into(),
+                119 => "End".into(),
+                116 => "Page Up".into(),
+                121 => "Page Down".into(),
+                123 => "Left Arrow".into(),
+                124 => "Right Arrow".into(),
+                125 => "Down Arrow".into(),
+                126 => "Up Arrow".into(),
+                0 => "A".into(),
+                11 => "B".into(),
+                8 => "C".into(),
+                2 => "D".into(),
+                14 => "E".into(),
+                3 => "F".into(),
+                5 => "G".into(),
+                4 => "H".into(),
+                34 => "I".into(),
+                38 => "J".into(),
+                40 => "K".into(),
+                37 => "L".into(),
+                46 => "M".into(),
+                45 => "N".into(),
+                31 => "O".into(),
+                35 => "P".into(),
+                12 => "Q".into(),
+                15 => "R".into(),
+                1 => "S".into(),
+                17 => "T".into(),
+                32 => "U".into(),
+                9 => "V".into(),
+                13 => "W".into(),
+                7 => "X".into(),
+                16 => "Y".into(),
+                6 => "Z".into(),
+                29 => "0".into(),
+                18 => "1".into(),
+                19 => "2".into(),
+                20 => "3".into(),
+                21 => "4".into(),
+                23 => "5".into(),
+                22 => "6".into(),
+                26 => "7".into(),
+                28 => "8".into(),
+                25 => "9".into(),
+                122 => "F1".into(),
+                120 => "F2".into(),
+                99 => "F3".into(),
+                118 => "F4".into(),
+                96 => "F5".into(),
+                97 => "F6".into(),
+                98 => "F7".into(),
+                100 => "F8".into(),
+                101 => "F9".into(),
+                109 => "F10".into(),
+                103 => "F11".into(),
+                111 => "F12".into(),
+                105 => "F13".into(),
+                107 => "F14".into(),
+                113 => "F15".into(),
+                106 => "F16".into(),
+                64 => "F17".into(),
+                79 => "F18".into(),
+                80 => "F19".into(),
+                90 => "F20".into(),
+                50 => "`".into(),
+                27 => "-".into(),
+                24 => "=".into(),
+                33 => "[".into(),
+                30 => "]".into(),
+                42 => "\\".into(),
+                41 => ";".into(),
+                39 => "'".into(),
+                43 => ",".into(),
+                47 => ".".into(),
+                44 => "/".into(),
+                _ => "Unrecognized key — record another".into(),
             },
             Self::Chord { accelerator } => accelerator.replace('+', " + "),
         }
@@ -129,6 +211,9 @@ struct Inner {
     busy: AtomicBool,
     generation: AtomicU64,
     stopped: AtomicBool,
+    capturing: AtomicBool,
+    capture_epoch: AtomicU64,
+    capture_operation: Mutex<()>,
     shutdown: CancellationToken,
     registration: Mutex<CancellationToken>,
     #[cfg(windows)]
@@ -136,8 +221,24 @@ struct Inner {
 }
 impl Inner {
     fn event(&self, event: Event) {
+        // Serialize a pending key-down with entering local key capture. Once
+        // capture owns this gate, no delayed hold can queue a microphone start.
+        let _capture_operation = matches!(event, Event::Pressed | Event::Released)
+            .then(|| self.capture_operation.lock().unwrap());
         if self.stopped.load(Ordering::Acquire) {
             return;
+        }
+        if self.capturing.load(Ordering::Acquire) {
+            // A Wayland portal may consume its registered chord before the
+            // WebView receives it. Recording that same chord is still possible.
+            #[cfg(target_os = "linux")]
+            if crate::platform::is_wayland() && matches!(event, Event::Pressed | Event::Released) {
+                let binding = self.binding.lock().unwrap().clone();
+                let _ = self.app.emit("pressay-shortcut-captured", serde_json::json!({"binding":binding,"label":binding.label(),"cancelled":false,"waitForRelease":matches!(event, Event::Pressed)}));
+            }
+            if matches!(event, Event::Pressed | Event::Released | Event::Cancel) {
+                return;
+            }
         }
         match &event {
             Event::Pressed if self.pressed.swap(true, Ordering::AcqRel) => return,
@@ -178,6 +279,9 @@ pub fn install(
         busy: AtomicBool::new(false),
         generation: AtomicU64::new(0),
         stopped: AtomicBool::new(false),
+        capturing: AtomicBool::new(false),
+        capture_epoch: AtomicU64::new(0),
+        capture_operation: Mutex::new(()),
         shutdown: CancellationToken::new(),
         registration: Mutex::new(CancellationToken::new()),
         #[cfg(windows)]
@@ -199,7 +303,9 @@ pub fn install(
     }
     #[cfg(windows)]
     lifecycle::start(Arc::downgrade(&controller.inner));
-    controller.rebind(binding)?;
+    // A conflicting shortcut must not prevent opening Settings to repair it.
+    // rebind reports registration failure through Availability as well as Err.
+    let _ = controller.rebind(binding);
     Ok(controller)
 }
 impl ShortcutController {
@@ -275,14 +381,83 @@ impl ShortcutController {
                 *self.inner.registered.lock().unwrap() = Some(accelerator);
                 self.inner.available(true, None);
             }
-            Err(error) => self.inner.available(
-                false,
-                Some(format!(
+            Err(error) => {
+                let message = format!(
                     "Shortcut is unavailable: {error}. Choose another key or approve input access."
-                )),
-            ),
+                );
+                self.inner.available(false, Some(message.clone()));
+                return Err(message);
+            }
         }
         Ok(())
+    }
+    fn begin_capture(&self, kind: &str, shared: &crate::engine::Shared) -> Result<(), String> {
+        let _operation = self.inner.capture_operation.lock().unwrap();
+        if shared.view.lock().unwrap().stage != "idle" || shared.is_shutting_down() {
+            return Err("Finish the current operation before recording a shortcut".into());
+        }
+        if self.inner.busy.load(Ordering::Acquire) || self.inner.stopped.load(Ordering::Acquire) {
+            return Err("Finish your current dictation before changing the talk key".into());
+        }
+        if !["macKey", "chord"].contains(&kind) || (kind == "macKey" && !cfg!(target_os = "macos"))
+        {
+            return Err("Choose a supported shortcut type".into());
+        }
+        if self.inner.capturing.swap(true, Ordering::AcqRel) {
+            return Ok(());
+        }
+        self.inner.pressed.store(false, Ordering::Release);
+        let epoch = self.inner.capture_epoch.fetch_add(1, Ordering::AcqRel) + 1;
+        let registered = self.inner.registered.lock().unwrap().take();
+        if let Some(old) = registered {
+            if let Err(error) = self.inner.app.global_shortcut().unregister(old.as_str()) {
+                *self.inner.registered.lock().unwrap() = Some(old);
+                self.inner.capturing.store(false, Ordering::Release);
+                return Err(format!("Could not pause the current shortcut: {error}"));
+            }
+        }
+        #[cfg(target_os = "macos")]
+        unsafe {
+            pressay_shortcuts_stop();
+            if kind == "macKey" {
+                pressay_key_capture_start(captured_mac_key);
+            }
+        }
+        let owner = self.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            if owner.inner.capture_epoch.load(Ordering::Acquire) == epoch
+                && owner.inner.capturing.load(Ordering::Acquire)
+            {
+                let _ = owner.end_capture();
+                let _ = owner.inner.app.emit(
+                    "pressay-shortcut-captured",
+                    serde_json::json!({"cancelled":true}),
+                );
+            }
+        });
+        Ok(())
+    }
+    fn end_capture(&self) -> Result<(), String> {
+        let _operation = self.inner.capture_operation.lock().unwrap();
+        if !self.inner.capturing.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        self.inner.capture_epoch.fetch_add(1, Ordering::AcqRel);
+        #[cfg(target_os = "macos")]
+        unsafe {
+            pressay_key_capture_stop();
+        }
+        #[cfg(target_os = "linux")]
+        if crate::platform::is_wayland() {
+            self.inner.capturing.store(false, Ordering::Release);
+            return Ok(());
+        }
+        let binding = self.binding();
+        // Keep capture suppression active during rebind's reset notification.
+        let result = self.rebind(binding);
+        self.inner.capturing.store(false, Ordering::Release);
+        result
     }
     pub fn set_busy(&self, busy: bool) {
         if self.inner.busy.swap(busy, Ordering::AcqRel) == busy {
@@ -334,6 +509,11 @@ impl ShortcutController {
         if self.inner.stopped.swap(true, Ordering::AcqRel) {
             return;
         }
+        self.inner.capturing.store(false, Ordering::Release);
+        #[cfg(target_os = "macos")]
+        unsafe {
+            pressay_key_capture_stop();
+        }
         self.inner.shutdown.cancel();
         self.inner.registration.lock().unwrap().cancel();
         crate::platform::cancel_pending_insertions();
@@ -353,6 +533,81 @@ impl ShortcutController {
         crate::wayland::shutdown();
     }
 }
+/// Persist only a successfully registered shortcut. Roll back exactly once on
+/// either registration or storage failure; leave the attempted UI draft intact.
+pub async fn change_binding<R, S, F>(
+    old: Binding,
+    new: Binding,
+    mut register: R,
+    save: S,
+) -> Result<(), String>
+where
+    R: FnMut(Binding) -> Result<(), String>,
+    S: FnOnce(Binding) -> F,
+    F: std::future::Future<Output = Result<(), String>>,
+{
+    new.validate()?;
+    let result = match register(new.clone()) {
+        Ok(()) => save(new).await,
+        Err(error) => Err(error),
+    };
+    if let Err(error) = result {
+        return match register(old) {
+            Ok(()) => Err(error),
+            Err(restore) => Err(format!(
+                "{error}. The previous shortcut could not be restored: {restore}"
+            )),
+        };
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_shortcut_capture(
+    active: bool,
+    kind: String,
+    app: AppHandle,
+    state: tauri::State<'_, Arc<crate::engine::Shared>>,
+) -> Result<(), String> {
+    let controller = app.state::<ShortcutController>();
+    if active {
+        if state.view.lock().unwrap().stage != "idle" || state.is_shutting_down() {
+            return Err("Finish the current operation before recording a shortcut".into());
+        }
+        controller.begin_capture(&kind, &state)
+    } else {
+        controller.end_capture()
+    }
+}
+#[cfg(target_os = "macos")]
+extern "C" fn captured_mac_key(code: i32) {
+    let _ = std::panic::catch_unwind(|| {
+        let inner = mac_callback().lock().ok().and_then(|owner| owner.upgrade());
+        if let Some(inner) = inner {
+            let controller = ShortcutController {
+                inner: inner.clone(),
+            };
+            let binding = (0..=127).contains(&code).then_some(Binding::MacKey {
+                key_code: code as u16,
+            });
+            if binding
+                .as_ref()
+                .is_some_and(|binding| binding.validate().is_err())
+            {
+                return;
+            }
+            let _ = controller.end_capture();
+            let payload = match binding {
+                Some(binding) => {
+                    serde_json::json!({"label":binding.label(),"binding":binding,"cancelled":false})
+                }
+                None => serde_json::json!({"cancelled":true}),
+            };
+            let _ = inner.app.emit("pressay-shortcut-captured", payload);
+        }
+    });
+}
+
 #[cfg(target_os = "macos")]
 fn mac_callback() -> &'static Mutex<Weak<Inner>> {
     static CALLBACK: OnceLock<Mutex<Weak<Inner>>> = OnceLock::new();
@@ -365,6 +620,8 @@ extern "C" {
         callback: extern "C" fn(i32, i32, *mut std::ffi::c_void),
         context: *mut std::ffi::c_void,
     );
+    fn pressay_key_capture_start(callback: extern "C" fn(i32));
+    fn pressay_key_capture_stop();
     fn pressay_shortcuts_busy(busy: bool);
     fn pressay_shortcuts_stop();
 }
@@ -506,6 +763,84 @@ mod lifecycle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn failed_registration_never_persists_and_restores_previous_key_once() {
+        let old = Binding::Chord {
+            accelerator: "Control+Shift+A".into(),
+        };
+        let new = Binding::Chord {
+            accelerator: "Control+Shift+B".into(),
+        };
+        let mut registrations = Vec::new();
+        let persisted = std::cell::Cell::new(false);
+        let error = change_binding(
+            old.clone(),
+            new.clone(),
+            |binding| {
+                registrations.push(binding.clone());
+                if binding == new {
+                    Err("Already registered by another app".into())
+                } else {
+                    Ok(())
+                }
+            },
+            |_| async {
+                persisted.set(true);
+                Ok(())
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("Already registered"));
+        assert!(!persisted.get());
+        assert_eq!(registrations, [new, old]);
+    }
+    #[tokio::test]
+    async fn failed_persistence_rolls_back_and_reports_a_failed_restore() {
+        let old = Binding::Chord {
+            accelerator: "Control+Shift+A".into(),
+        };
+        let new = Binding::Chord {
+            accelerator: "Control+Shift+B".into(),
+        };
+        let mut registrations = Vec::new();
+        let error = change_binding(
+            old.clone(),
+            new.clone(),
+            |binding| {
+                registrations.push(binding.clone());
+                if binding == old {
+                    Err("Old key became unavailable".into())
+                } else {
+                    Ok(())
+                }
+            },
+            |_| async { Err("Storage unavailable".into()) },
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("Storage unavailable"));
+        assert!(error.contains("Old key became unavailable"));
+        assert_eq!(registrations, [new, old]);
+    }
+    #[tokio::test]
+    async fn invalid_shortcut_never_touches_registration_or_storage() {
+        let old = Binding::Chord {
+            accelerator: "Control+Shift+A".into(),
+        };
+        let invalid = Binding::Chord {
+            accelerator: "Escape".into(),
+        };
+        assert!(change_binding(
+            old,
+            invalid,
+            |_| panic!("Must not unregister the old key"),
+            |_| async { panic!("Must not persist invalid key") }
+        )
+        .await
+        .is_err());
+    }
+
     #[test]
     fn persisted_bindings_round_trip_and_reject_reserved_keys() {
         let binding: Binding =

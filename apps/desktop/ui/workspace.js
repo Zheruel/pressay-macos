@@ -11,6 +11,379 @@ let selectedNote = null,
   exchanges = [],
   askBusy = false;
 const pendingNotes = new Set();
+let shortcutDirty = false,
+  shortcutSaved = null,
+  shortcutCapturing = false,
+  shortcutStarting = false,
+  shortcutCaptureEpoch = 0,
+  shortcutCandidate = null,
+  shortcutTimer = null,
+  inputDeviceKey = null,
+  inputDeviceRefresh = null,
+  credentialSelection = null;
+function savedShortcut(settings) {
+  return (
+    settings.shortcut ||
+    (current.platform === "macos"
+      ? { kind: "macKey", keyCode: settings.holdKeyCode ?? 61 }
+      : { kind: "chord", accelerator: "Control+Shift+Space" })
+  );
+}
+function shortcutBinding() {
+  return $("shortcut-kind").value === "macKey"
+    ? { kind: "macKey", keyCode: Number($("shortcut-mac-key").value) }
+    : { kind: "chord", accelerator: $("shortcut-value").value.trim() };
+}
+function renderShortcutControls() {
+  const mac = $("shortcut-kind").value === "macKey";
+  $("shortcut-mac-row").hidden = !mac;
+  $("shortcut-chord-row").hidden = mac;
+  $("shortcut-mac-key").hidden = !mac;
+  $("shortcut-value").hidden = mac;
+  $("shortcut-kind").disabled = shortcutCapturing || shortcutStarting;
+  $("shortcut-mac-key").disabled = shortcutCapturing || shortcutStarting;
+  $("shortcut-value").disabled = shortcutCapturing || shortcutStarting;
+  $("record-shortcut").textContent = shortcutCapturing
+    ? "Cancel recording"
+    : "Record key…";
+  $("record-shortcut").disabled = shortcutStarting;
+  $("save-shortcut").disabled =
+    !shortcutDirty || shortcutCapturing || shortcutStarting;
+  $("reset-shortcut").hidden =
+    !shortcutDirty || shortcutCapturing || shortcutStarting;
+}
+function applyShortcutDraft(binding, label) {
+  $("shortcut-kind").value = binding.kind;
+  if (binding.kind === "macKey") {
+    const select = $("shortcut-mac-key");
+    const value = String(binding.keyCode);
+    if (![...select.options].some((option) => option.value === value)) {
+      const option = element("option", label || "Saved key — record to change");
+      option.value = value;
+      select.append(option);
+    }
+    select.value = value;
+  } else $("shortcut-value").value = binding.accelerator;
+  renderShortcutControls();
+}
+function syncShortcut(settings) {
+  const binding = savedShortcut(settings);
+  if (shortcutSaved && JSON.stringify(binding) === shortcutSaved) {
+    shortcutDirty = false;
+    shortcutSaved = null;
+  }
+  if (!shortcutDirty && !shortcutCapturing && !shortcutStarting)
+    applyShortcutDraft(binding, current.shortcut);
+  else renderShortcutControls();
+}
+function dirtyShortcut() {
+  shortcutDirty = true;
+  shortcutSaved = null;
+  $("shortcut-status").textContent = "Unsaved shortcut. Save to use it.";
+  renderShortcutControls();
+}
+async function stopShortcutCapture(message = "Shortcut recording cancelled.") {
+  const wasActive = shortcutCapturing || shortcutStarting;
+  ++shortcutCaptureEpoch;
+  shortcutCapturing = false;
+  shortcutStarting = false;
+  shortcutCandidate = null;
+  clearTimeout(shortcutTimer);
+  if (wasActive) {
+    try {
+      await call("set_shortcut_capture", {
+        active: false,
+        kind: $("shortcut-kind").value,
+      });
+    } catch {
+      message =
+        "Could not resume your shortcut. Try recording again or restart Pressay.";
+    }
+    $("shortcut-status").textContent = message;
+  }
+  renderShortcutControls();
+}
+async function acceptShortcut(binding, label) {
+  await stopShortcutCapture("Key recorded. Save to use this shortcut.");
+  applyShortcutDraft(binding, label);
+  shortcutDirty = true;
+  shortcutSaved = null;
+  renderShortcutControls();
+}
+async function startShortcutCapture() {
+  if (shortcutCapturing || shortcutStarting) return stopShortcutCapture();
+  const epoch = ++shortcutCaptureEpoch;
+  shortcutStarting = true;
+  renderShortcutControls();
+  try {
+    await call("set_shortcut_capture", {
+      active: true,
+      kind: $("shortcut-kind").value,
+    });
+    if (epoch !== shortcutCaptureEpoch) {
+      await call("set_shortcut_capture", {
+        active: false,
+        kind: $("shortcut-kind").value,
+      });
+      return;
+    }
+    shortcutStarting = false;
+    shortcutCapturing = true;
+    $("shortcut-status").textContent =
+      $("shortcut-kind").value === "macKey"
+        ? "Press a key or modifier. Escape cancels."
+        : "Press your key combination, then release it. Escape cancels.";
+    shortcutTimer = setTimeout(
+      () => stopShortcutCapture("Shortcut recording timed out."),
+      30000,
+    );
+    renderShortcutControls();
+  } catch {
+    shortcutStarting = false;
+    renderShortcutControls();
+  }
+}
+function chordForEvent(event) {
+  if (
+    event.repeat ||
+    [
+      "Control",
+      "Alt",
+      "Shift",
+      "Meta",
+      "CapsLock",
+      "Fn",
+      "Unidentified",
+    ].includes(event.key)
+  )
+    return null;
+  const modifiers = [];
+  if (event.ctrlKey) modifiers.push("Control");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+  if (event.metaKey) modifiers.push("Super");
+  let key = event.code;
+  if (/^Key[A-Z]$/.test(key)) key = key.slice(3);
+  else if (/^Digit[0-9]$/.test(key)) key = key.slice(5);
+  else if (key.startsWith("Arrow")) key = key.slice(5);
+  const names = {
+    Backquote: "Backquote",
+    Minus: "Minus",
+    Equal: "Equal",
+    BracketLeft: "BracketLeft",
+    BracketRight: "BracketRight",
+    Backslash: "Backslash",
+    Semicolon: "Semicolon",
+    Quote: "Quote",
+    Comma: "Comma",
+    Period: "Period",
+    Slash: "Slash",
+  };
+  if (names[key]) key = names[key];
+  if (
+    !/^(?:[A-Z0-9]|F(?:[1-9]|1[0-9]|2[0-4])|Space|Enter|Tab|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Left|Right|Up|Down|Backquote|Minus|Equal|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Comma|Period|Slash)$/.test(
+      key,
+    )
+  )
+    return null;
+  if (!modifiers.length && !/^F\d+$/.test(key)) return null;
+  return { kind: "chord", accelerator: [...modifiers, key].join("+") };
+}
+async function refreshInputDevices() {
+  if (inputDeviceRefresh) return inputDeviceRefresh;
+  inputDeviceRefresh = (async () => {
+    try {
+      const info = await call("input_device_selection");
+      const select = $("input-device");
+      if (document.activeElement === select) return;
+      select.replaceChildren();
+      const system = element("option", "System default");
+      system.value = "";
+      select.append(system);
+      for (const name of info.devices) {
+        const option = element("option", name);
+        option.value = name;
+        select.append(option);
+      }
+      if ($("input-device-status"))
+        $("input-device-status").textContent = info.unavailable
+          ? "Choose another microphone to record."
+          : "";
+      if (info.unavailable) {
+        const unavailable = element("option", "Saved microphone unavailable");
+        unavailable.value = "__unavailable__";
+        unavailable.disabled = true;
+        select.append(unavailable);
+        select.value = unavailable.value;
+      } else {
+        if (info.selected && !info.devices.includes(info.selected)) {
+          const selected = element("option", info.selected);
+          selected.value = info.selected;
+          select.append(selected);
+        }
+        select.value = info.selected || "";
+      }
+    } catch {}
+  })().finally(() => {
+    inputDeviceRefresh = null;
+  });
+  return inputDeviceRefresh;
+}
+
+let generalTab = "dictation",
+  generalPermissionKey = null,
+  accountRefresh = null;
+function showGeneralTab(tab) {
+  if (!["dictation", "notetaker"].includes(tab)) return;
+  generalTab = tab;
+  stopShortcutCapture();
+  for (const button of document.querySelectorAll("[data-general-tab]")) {
+    const selected = button.dataset.generalTab === tab;
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    $("general-" + button.dataset.generalTab).hidden = !selected;
+  }
+  if (tab === "notetaker") refreshAccount();
+}
+function renderGeneralPermissions() {
+  const permissions = current.permissions,
+    mac = current.platform === "macos";
+  const key = JSON.stringify([permissions, mac]);
+  if (key === generalPermissionKey) return;
+  generalPermissionKey = key;
+  const group = $("general-permissions");
+  group.replaceChildren();
+  const kinds = [
+    ["microphone", "microphone", "Microphone"],
+    ["accessibility", "insertion", mac ? "Accessibility" : "Text insertion"],
+    ["shortcut", "shortcut", mac ? "Input Monitoring" : "Global shortcut"],
+  ];
+  if (kinds.every(([, field]) => permissions[field] === "granted")) {
+    const row = element("div", undefined, "setting-row");
+    row.append(
+      element(
+        "span",
+        mac
+          ? "Microphone, Accessibility & Input Monitoring"
+          : "Microphone, text insertion & global shortcut",
+      ),
+      element("span", "Allowed", "settings-allowed"),
+    );
+    group.append(row);
+    return;
+  }
+  for (const [kind, field, title] of kinds) {
+    const status = permissions[field],
+      row = element("div", undefined, "setting-row");
+    row.append(element("span", title));
+    if (status === "granted")
+      row.append(element("span", "Allowed", "settings-allowed"));
+    else {
+      const portalChoice =
+        kind === "accessibility" &&
+        permissions.wayland &&
+        status === "unavailable";
+      const control = button(
+        portalChoice
+          ? "Enable cursor insertion"
+          : status === "denied"
+            ? "Open settings"
+            : "Allow",
+        async () => {
+          if (portalChoice) await setting({ waylandCurrentCursor: true });
+          await call("request_permission", { kind });
+        },
+      );
+      control.setAttribute("aria-label", `${control.textContent}: ${title}`);
+      if (status === "unavailable" && !portalChoice) {
+        control.disabled = true;
+        control.textContent = "Unavailable";
+      }
+      row.append(control);
+    }
+    group.append(row);
+  }
+}
+function renderNotesSettings(settings) {
+  const claude = accountInfo?.claudeApiKey === true;
+  const chatgpt = accountInfo?.chatgpt?.signed_in === true;
+  const options = [];
+  if (claude)
+    options.push(
+      ["claude:haiku55", "1. Claude Haiku 5.5 · Recommended"],
+      ["claude:sonnet55", "2. Claude Sonnet 5.5"],
+    );
+  if (chatgpt)
+    options.push(
+      ["chatgpt:gpt-6.1-sol", "1. GPT-6.1 Sol · Recommended"],
+      ["chatgpt:gpt-6-luna", "2. GPT-6 Luna"],
+    );
+  const available = options.length > 0;
+  $("notes-ai").disabled = !available;
+  $("notes-connect-row").hidden = available;
+  $("notes-model-row").hidden = !available;
+  $("notes-connection-help").textContent = accountInfo
+    ? "Requires an Anthropic API key or a ChatGPT subscription."
+    : accountRefresh
+      ? "Checking your connected accounts…"
+      : "Connect an Anthropic API key or a ChatGPT subscription to write up notes.";
+  const select = $("notes-model"),
+    key = JSON.stringify(options);
+  if (select.dataset.options !== key) {
+    select.dataset.options = key;
+    select.replaceChildren();
+    for (const [id, name] of options) {
+      const option = element("option", name);
+      option.value = id;
+      select.append(option);
+    }
+  }
+  const saved = settings.notesModel;
+  const effective = options.some(([id]) => id === saved)
+    ? saved
+    : settings.cleanupProvider === "chatgpt" && chatgpt
+      ? "chatgpt:gpt-6.1-sol"
+      : claude
+        ? "claude:haiku55"
+        : chatgpt
+          ? "chatgpt:gpt-6.1-sol"
+          : "";
+  if (document.activeElement !== select) select.value = effective;
+  select.disabled = !available || settings.notesUseAI === false;
+  $("notes-model-help").textContent =
+    saved && saved !== effective && available
+      ? "Your saved model is unavailable. The model shown uses your connected account; your saved choice is kept until you change it."
+      : "Uses an account connected in AI Cleanup.";
+}
+function renderGeneralSettings(state) {
+  renderGeneralPermissions();
+  renderNotesSettings(state.settings);
+  const busy = state.stage !== "idle",
+    meeting = state.stage.startsWith("meeting");
+  $("model").disabled = busy;
+  $("meeting-model").disabled = meeting;
+  const model = current.models.find(
+    (model) => model.id === state.settings.asrModel,
+  );
+  const meetingModel = current.models.find(
+    (model) => model.id === (state.settings.meetingASRModel || "moss"),
+  );
+  $("dictation-language").disabled = busy || !model?.supportsLanguageHint;
+  $("meeting-language").disabled =
+    meeting || !meetingModel?.supportsLanguageHint;
+  const ready =
+    state.model_ready && $("model").value === state.settings.asrModel;
+  $("general-model-status").textContent = ["preparing", "loading"].includes(
+    state.stage,
+  )
+    ? "Loading…"
+    : ready
+      ? "Ready"
+      : "Not loaded";
+  $("general-model-status").classList.toggle("settings-allowed", ready);
+  $("prepare").hidden = ready;
+  $("original-audio-row").hidden = current.platform !== "macos";
+}
 function button(text, action, className) {
   const b = element("button", text, className);
   b.onclick = () =>
@@ -47,6 +420,7 @@ function renderStats(history) {
       speaking += r.duration;
     }
   }
+  $("weekly-words").textContent = words.toLocaleString();
   $("wpm").textContent =
     speaking >= 30 ? Math.round((words * 60) / speaking) : "—";
   $("saved-time").textContent =
@@ -600,8 +974,22 @@ function renderWorkspace(s) {
     s.stage === "meeting_speakers"
       ? "Skip speaker separation"
       : "Cancel preparation";
-  if (!document.activeElement?.closest('[data-panel="general"]'))
+  const microphoneKey = JSON.stringify([
+    s.settings.inputDevice,
+    s.settings.inputDeviceUID,
+  ]);
+  if (inputDeviceKey !== microphoneKey) {
+    inputDeviceKey = microphoneKey;
+    refreshInputDevices();
+  }
+  syncShortcut(s.settings);
+  if (
+    !document.activeElement?.closest(
+      '[data-panel="general"], [data-panel="ai"]',
+    )
+  )
     syncPreferences(s.settings);
+  renderGeneralSettings(s);
 }
 function setting(patch) {
   return call("save_settings", { patch });
@@ -664,26 +1052,26 @@ function syncPreferences(s) {
         : "openAIConnection"
     ] || "apiKey";
   $("notes-ai").checked = s.notesUseAI !== false;
-  $("notes-model").value = s.notesModel || "claude:haiku55";
+  renderNotesSettings(s);
   $("meeting-hours").value = s.maxMeetingHours || 3;
   $("meeting-model").value = s.meetingASRModel || "moss";
   $("detect-calls").checked = s.detectCalls !== false;
   $("wayland-cursor").checked = s.waylandCurrentCursor === true;
   $("wayland-option").hidden = !current.permissions.wayland;
   $("wayland-help").hidden = !current.permissions.wayland;
-  const binding = s.shortcut || {
-    kind: current.platform === "macos" ? "macKey" : "chord",
-    keyCode: 61,
-    accelerator: "Control+Shift+Space",
-  };
-  $("shortcut-kind").value = binding.kind;
-  $("shortcut-value").value =
-    binding.kind === "macKey" ? String(binding.keyCode) : binding.accelerator;
+  syncShortcut(s);
   renderAccount();
 }
 function renderAccount() {
   const claude = $("ai-provider").value === "claude",
     subscription = $("ai-connection").value === "subscription";
+  const selection = JSON.stringify([
+    $("ai-provider").value,
+    $("ai-connection").value,
+  ]);
+  if (credentialSelection !== null && credentialSelection !== selection)
+    $("api-key").value = "";
+  credentialSelection = selection;
   $("api-key-row").hidden = subscription;
   $("subscription-row").hidden = !subscription;
   $("sign-in").hidden = false;
@@ -709,10 +1097,19 @@ function renderAccount() {
         : "No API key connected";
 }
 async function refreshAccount() {
-  try {
-    accountInfo = await call("account_status");
-    renderAccount();
-  } catch {}
+  if (accountRefresh) return accountRefresh;
+  accountRefresh = (async () => {
+    try {
+      accountInfo = await call("account_status");
+      renderAccount();
+    } catch {
+      accountInfo = null;
+    }
+    renderNotesSettings(current.view.settings);
+  })().finally(() => {
+    accountRefresh = null;
+  });
+  return accountRefresh;
 }
 function openAsk(ids) {
   askIds = ids;
@@ -725,6 +1122,29 @@ function openAsk(ids) {
 }
 function setupWorkspace() {
   workspaceReady = true;
+  for (const tab of document.querySelectorAll("[data-general-tab]")) {
+    tab.onclick = () => showGeneralTab(tab.dataset.generalTab);
+    tab.onkeydown = (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+        return;
+      event.preventDefault();
+      const next =
+        event.key === "Home"
+          ? "dictation"
+          : event.key === "End"
+            ? "notetaker"
+            : generalTab === "dictation"
+              ? "notetaker"
+              : "dictation";
+      showGeneralTab(next);
+      $("general-" + next + "-tab").focus();
+    };
+  }
+  $("notes-connect-ai").onclick = () => {
+    navigate("ai");
+    $("ai-provider").focus();
+    refreshAccount();
+  };
   $("clear-history").onclick = async () => {
     if (
       !confirm(
@@ -751,6 +1171,7 @@ function setupWorkspace() {
   $("ai-enabled").onchange = () =>
     setting({ claudeCleanup: $("ai-enabled").checked }).catch(() => {});
   $("ai-provider").onchange = async () => {
+    $("api-key").value = "";
     await setting({ cleanupProvider: $("ai-provider").value });
     $("ai-connection").value =
       current.view.settings[
@@ -761,6 +1182,7 @@ function setupWorkspace() {
     renderAccount();
   };
   $("ai-connection").onchange = () => {
+    $("api-key").value = "";
     setting({
       [$("ai-provider").value === "claude"
         ? "claudeConnection"
@@ -832,13 +1254,94 @@ function setupWorkspace() {
             );
         })
         .catch(() => {});
-  $("save-shortcut").onclick = () =>
-    call("change_shortcut", {
-      binding:
-        $("shortcut-kind").value === "macKey"
-          ? { kind: "macKey", keyCode: Number($("shortcut-value").value) }
-          : { kind: "chord", accelerator: $("shortcut-value").value },
-    }).catch(() => {});
+  $("shortcut-kind").querySelector('[value="macKey"]').hidden =
+    current.platform !== "macos";
+  $("shortcut-kind").onchange = dirtyShortcut;
+  $("shortcut-value").oninput = dirtyShortcut;
+  $("shortcut-mac-key").onchange = dirtyShortcut;
+  $("record-shortcut").onclick = () => startShortcutCapture();
+  $("reset-shortcut").onclick = () => {
+    shortcutDirty = false;
+    shortcutSaved = null;
+    syncShortcut(current.view.settings);
+    $("shortcut-status").textContent = "Changes discarded.";
+  };
+  $("save-shortcut").onclick = async () => {
+    const binding = shortcutBinding();
+    $("save-shortcut").disabled = true;
+    try {
+      await call("change_shortcut", { binding });
+      shortcutSaved = JSON.stringify(binding);
+      $("shortcut-status").textContent = "Shortcut saved.";
+      syncShortcut(current.view.settings);
+      await refresh();
+    } catch (error) {
+      shortcutDirty = true;
+      $("shortcut-status").textContent =
+        `Shortcut was not saved: ${String(error)}. Your changes are kept; edit or retry.`;
+    } finally {
+      renderShortcutControls();
+    }
+  };
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      if (!shortcutCapturing) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.key === "Escape") {
+        stopShortcutCapture();
+        return;
+      }
+      if ($("shortcut-kind").value !== "chord") return;
+      const binding = chordForEvent(event);
+      if (!binding) {
+        $("shortcut-status").textContent =
+          "Use a modifier with another key, or a function key. Escape cancels.";
+        return;
+      }
+      shortcutCandidate = { binding, code: event.code };
+      $("shortcut-status").textContent =
+        "Release the keys to finish recording.";
+    },
+    true,
+  );
+  document.addEventListener(
+    "keyup",
+    (event) => {
+      if (!shortcutCapturing) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (shortcutCandidate?.code === event.code)
+        acceptShortcut(shortcutCandidate.binding);
+    },
+    true,
+  );
+  window.__TAURI__.event.listen("pressay-shortcut-captured", ({ payload }) => {
+    if (!shortcutCapturing && !shortcutStarting) return;
+    if (payload.cancelled) {
+      stopShortcutCapture();
+      return;
+    }
+    if (payload.waitForRelease) {
+      $("shortcut-status").textContent =
+        "Release the keys to finish recording.";
+      return;
+    }
+    acceptShortcut(payload.binding, payload.label);
+  });
+  window.addEventListener("blur", () => stopShortcutCapture());
+  window.addEventListener("pagehide", () => stopShortcutCapture());
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopShortcutCapture();
+  });
+  document.querySelectorAll("[data-page]").forEach((button) =>
+    button.addEventListener("click", () => {
+      stopShortcutCapture();
+      if (button.dataset.page === "general") refreshInputDevices();
+    }),
+  );
+  $("input-device").addEventListener("blur", () => refreshInputDevices());
   $("cancel-sign-in").onclick = () => call("cancel_sign_in").catch(() => {});
   $("import-mac-keys").hidden = current.platform !== "macos";
   $("import-mac-keys").onclick = async () => {
@@ -936,7 +1439,8 @@ function setupWorkspace() {
       ? `${c.application} is using your microphone. Take notes for this call?`
       : "";
   });
-  document
-    .querySelector('[data-page="general"]')
-    .addEventListener("click", refreshAccount);
+  for (const page of ["general", "ai"])
+    document
+      .querySelector(`[data-page="${page}"]`)
+      .addEventListener("click", refreshAccount);
 }
