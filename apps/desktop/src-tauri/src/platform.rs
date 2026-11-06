@@ -590,52 +590,6 @@ mod targets {
         let safe = new.window > 1;
         same_owner && safe
     }
-    #[cfg(test)]
-    mod refresh_tests {
-        use super::*;
-        #[test]
-        fn moved_caret_or_replaced_field_requires_the_same_process() {
-            let focus = Focus {
-                window: 10,
-                foreground: 20,
-                process: 99,
-                caret: Some([1, 2, 3, 4]),
-                #[cfg(windows)]
-                element: Some(vec![1]),
-            };
-            let mut saved = Target {
-                focus: focus.clone(),
-                application: Some("editor".into()),
-                created: Instant::now(),
-                invalidated: false,
-            };
-            let mut moved = focus;
-            moved.window = 11;
-            moved.caret = Some([5, 6, 7, 8]);
-            #[cfg(windows)]
-            {
-                moved.element = Some(vec![2]);
-            }
-            assert!(can_refresh(&saved, &moved));
-            moved.process = 100;
-            assert!(!can_refresh(&saved, &moved));
-            moved.process = 99;
-            saved.invalidated = true;
-            assert!(!can_refresh(&saved, &moved));
-            saved.invalidated = false;
-            saved.focus.process = 0;
-            moved.process = 0;
-            assert!(can_refresh(&saved, &moved));
-            moved.foreground = 30;
-            assert!(!can_refresh(&saved, &moved));
-            #[cfg(windows)]
-            {
-                moved.foreground = 20;
-                moved.element = None;
-                assert!(!can_refresh(&saved, &moved));
-            }
-        }
-    }
     pub fn belongs_to_window(token: u64, window: u64) -> bool {
         registry()
             .lock()
@@ -902,6 +856,52 @@ mod targets {
             window = tree.parent;
         }
         None
+    }
+    #[cfg(test)]
+    mod refresh_tests {
+        use super::*;
+        #[test]
+        fn moved_caret_or_replaced_field_requires_the_same_process() {
+            let focus = Focus {
+                window: 10,
+                foreground: 20,
+                process: 99,
+                caret: Some([1, 2, 3, 4]),
+                #[cfg(windows)]
+                element: Some(vec![1]),
+            };
+            let mut saved = Target {
+                focus: focus.clone(),
+                application: Some("editor".into()),
+                created: Instant::now(),
+                invalidated: false,
+            };
+            let mut moved = focus;
+            moved.window = 11;
+            moved.caret = Some([5, 6, 7, 8]);
+            #[cfg(windows)]
+            {
+                moved.element = Some(vec![2]);
+            }
+            assert!(can_refresh(&saved, &moved));
+            moved.process = 100;
+            assert!(!can_refresh(&saved, &moved));
+            moved.process = 99;
+            saved.invalidated = true;
+            assert!(!can_refresh(&saved, &moved));
+            saved.invalidated = false;
+            saved.focus.process = 0;
+            moved.process = 0;
+            assert!(can_refresh(&saved, &moved));
+            moved.foreground = 30;
+            assert!(!can_refresh(&saved, &moved));
+            #[cfg(windows)]
+            {
+                moved.foreground = 20;
+                moved.element = None;
+                assert!(!can_refresh(&saved, &moved));
+            }
+        }
     }
 }
 #[cfg(windows)]

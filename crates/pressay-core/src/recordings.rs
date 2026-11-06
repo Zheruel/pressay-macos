@@ -228,7 +228,10 @@ mod tests {
         for index in 0..4 {
             let id = uuid::Uuid::new_v4().to_string();
             audio.save(&id, &[0.]).unwrap();
-            std::fs::File::open(audio.path(&id).unwrap())
+            // Windows requires a writable handle to update file timestamps.
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(audio.path(&id).unwrap())
                 .unwrap()
                 .set_times(std::fs::FileTimes::new().set_modified(if index == 1 {
                     recent
@@ -257,7 +260,9 @@ mod tests {
         }
         let legacy = audio.root().join("legacy.wav");
         std::fs::write(&legacy, b"legacy").unwrap();
-        std::fs::File::open(&legacy)
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&legacy)
             .unwrap()
             .set_times(std::fs::FileTimes::new().set_modified(old))
             .unwrap();

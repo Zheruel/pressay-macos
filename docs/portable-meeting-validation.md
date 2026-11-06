@@ -37,7 +37,7 @@ Measured locally on Apple Silicon using the release native runtime with Metal an
 
 Capture and analysis both cap meetings at eight hours. These are **not constant-RSS claims**: a three-hour mapping is 691.2 MB and an eight-hour mapping is 1.8432 GB. File-backed PCM pages can remain resident and are evictable by the OS. The frontend/model workspace is bounded; compact speaker probabilities and result segments grow with duration. The analysis worker caps returned segments at 100,000 and its host bounds reply size and inference time. Slow devices and complex real meetings may take longer than quiet fixtures.
 
-Temporary PCM is owner-only, locked while active, and removed on completion/cancellation/drop. Startup cleanup takes the file lock before deleting orphan spools, skips active sessions and symlinks, and never matches unrelated filenames. A crash can leave audio until the next successful cleanup. Microphone-only voice notes do not create the system-audio spool.
+Temporary PCM is owner-only and removed on completion/cancellation/drop. A separate owner-only sidecar holds its lifetime lock so Windows workers can read the audio through another handle. Startup cleanup takes that lock before deleting orphan spools, honors legacy PCM locks, skips active sessions and symlinks, and never matches unrelated filenames. Regression tests read live audio from another process, kill its owner to verify crash cleanup, and race concurrent cleaners against spool creation. A crash can leave audio until the next successful cleanup. Microphone-only voice notes do not create the system-audio spool.
 
 ## Reproduction
 

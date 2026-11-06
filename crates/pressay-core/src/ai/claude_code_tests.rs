@@ -1,6 +1,7 @@
 use super::*;
 use serde_json::json;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::symlink;
+use std::path::Path;
 struct FakeCli {
     dir: tempfile::TempDir,
     client: ClaudeCodeClient,
@@ -8,39 +9,13 @@ struct FakeCli {
 impl FakeCli {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let root = serde_json::to_string(&dir.path().to_str().unwrap()).unwrap();
-        let script = format!(
-            r#"#!/usr/bin/env python3
-import json, os, sys, time
-root={root}
-args=sys.argv[1:]
-with open(root+'/config.json') as f: config=json.load(f)
-def event(kind, **values):
-    with open(root+'/events.jsonl', 'a') as f:
-        f.write(json.dumps(dict(kind=kind,pid=os.getpid(),args=args,cwd=os.getcwd(),**values))+'\n')
-if args == ['--help']:
-    print('--safe-mode --tools --disallowedTools --no-session-persistence --output-format --system-prompt --effort --model')
-elif args == ['auth', 'status']:
-    print(json.dumps(dict(loggedIn=True,authMethod=config.get('auth','claude.ai'),orgId=config.get('org','fixture-org'),email='test@example.invalid',subscriptionType='max')))
-elif args == ['auth', 'login']:
-    print('signed in')
-else:
-    event('waiting')
-    if config.get('early_exit'): sys.exit(1)
-    text=sys.stdin.read()
-    event('submitted',text=text)
-    time.sleep(config.get('delay',0))
-    if config.get('oversized'):
-        print('x'*1100000)
-    elif config.get('malformed'):
-        print('private provider error and fixture-token')
-    else:
-        print(json.dumps(dict(type='result',subtype='success',is_error=False,stop_reason='end_turn',result='Cleaned dictation.')))
-"#
-        );
         let path = dir.path().join("claude-fixture");
-        std::fs::write(&path, script).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        // The executable is immutable even while other tests fork children.
+        symlink(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/claude-cli.py"),
+            &path,
+        )
+        .unwrap();
         let fixture = Self {
             dir,
             client: ClaudeCodeClient::new(path),
@@ -321,8 +296,7 @@ async fn installation_after_startup_enables_auth_and_cleanup_without_restart() {
     let cancel = CancellationToken::new();
     assert!(!client.auth_status(&cancel).await.unwrap().available);
     let executable = bin.join("claude");
-    std::fs::copy(fixture.client.executable_path().unwrap(), &executable).unwrap();
-    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    symlink(fixture.client.executable_path().unwrap(), &executable).unwrap();
     assert!(client.auth_status(&cancel).await.unwrap().uses_subscription);
     let prepared = client.prepare("system", "low", &cancel).await.unwrap();
     assert_eq!(

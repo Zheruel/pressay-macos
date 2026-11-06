@@ -1,4 +1,7 @@
 Runtime/Sources/CNativeASR/vendor/* linguist-vendored
 
+# Embedded prompts must be byte-identical on Windows and Unix.
+crates/pressay-core/src/ai/prompts/*.txt text eol=lf
+
 # Preserve literal unified-diff context in the pinned upstream patch.
 scripts/patches/*.patch -whitespace

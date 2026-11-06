@@ -1,16 +1,15 @@
 #![cfg(unix)]
 use pressay_core::analysis::AnalysisHost;
 use std::{
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
 fn fixture(dir: &Path, response: &str) -> PathBuf {
-    let path = dir.join("worker");
-    std::fs::write(&path, format!("#!/bin/sh\necho $$ > \"$2\"\nprintf '%s\\n' '{{\"ready\":true,\"frame_samples\":512}}'\nIFS= read -r request\n{response}\n")).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-    path
+    // Keep executables immutable: concurrent process creation can temporarily
+    // inherit another test's writable descriptor and cause Linux ETXTBSY.
+    std::fs::write(dir.join("response.sh"), response).unwrap();
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/analysis-worker.sh")
 }
 fn alive(pid: &str) -> bool {
     std::process::Command::new("kill")

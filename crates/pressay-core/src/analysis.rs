@@ -55,6 +55,9 @@ pub struct SpeakerSegment {
 /// inference finishes/cancels. No long-lived saved meeting audio is created.
 pub struct MeetingSpool {
     file: NamedTempFile,
+    // Drop audio before releasing the lifetime lock. Windows byte-range locks
+    // deny reads through other handles, so the lock must never cover the PCM.
+    _lifetime: NamedTempFile,
     frames: u64,
     limit: u64,
     sealed: bool,
@@ -67,23 +70,26 @@ impl MeetingSpool {
             ));
         }
         let limit = (max_duration.as_secs_f64() * RATE as f64).floor() as u64;
+        let lifetime = tempfile::Builder::new()
+            .prefix(".pressay-meeting-")
+            .suffix(".pending")
+            .tempfile_in(directory)?;
+        lifetime
+            .as_file()
+            .try_lock()
+            .map_err(|e| Error::Message(format!("Could not lock private meeting audio: {e}")))?;
+        let path = directory.join(format!(".pressay-meeting-{}", uuid::Uuid::new_v4()));
+        // Publish the locked sidecar first. A concurrent cleanup either cannot
+        // see this spool yet or sees its held lock, including during creation.
+        let lifetime = publish_spool_file(lifetime, path.with_extension("lock"))?;
         let file = tempfile::Builder::new()
             .prefix(".pressay-meeting-")
             .suffix(".pending")
             .tempfile_in(directory)?;
-        file.as_file()
-            .try_lock()
-            .map_err(|e| Error::Message(format!("Could not lock private meeting audio: {e}")))?;
-        // Publish the recognizable cleanup name only after acquiring the lock.
-        // Another app starting concurrently cannot unlink a just-created spool.
-        let path = directory.join(format!(".pressay-meeting-{}.f32", uuid::Uuid::new_v4()));
-        let guard = tempfile::TempPath::try_from_path(path)?;
-        let file = file
-            .persist_noclobber(&guard)
-            .map_err(|e| Error::Io(e.error))?;
-        let file = NamedTempFile::from_parts(file, guard);
+        let file = publish_spool_file(file, path.with_extension("f32"))?;
         Ok(Self {
             file,
+            _lifetime: lifetime,
             frames: 0,
             limit,
             sealed: false,
@@ -130,44 +136,89 @@ impl MeetingSpool {
         Ok(self.file.path().to_path_buf())
     }
 }
+fn publish_spool_file(file: NamedTempFile, path: PathBuf) -> Result<NamedTempFile> {
+    let guard = tempfile::TempPath::try_from_path(path)?;
+    let file = file
+        .persist_noclobber(&guard)
+        .map_err(|e| Error::Io(e.error))?;
+    Ok(NamedTempFile::from_parts(file, guard))
+}
 /// Remove crash leftovers without deleting another process's active capture.
 /// Only our private temporary naming pattern and regular files are considered;
-/// a held OS file lock is the lifetime marker, released automatically on crash.
+/// a held sidecar lock is the lifetime marker, released automatically on crash.
+/// Also honor PCM locks held by older versions of the application.
 pub fn cleanup_stale_spools(directory: &Path) -> Result<usize> {
     let mut removed = 0;
+    let mut stems = std::collections::BTreeSet::new();
     for entry in std::fs::read_dir(directory)? {
         let entry = entry?;
         let name = entry.file_name();
         let Some(name) = name.to_str() else {
             continue;
         };
-        if !name.starts_with(".pressay-meeting-")
-            || !name.ends_with(".f32")
-            || !entry.file_type()?.is_file()
-        {
+        if !name.starts_with(".pressay-meeting-") || !entry.file_type()?.is_file() {
             continue;
         }
-        let path = entry.path();
-        let file = match std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&path)
+        if let Some(stem) = name
+            .strip_suffix(".f32")
+            .or_else(|| name.strip_suffix(".lock"))
         {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(error.into()),
-        };
-        match file.try_lock() {
-            Ok(()) => match std::fs::remove_file(&path) {
-                Ok(()) => removed += 1,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            },
-            Err(std::fs::TryLockError::WouldBlock) => {}
-            Err(std::fs::TryLockError::Error(error)) => return Err(error.into()),
+            stems.insert(stem.to_owned());
         }
     }
+    for stem in stems {
+        let path = directory.join(format!("{stem}.f32"));
+        let lock_path = directory.join(format!("{stem}.lock"));
+        // Missing sidecars are legitimate legacy spools; non-regular sidecars
+        // are never followed or removed. Keep both handles until unlink ends.
+        let Some(_lifetime) = lock_stale_spool_file(&lock_path)? else {
+            continue;
+        };
+        let Some(_legacy_audio) = lock_stale_spool_file(&path)? else {
+            continue;
+        };
+        if remove_spool_file(&path)? {
+            removed += 1;
+        }
+        remove_spool_file(&lock_path)?;
+    }
     Ok(removed)
+}
+
+// Outer None means held lock or an unsafe file: leave the entire pair alone.
+// Some(None) means absent, needed for old-format audio and orphan sidecars.
+fn lock_stale_spool_file(path: &Path) -> Result<Option<Option<std::fs::File>>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if !metadata.file_type().is_file() => return Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Some(None)),
+        // Windows can report access denied for another cleaner's delete-pending
+        // handle. Leave it alone; never replace/recreate a lock under that name.
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return Ok(None),
+        Err(error) => return Err(error.into()),
+        Ok(_) => {}
+    }
+    let file = match std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Some(None)),
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    match file.try_lock() {
+        Ok(()) => Ok(Some(Some(file))),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(error)) => Err(error.into()),
+    }
+}
+fn remove_spool_file(path: &Path) -> Result<bool> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
 }
 
 struct Resident {
@@ -387,6 +438,8 @@ mod tests {
         spool.append(1., &[0.75]).unwrap();
         assert!(spool.append(0.1, &[1.]).is_err());
         let path = spool.seal().unwrap();
+        let lock_path = path.with_extension("lock");
+        assert!(lock_path.exists());
         assert!(spool.append(2., &[1.]).is_err());
         let bytes = std::fs::read(&path).unwrap();
         assert_eq!(bytes.len(), 16001 * 4);
@@ -399,9 +452,14 @@ mod tests {
                 std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
                 0o600
             );
+            assert_eq!(
+                std::fs::metadata(&lock_path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
         }
         drop(spool);
         assert!(!path.exists());
+        assert!(!lock_path.exists());
     }
     #[test]
     fn stale_cleanup_preserves_active_and_unrelated_files() {
@@ -420,6 +478,155 @@ mod tests {
         assert!(active_path.exists());
         assert!(!orphan.exists());
         assert_eq!(std::fs::read(unrelated).unwrap(), vec![9]);
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
+    }
+    #[test]
+    fn sidecar_publish_and_legacy_locks_protect_spools() {
+        let dir = tempfile::tempdir().unwrap();
+        // This is the publication window: the locked sidecar is visible but
+        // the PCM has not been published. Cleanup must keep its lock identity.
+        let lock_path = dir.path().join(".pressay-meeting-publishing.lock");
+        let lock = std::fs::File::create(&lock_path).unwrap();
+        lock.try_lock().unwrap();
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
+        assert!(lock_path.exists());
+        let audio_path = lock_path.with_extension("f32");
+        std::fs::write(&audio_path, [1, 2, 3, 4]).unwrap();
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
+        assert_eq!(std::fs::read(&audio_path).unwrap(), [1, 2, 3, 4]);
+        drop(lock);
+        // Two cleanup processes may observe this same stale pair. Once the
+        // lifetime lock is held, a second cleaner cannot unlink either file.
+        let first_cleanup = lock_stale_spool_file(&lock_path).unwrap().unwrap().unwrap();
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
+        assert!(audio_path.exists());
+        drop(first_cleanup);
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 1);
+        assert!(!lock_path.exists());
+
+        let legacy_path = dir.path().join(".pressay-meeting-legacy.f32");
+        let legacy = std::fs::File::create(&legacy_path).unwrap();
+        legacy.try_lock().unwrap();
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
+        assert!(legacy_path.exists());
+        drop(legacy);
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 1);
+
+        // Also reclaim an interrupted publication which never reached PCM.
+        std::fs::write(&lock_path, []).unwrap();
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
+        assert!(!lock_path.exists());
+    }
+    #[test]
+    fn concurrent_cleaners_never_unlink_publishing_or_live_spools() {
+        struct StopOnDrop<'a>(&'a std::sync::atomic::AtomicBool);
+        impl Drop for StopOnDrop<'_> {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let finished = std::sync::atomic::AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            let _stop = StopOnDrop(&finished);
+            for _ in 0..2 {
+                scope.spawn(|| {
+                    while !finished.load(std::sync::atomic::Ordering::Acquire) {
+                        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
+                        std::thread::yield_now();
+                    }
+                });
+            }
+            for _ in 0..50 {
+                let mut spool = MeetingSpool::new(dir.path(), Duration::from_secs(1)).unwrap();
+                spool.append(0., &[0.125]).unwrap();
+                let path = spool.seal().unwrap();
+                assert_eq!(std::fs::read(path).unwrap(), 0.125_f32.to_le_bytes());
+                drop(spool);
+            }
+        });
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn sidecar_symlinks_are_not_followed_or_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let audio = dir.path().join(".pressay-meeting-unsafe.f32");
+        let target = dir.path().join("unrelated");
+        std::fs::write(&audio, [1]).unwrap();
+        std::fs::write(&target, [2]).unwrap();
+        std::os::unix::fs::symlink(&target, audio.with_extension("lock")).unwrap();
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
+        assert_eq!(std::fs::read(&audio).unwrap(), [1]);
+        assert_eq!(std::fs::read(&target).unwrap(), [2]);
+    }
+    // Invoked by the parent test in a separate process, on every supported OS.
+    #[test]
+    fn spool_process_fixture() {
+        let Some(directory) = std::env::var_os("PRESSAY_SPOOL_TEST_DIRECTORY") else {
+            return;
+        };
+        let directory = PathBuf::from(directory);
+        let mut spool = MeetingSpool::new(&directory, Duration::from_secs(1)).unwrap();
+        spool.append(0., &[0.25, -0.25]).unwrap();
+        let path = spool.seal().unwrap();
+        std::fs::write(directory.join("ready.pending"), path.to_str().unwrap()).unwrap();
+        std::fs::rename(directory.join("ready.pending"), directory.join("ready")).unwrap();
+        // The test deliberately kills this owner to exercise automatic OS lock
+        // release after a crash, without running NamedTempFile destructors.
+        loop {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+    #[test]
+    fn another_process_reads_live_pcm_and_cleanup_waits_for_owner_exit() {
+        struct Child(std::process::Child);
+        impl Drop for Child {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut child = Child(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "analysis::tests::spool_process_fixture",
+                    "--nocapture",
+                ])
+                .env("PRESSAY_SPOOL_TEST_DIRECTORY", dir.path())
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        let ready = dir.path().join("ready");
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        while !ready.exists() {
+            assert!(
+                child.0.try_wait().unwrap().is_none(),
+                "Spool owner exited early"
+            );
+            assert!(
+                std::time::Instant::now() < deadline,
+                "Spool owner never became ready"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let path = PathBuf::from(std::fs::read_to_string(ready).unwrap());
+        // A separately opened handle in another process was the Windows error33
+        // regression: PCM must remain readable while its owner holds the lock.
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            [0.25_f32.to_le_bytes(), (-0.25_f32).to_le_bytes()].concat()
+        );
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
+        assert!(path.exists());
+        child.0.kill().unwrap();
+        child.0.wait().unwrap();
+        assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 1);
+        assert!(!path.exists());
+        assert!(!path.with_extension("lock").exists());
         assert_eq!(cleanup_stale_spools(dir.path()).unwrap(), 0);
     }
     #[test]
