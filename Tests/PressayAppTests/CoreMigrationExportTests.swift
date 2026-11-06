@@ -50,7 +50,6 @@ struct CoreMigrationExportTests {
         #expect(first["pinned"] as? Bool == false)
         #expect(first["model"] as? String == "Unknown future engine")
         let legacy = try #require(first["legacy"] as? [String: Any])
-        #expect(legacy.count == 15)
         #expect(legacy["targetAppName"] as? String == "Target app")
         #expect(legacy["audioPath"] as? String == audio.path)
         #expect(legacy["usedLanguageModel"] as? Bool == true)

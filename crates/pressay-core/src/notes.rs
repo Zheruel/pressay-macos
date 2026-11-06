@@ -441,10 +441,12 @@ pub fn calendar_tasks(note: &Note, items: &[ActionItem]) -> String {
         "VERSION:2.0".into(),
         "PRODID:-//Pressay//Action Items//EN".into(),
     ];
+    let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
     for item in items {
         lines.extend([
             "BEGIN:VTODO".into(),
             format!("UID:{}-{}@pressay", note.id, item.line),
+            format!("DTSTAMP:{timestamp}"),
             format!("SUMMARY:{}", escape(&item.text)),
             format!("DESCRIPTION:{}", escape(&format!("From {}", note.title))),
             format!(

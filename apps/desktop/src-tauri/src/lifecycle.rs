@@ -7,6 +7,49 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_updater::UpdaterExt;
+const UPDATE_FAILURE_NOTICE: &str = "update-install-failure.txt";
+
+fn update_failure_message(error: &str) -> String {
+    let detail: String = error
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(1_000)
+        .collect();
+    format!(
+        "The update could not be installed. Pressay restarted so you can keep using it. {detail}"
+    )
+}
+fn save_update_failure(directory: &std::path::Path, message: &str) -> Result<(), std::io::Error> {
+    use std::io::Write;
+    let mut file = tempfile::NamedTempFile::new_in(directory)?;
+    file.write_all(message.as_bytes())?;
+    file.as_file().sync_all()?;
+    file.persist(directory.join(UPDATE_FAILURE_NOTICE))
+        .map_err(|error| error.error)?;
+    Ok(())
+}
+pub fn take_update_failure(directory: &std::path::Path) -> Option<String> {
+    use std::io::Read;
+    let path = directory.join(UPDATE_FAILURE_NOTICE);
+    let mut message = String::new();
+    std::fs::File::open(&path)
+        .ok()?
+        .take(8_193)
+        .read_to_string(&mut message)
+        .ok()?;
+    if std::fs::remove_file(path).is_err() || message.is_empty() || message.len() > 8_192 {
+        return None;
+    }
+    Some(message)
+}
+pub fn show_update_failure(app: &AppHandle, message: String) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    app.dialog()
+        .message(message)
+        .title("Update could not be installed")
+        .kind(MessageDialogKind::Error)
+        .show(|_| {});
+}
 #[derive(Default)]
 pub struct Updates {
     pending: Mutex<Option<tauri_plugin_updater::Update>>,
@@ -89,7 +132,19 @@ pub async fn install_update(app: AppHandle, state: State<'_, Arc<Shared>>) -> Re
         // Signature verification happens in download; quiesce native resources
         // before the installer can replace executables or exit the process.
         state.shutdown().await?;
-        update.install(bytes).map_err(|e| e.to_string())?;
+        if let Err(error) = update.install(bytes) {
+            let message = update_failure_message(&error.to_string());
+            let workspace = app.state::<Arc<crate::workspace::Workspace>>();
+            if save_update_failure(&workspace.data, &message).is_err() {
+                use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+                app.dialog()
+                    .message(format!("The update could not be installed: {error}\n\nPressay will restart to resume dictation."))
+                    .title("Update could not be installed")
+                    .kind(MessageDialogKind::Error)
+                    .buttons(MessageDialogButtons::OkCustom("Restart Pressay".into()))
+                    .blocking_show();
+            }
+        }
         app.restart();
     }
     .await;

@@ -77,10 +77,6 @@ final class OverlayState: ObservableObject {
     /// Where the island is drawn in the stage, top-left origin, for hit testing.
     var islandFrame = CGRect.zero
     var stopMeeting: () -> Void = {}
-    #if DEBUG
-        /// Review mode pins hover, which can't be scripted.
-        var pinnedHover = false
-    #endif
 }
 
 /// Grows out of the notch (or top edge) so it never covers the text being written.
@@ -163,9 +159,6 @@ final class OverlayPanelController {
     /// only while the pointer is over the island.
     private func trackPointer() {
         guard let panel else { return }
-        #if DEBUG
-            if state.pinnedHover { return panel.ignoresMouseEvents = false }
-        #endif
         let island = state.islandFrame
         let frame = NSRect(
             x: panel.frame.minX + island.minX, y: panel.frame.maxY - island.maxY,
@@ -262,11 +255,6 @@ final class OverlayPanelController {
     private func positionPanel() {
         guard let panel, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         state.notch = .of(screen)
-        #if DEBUG
-            if DesignReview.enabled, ProcessInfo.processInfo.environment["PRESSAY_REVIEW_NOTCH"] == "1" {
-                state.notch = NotchGeometry(width: 185, height: 32)
-            }
-        #endif
         let frame = screen.frame
         panel.setFrameOrigin(NSPoint(x: frame.midX - Self.stage.width / 2, y: frame.maxY - Self.stage.height))
     }

@@ -31,8 +31,11 @@ impl Backend {
         }
         let mut command = Command::new(helper);
         command.args(["--exclude-pid", &std::process::id().to_string()]);
-        if let Some(name) = &config.input_device {
-            command.args(["--input", name]);
+        if let Some(id) = &config.input_device {
+            let uid = id
+                .strip_prefix("cpal:coreaudio:")
+                .ok_or("The selected microphone belongs to another platform")?;
+            command.args(["--input", uid]);
         }
         if !config.capture_system_audio {
             command.arg("--microphone-only");

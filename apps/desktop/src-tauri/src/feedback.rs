@@ -127,7 +127,7 @@ fn open_output(failed: Arc<AtomicBool>) -> Result<cpal::Stream, String> {
     let mut config: cpal::StreamConfig = supported.clone().into();
     if config.channels == 0
         || config.channels > 32
-        || !(8_000..=192_000).contains(&config.sample_rate.0)
+        || !(8_000..=192_000).contains(&config.sample_rate)
     {
         return Err("Unsupported audio output".into());
     }
@@ -136,7 +136,7 @@ fn open_output(failed: Arc<AtomicBool>) -> Result<cpal::Stream, String> {
     }
     let assets = ASSETS
         .iter()
-        .map(|bytes| convert_asset(bytes, config.sample_rate.0 as usize).map(Arc::new))
+        .map(|bytes| convert_asset(bytes, config.sample_rate as usize).map(Arc::new))
         .collect::<Result<Vec<_>, _>>()?;
     let (sender, receive) = mpsc::sync_channel(1);
     let ready = Arc::new(AtomicBool::new(false));
@@ -161,6 +161,7 @@ fn open_output(failed: Arc<AtomicBool>) -> Result<cpal::Stream, String> {
         SampleFormat::I64 => stream!(i64),
         SampleFormat::U8 => stream!(u8),
         SampleFormat::U16 => stream!(u16),
+        SampleFormat::U24 => stream!(cpal::U24),
         SampleFormat::U32 => stream!(u32),
         SampleFormat::U64 => stream!(u64),
         SampleFormat::F32 => stream!(f32),

@@ -690,7 +690,6 @@ dialog::backdrop {
     gap: 12px;
   }
 }
-/* Workspace: the same quiet graphite hierarchy as the native app. */
 .button-group,
 .note-actions,
 .notes-toolbar,
@@ -981,38 +980,6 @@ dialog::backdrop {
   flex: 1;
   min-width: 100px;
 }
-#ask-dialog {
-  width: min(720px, 90vw);
-  max-height: 85vh;
-  padding: 0;
-}
-.ask-content {
-  padding: 32px;
-}
-.ask-content h2 {
-  font-size: 23px;
-}
-.ask-content textarea {
-  width: 100%;
-}
-#ask-conversation {
-  max-height: 42vh;
-  overflow: auto;
-  padding: 12px 0;
-}
-.question {
-  background: rgba(128, 128, 128, 0.1);
-  border-radius: 10px;
-  padding: 16px;
-  margin-left: 50px;
-}
-.answer {
-  padding: 12px 0 24px;
-}
-#ask-form .row {
-  justify-content: flex-end;
-  margin-top: 12px;
-}
 #note-detail > input,
 #note-detail > textarea {
   width: 100%;
@@ -1150,7 +1117,6 @@ body.overlay {
   padding: 0;
 }
 
-/* General follows the native grouped rows and Dictation/Notetaker switcher. */
 [data-panel="general"] .general-heading {
   align-items: center;
   margin-bottom: 28px;

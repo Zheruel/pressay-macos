@@ -164,7 +164,7 @@ private final class Microphone: @unchecked Sendable {
     func start(device: String?, echo: Bool) throws {
         let input = engine.inputNode
         if let device {
-            guard let id = Devices.input(named: device) else { throw CaptureFailure("The selected meeting microphone is unavailable") }
+            guard let id = Devices.input(uid: device) else { throw CaptureFailure("The selected meeting microphone is unavailable") }
             try input.auAudioUnit.setDeviceID(id)
         }
         if echo {
@@ -314,14 +314,14 @@ private enum Devices {
         guard AudioObjectGetPropertyData(object, &address, 0, nil, &size, &value) == noErr else { return nil }
         return value?.takeRetainedValue() as String?
     }
-    static func input(named name: String) -> AudioObjectID? {
+    static func input(uid: String) -> AudioObjectID? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return nil }
         var devices = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &devices) == noErr else { return nil }
         return devices.first {
-            (string($0, kAudioDevicePropertyDeviceUID) == name || string($0, kAudioObjectPropertyName) == name)
+            string($0, kAudioDevicePropertyDeviceUID) == uid
                 && lastInputFormat($0) != nil
         }
     }

@@ -621,22 +621,13 @@ pub fn launch(
                     let callback_app = app.clone();
                     let callback_token = token.clone();
                     let mic_settings = state.view.lock().unwrap().settings.clone();
-                    let mut device = mic_settings["inputDevice"]
-                        .as_str()
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_owned);
-                    if device.is_none() {
-                        if let Some(uid) = mic_settings["inputDeviceUID"]
-                            .as_str()
-                            .filter(|s| !s.is_empty())
-                        {
-                            device = platform::input_device_name_for_uid(uid);
-                            if device.is_none() {
-                                failed(&app, &state, "Your saved microphone is unavailable. Choose another input in General.");
-                                continue;
-                            }
+                    let device = match crate::audio::resolve_input(&mic_settings) {
+                        Ok(device) => device,
+                        Err(error) => {
+                            failed(&app, &state, error);
+                            continue;
                         }
-                    }
+                    };
                     earcon_guard = Arc::new(Mutex::new(None));
                     let callback_guard = earcon_guard.clone();
                     let level_state = state.clone();
@@ -894,6 +885,7 @@ pub fn launch(
                             }
                             let insert_text = text.clone();
                             let insertion_cancel = token.clone();
+                            let practice_in_app = platform::target_is_current_app(target, &app);
                             let insertion = tokio::task::spawn_blocking(move || {
                                 if insertion_cancel.is_cancelled() {
                                     return Err(
@@ -910,7 +902,6 @@ pub fn launch(
                             };
                             let history = store.history(10000);
                             state.start_pending.store(false, Ordering::Release);
-                            let practice_in_app = platform::target_is_current_app(target, &app);
                             update(&app, &state, |s| {
                                 s.stage = "idle".into();
                                 if let Ok(history) = history.as_ref() {

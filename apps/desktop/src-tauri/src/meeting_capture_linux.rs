@@ -1,11 +1,13 @@
-//! PulseAudio's recording client also works with PipeWire's pulse server. The remote
-//! track is the actual default sink's monitor, not an arbitrary selectable microphone.
+//! Selected CPAL microphone capture with the default PulseAudio/PipeWire sink monitor.
+use super::cpal_input::make_stream;
 use super::*;
+use cpal::traits::{DeviceTrait, StreamTrait};
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
 
 pub(super) struct Backend {
     processes: Vec<Child>,
+    microphone: Option<cpal::Stream>,
     readers: Vec<JoinHandle<()>>,
     stopping: Arc<AtomicBool>,
     closed: bool,
@@ -58,30 +60,39 @@ impl Backend {
         sender: RawSender,
         events: &SyncSender<Event>,
     ) -> Result<Self, String> {
-        let sources: serde_json::Value =
-            serde_json::from_str(&pactl(&["--format=json", "list", "sources"])?)
-                .map_err(|e| e.to_string())?;
-        let source = if let Some(selected) = config
+        let host = cpal::default_host();
+        let microphone = crate::audio::selected_device(&host, config.input_device.as_deref())?;
+        let mic_format = microphone
+            .default_input_config()
+            .map_err(|error| error.to_string())?;
+        let mic = make_stream(
+            &microphone,
+            mic_format,
+            Track::Microphone,
+            origin,
+            sender.clone(),
+        )?;
+        // The default ALSA pulse plugin follows the Pulse server's source, which
+        // may have been set to an output monitor rather than a real microphone.
+        if config
             .input_device
             .as_deref()
-            .filter(|name| *name != "default" && *name != "pulse")
+            .is_none_or(|id| matches!(id, "cpal:alsa:default" | "cpal:alsa:pulse"))
         {
-            sources.as_array().ok_or("Invalid audio source list")?.iter()
-                .find(|source| source["name"].as_str() == Some(selected) || source["description"].as_str() == Some(selected))
-                .and_then(|source| source["name"].as_str()).ok_or("Selected meeting microphone is unavailable in PulseAudio/PipeWire. Choose the system default input.")?.to_owned()
-        } else {
-            pactl(&["get-default-source"])?
-        };
-        // Never use a monitor as the user's microphone, even if it was made the server default.
-        if sources.as_array().is_some_and(|sources| {
-            sources.iter().any(|s| {
-                s["name"].as_str() == Some(&source)
-                    && s["monitor_source"]
-                        .as_str()
-                        .is_some_and(|v| !v.is_empty() && v != "n/a")
-            })
-        }) {
-            return Err("The default microphone is an output monitor. Select a real microphone before starting a meeting.".into());
+            let source = pactl(&["get-default-source"])?;
+            let sources: serde_json::Value =
+                serde_json::from_str(&pactl(&["--format=json", "list", "sources"])?)
+                    .map_err(|e| e.to_string())?;
+            if sources.as_array().is_some_and(|sources| {
+                sources.iter().any(|s| {
+                    s["name"].as_str() == Some(&source)
+                        && s["monitor_source"]
+                            .as_str()
+                            .is_some_and(|v| !v.is_empty() && v != "n/a")
+                })
+            }) {
+                return Err("The default microphone is an output monitor. Select a real microphone before starting a meeting.".into());
+            }
         }
         let monitor = if config.capture_system_audio {
             let sink = pactl(&["get-default-sink"])?;
@@ -103,18 +114,26 @@ impl Backend {
         };
         let mut backend = Self {
             processes: vec![],
+            microphone: Some(mic),
             readers: vec![],
             stopping: Arc::new(AtomicBool::new(false)),
             closed: false,
         };
-        backend.record(&source, Track::Microphone, origin, sender.clone())?;
         if let Some(monitor) = monitor {
             backend.record(&monitor, Track::System, origin, sender.clone())?;
         }
-        backend.watch_routing(sender.failure.clone())?;
+        if config.capture_system_audio {
+            backend.watch_routing(sender.failure.clone())?;
+        }
         if config.echo_cancellation {
             emit(events, Event::Warning("This Linux audio backend does not enable microphone echo cancellation. Use headphones to keep call audio out of your microphone track.".into()))?;
         }
+        backend
+            .microphone
+            .as_ref()
+            .unwrap()
+            .play()
+            .map_err(|error| format!("Could not start meeting microphone: {error}"))?;
         Ok(backend)
     }
     fn record(
@@ -209,6 +228,7 @@ impl Backend {
             return Ok(());
         }
         self.closed = true;
+        self.microphone.take();
         self.stopping.store(true, Ordering::Release);
         if graceful {
             // SIGINT lets parec flush its pipe before it exits. All PIDs here belong to

@@ -4,6 +4,7 @@ let selectedNote = null,
   noteEditing = false,
   noteVersion = "",
   historyKey = "",
+  historyEditing = null,
   notesKey = "",
   workspaceReady = false,
   accountInfo = null,
@@ -196,20 +197,6 @@ function chordForEvent(event) {
   if (/^Key[A-Z]$/.test(key)) key = key.slice(3);
   else if (/^Digit[0-9]$/.test(key)) key = key.slice(5);
   else if (key.startsWith("Arrow")) key = key.slice(5);
-  const names = {
-    Backquote: "Backquote",
-    Minus: "Minus",
-    Equal: "Equal",
-    BracketLeft: "BracketLeft",
-    BracketRight: "BracketRight",
-    Backslash: "Backslash",
-    Semicolon: "Semicolon",
-    Quote: "Quote",
-    Comma: "Comma",
-    Period: "Period",
-    Slash: "Slash",
-  };
-  if (names[key]) key = names[key];
   if (
     !/^(?:[A-Z0-9]|F(?:[1-9]|1[0-9]|2[0-4])|Space|Enter|Tab|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Left|Right|Up|Down|Backquote|Minus|Equal|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Comma|Period|Slash)$/.test(
       key,
@@ -230,9 +217,19 @@ async function refreshInputDevices() {
       const system = element("option", "System Default");
       system.value = "";
       select.append(system);
-      for (const name of info.devices) {
-        const option = element("option", name);
-        option.value = name;
+      const options =
+        info.deviceOptions || info.devices.map((name) => ({ id: name, name }));
+      const repeated = new Map();
+      for (const { id, name } of options) {
+        const number = (repeated.get(name) || 0) + 1;
+        repeated.set(name, number);
+        const duplicate =
+          options.filter((option) => option.name === name).length > 1;
+        const option = element(
+          "option",
+          duplicate ? `${name} (${number})` : name,
+        );
+        option.value = id;
         select.append(option);
       }
       if ($("input-device-status"))
@@ -246,7 +243,10 @@ async function refreshInputDevices() {
         select.append(unavailable);
         select.value = unavailable.value;
       } else {
-        if (info.selected && !info.devices.includes(info.selected)) {
+        if (
+          info.selected &&
+          !options.some((option) => option.id === info.selected)
+        ) {
           const selected = element("option", info.selected);
           selected.value = info.selected;
           select.append(selected);
@@ -519,6 +519,12 @@ function historyIcon(kind) {
   return svg;
 }
 function renderHistory(s) {
+  if (
+    historyEditing &&
+    s.history.some((record) => record.id === historyEditing)
+  )
+    return;
+  historyEditing = null;
   const query = $("history-search").value.toLocaleLowerCase();
   const pinned = $("history-pinned").checked;
   const key = JSON.stringify([
@@ -642,6 +648,8 @@ function renderHistory(s) {
         }),
       ),
       act("Correct", () => {
+        if (historyEditing) return;
+        historyEditing = r.id;
         const edit = element("textarea");
         edit.value = r.correction || r.text;
         edit.rows = 4;
@@ -657,12 +665,14 @@ function renderHistory(s) {
                 correction: edit.value,
                 pinned: null,
               });
+              historyEditing = null;
               historyKey = "";
               await refresh();
             },
             "primary",
           ),
           button("Cancel", () => {
+            historyEditing = null;
             historyKey = "";
             renderHistory(current.view);
           }),
@@ -855,10 +865,13 @@ function renderNotes(s) {
   $("note-detail").hidden = recording || (!n && !notesActionMode);
   $("ask-all").hidden =
     recording ||
-    !s.notes.some((note) => note.lines?.length || note.plainTranscript);
+    !s.notes.some((note) => note.lines?.length || note.plainTranscript) ||
+    $("ask-dialog").open;
   $("ask-all").title = n ? "Ask about this meeting" : "Ask about your meetings";
   $("ask-all").onclick = () => openAsk(n ? [n.id] : []);
+  if (!recording) setAskContext(n?.id || null);
   if (recording) {
+    $("ask-dialog").close();
     $("meeting-title").textContent = n?.title || "Preparing meeting";
     const finishing = ["meeting_finishing", "meeting_speakers"].includes(
       s.stage,
@@ -1461,13 +1474,9 @@ function renderWorkspace(s) {
     refreshInputDevices();
   }
   syncShortcut(s.settings);
-  if (
-    !document.activeElement?.closest(
-      '[data-panel="general"], [data-panel="ai"]',
-    )
-  )
-    syncPreferences(s.settings);
+  syncPreferences(s.settings);
   renderGeneralSettings(s);
+  if ($("ask-dialog").open) renderAsk();
 }
 function setting(patch) {
   return call("save_settings", { patch });
@@ -1526,6 +1535,10 @@ function languageOptions(id, modelId, saved) {
       : "auto";
 }
 function syncPreferences(s) {
+  if (!modelSelectionPending || s.asrModel === modelSelectionPending) {
+    modelSelectionPending = null;
+    $("model").value = s.asrModel;
+  }
   languageOptions("dictation-language", s.asrModel, s.language);
   languageOptions(
     "meeting-language",
@@ -1533,13 +1546,20 @@ function syncPreferences(s) {
     s.meetingLanguage,
   );
   $("ai-enabled").checked = s.claudeCleanup === true;
-  $("ai-provider").value = s.cleanupProvider || "claude";
-  $("ai-connection").value =
-    s[
-      $("ai-provider").value === "claude"
-        ? "claudeConnection"
-        : "openAIConnection"
-    ] || "apiKey";
+  if (
+    !document.activeElement?.closest('[data-panel="ai"]') &&
+    !accountSaving &&
+    !accountVerifying &&
+    !accountSigningIn
+  ) {
+    $("ai-provider").value = s.cleanupProvider || "claude";
+    $("ai-connection").value =
+      s[
+        $("ai-provider").value === "claude"
+          ? "claudeConnection"
+          : "openAIConnection"
+      ] || "apiKey";
+  }
   $("notes-ai").checked = s.notesUseAI !== false;
   renderNotesSettings(s);
   $("meeting-hours").value = s.maxMeetingHours || 3;
@@ -1687,19 +1707,143 @@ async function refreshAccount() {
       accountInfo = null;
     }
     renderNotesSettings(current.view.settings);
+    renderAsk();
   })().finally(() => {
     accountRefresh = null;
   });
   return accountRefresh;
 }
-function openAsk(ids) {
-  askIds = ids;
+let askContext = null,
+  askAcrossMeetings = false,
+  askEpoch = 0,
+  askInteraction = 0;
+function resetAsk() {
+  ++askEpoch;
+  if (askBusy) invoke("cancel_note_job", { id: "ask" }).catch(() => {});
   exchanges = [];
   $("ask-conversation").replaceChildren();
-  $("ask-title").textContent =
-    ids.length === 1 ? "Ask this meeting" : "Ask your meetings";
-  $("ask-dialog").showModal();
-  $("ask-question").focus();
+  $("ask-question").value = "";
+  renderAsk();
+}
+function setAskContext(id) {
+  if (askContext === id) return;
+  askContext = id;
+  if (!askAcrossMeetings) {
+    askIds = id ? [id] : [];
+    resetAsk();
+  }
+}
+function openAsk(ids) {
+  setAskContext(ids.length === 1 ? ids[0] : null);
+  askIds = askAcrossMeetings || !askContext ? [] : [askContext];
+  if (!$("ask-dialog").open) $("ask-dialog").show();
+  $("ask-all").hidden = true;
+  renderAsk();
+  const epoch = askEpoch,
+    interaction = askInteraction;
+  refreshAccount().then(() => {
+    renderAsk();
+    if (
+      $("ask-dialog").open &&
+      epoch === askEpoch &&
+      interaction === askInteraction &&
+      !$("ask-question").disabled
+    )
+      $("ask-question").focus();
+  });
+  if (!$("ask-question").disabled) $("ask-question").focus();
+}
+function renderAsk() {
+  const available = !!(
+    current?.view.settings.notesUseAI !== false &&
+    (accountInfo?.claudeApiKey || accountInfo?.chatgpt?.signed_in)
+  );
+  $("ask-title").textContent = askIds.length ? "This meeting" : "All meetings";
+  $("ask-scope").hidden = !askContext;
+  $("ask-title").hidden = !!askContext;
+  for (const button of document.querySelectorAll("[data-ask-scope]"))
+    button.setAttribute(
+      "aria-pressed",
+      String((button.dataset.askScope === "all") === askAcrossMeetings),
+    );
+  $("ask-new-chat").disabled = !$("ask-conversation").children.length;
+  $("ask-question").disabled = !available;
+  $("ask-question").placeholder = !available
+    ? current?.view.settings.notesUseAI === false
+      ? "AI is off in Notetaker settings"
+      : "Set up AI in Settings to ask"
+    : exchanges.length
+      ? "Ask a follow-up"
+      : "Ask a question";
+  $("submit-ask").disabled =
+    !available || askBusy || !$("ask-question").value.trim();
+  $("cancel-ask").hidden = !askBusy;
+  const suggestions = $("ask-suggestions");
+  const key = JSON.stringify([askIds, available, askBusy]);
+  suggestions.hidden = $("ask-conversation").children.length > 0;
+  if (suggestions.dataset.key !== key) {
+    suggestions.dataset.key = key;
+    suggestions.replaceChildren(
+      element(
+        "p",
+        askIds.length
+          ? "Ask anything about this meeting."
+          : "Ask anything across your meetings.",
+      ),
+    );
+    for (const prompt of askIds.length
+      ? [
+          "What did we decide?",
+          "What do I need to do?",
+          "Write a follow-up email",
+        ]
+      : [
+          "What do I owe people?",
+          "Summarize this week’s meetings",
+          "What’s still unresolved?",
+        ]) {
+      const suggestion = button(prompt, () => sendAsk(prompt));
+      suggestion.disabled = !available || askBusy;
+      suggestions.append(suggestion);
+    }
+  }
+}
+async function sendAsk(question) {
+  question = question.trim();
+  if (askBusy || !question || $("ask-question").disabled) return;
+  const epoch = askEpoch;
+  askBusy = true;
+  $("ask-question").value = "";
+  $("ask-conversation").append(element("p", question, "question"));
+  const response = element(
+    "div",
+    "Reading your meetings…",
+    "answer markdown pending",
+  );
+  response.setAttribute("role", "status");
+  $("ask-conversation").append(response);
+  renderAsk();
+  response.scrollIntoView({ block: "nearest" });
+  try {
+    const answer = await invoke("ask_notes", {
+      question,
+      ids: [...askIds],
+      history: exchanges.slice(-20),
+    });
+    if (epoch !== askEpoch) return;
+    response.classList.remove("pending");
+    renderMarkdown(answer, response);
+    exchanges.push({ question, answer });
+  } catch (error) {
+    if (epoch !== askEpoch) return;
+    response.classList.remove("pending");
+    response.classList.add("is-error");
+    response.textContent = String(error);
+  } finally {
+    askBusy = false;
+    renderAsk();
+    if (epoch === askEpoch && $("ask-dialog").open) $("ask-question").focus();
+  }
 }
 function setupWorkspace() {
   workspaceReady = true;
@@ -2101,35 +2245,61 @@ function setupWorkspace() {
   };
   $("ask-all").onclick = () => openAsk([]);
   $("close-ask").onclick = () => $("ask-dialog").close();
-  $("cancel-ask").onclick = () =>
-    call("cancel_note_job", { id: "ask" }).catch(() => {});
-  $("ask-form").onsubmit = async (event) => {
-    event.preventDefault();
-    if (askBusy) return;
-    const question = $("ask-question").value.trim();
-    if (!question) return;
-    askBusy = true;
-    $("submit-ask").disabled = true;
-    $("cancel-ask").hidden = false;
-    $("ask-conversation").append(element("p", question, "question"));
-    try {
-      const answer = await call("ask_notes", {
-        question,
-        ids: askIds,
-        history: exchanges,
-      });
-      const body = element("div", undefined, "answer markdown");
-      renderMarkdown(answer, body);
-      $("ask-conversation").append(body);
-      exchanges.push({ question, answer });
-      $("ask-question").value = "";
-    } catch {
-    } finally {
-      askBusy = false;
-      $("submit-ask").disabled = false;
-      $("cancel-ask").hidden = true;
+  $("ask-dialog").addEventListener("close", () => renderNotes(current.view));
+  $("ask-dialog").addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      $("ask-dialog").close();
+    }
+  });
+  document.addEventListener("pointerdown", () => ++askInteraction, true);
+  document.addEventListener("keydown", () => ++askInteraction, true);
+  $("ask-new-chat").onclick = resetAsk;
+  $("ask-question").oninput = renderAsk;
+  $("ask-question").onkeydown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      sendAsk($("ask-question").value);
     }
   };
+  for (const button of document.querySelectorAll("[data-ask-scope]"))
+    button.onclick = () => {
+      const across = button.dataset.askScope === "all";
+      if (across === askAcrossMeetings) return;
+      askAcrossMeetings = across;
+      askIds = across || !askContext ? [] : [askContext];
+      resetAsk();
+    };
+  $("cancel-ask").onclick = () =>
+    invoke("cancel_note_job", { id: "ask" }).catch(() => {});
+  $("ask-form").onsubmit = (event) => {
+    event.preventDefault();
+    sendAsk($("ask-question").value);
+  };
+  document.addEventListener("keydown", (event) => {
+    if (
+      !(current.platform === "macos" ? event.metaKey : event.ctrlKey) ||
+      event.altKey
+    )
+      return;
+    if (event.key === ",") {
+      event.preventDefault();
+      navigate("general");
+    }
+    if (document.querySelector('[data-panel="meetings"]').hidden) return;
+    if (event.key.toLowerCase() === "j" && !$("ask-all").hidden) {
+      event.preventDefault();
+      $("ask-all").click();
+    }
+    if (
+      event.key === "Enter" &&
+      !$("stop-meeting").hidden &&
+      !$("stop-meeting").disabled
+    ) {
+      event.preventDefault();
+      $("stop-meeting").click();
+    }
+  });
   $("call-record").onclick = () => {
     navigate("meetings");
     selectedNote = null;

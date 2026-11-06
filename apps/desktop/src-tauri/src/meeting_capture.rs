@@ -18,6 +18,10 @@ mod platform;
 #[path = "meeting_capture_windows.rs"]
 mod platform;
 
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[path = "meeting_capture_cpal.rs"]
+mod cpal_input;
+
 pub const SAMPLE_RATE: usize = 16_000;
 const RAW_FRAMES: usize = 4_096;
 const RUNNING: u8 = 0;

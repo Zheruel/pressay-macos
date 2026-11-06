@@ -48,19 +48,19 @@ impl Capture {
     /// callback. A slow/disconnected observer is dropped; full capture survives.
     /// Compare the received sample count with `finish()` to detect fallback.
     pub fn start_streaming(
-        device_name: Option<&str>,
+        device_id: Option<&str>,
         on_first_audio: Arc<dyn Fn(usize) + Send + Sync>,
         observer: Option<SyncSender<Vec<f32>>>,
         levels: Option<Arc<dyn Fn([f32; 4]) + Send + Sync>>,
     ) -> Result<Self, String> {
-        let device_name = device_name.map(str::to_owned);
+        let device_id = device_id.map(str::to_owned);
         let (commands, receive_commands) = mpsc::sync_channel(1);
         let (ready, receive_ready) = mpsc::sync_channel(1);
         let thread = thread::Builder::new()
             .name("pressay-microphone".into())
             .spawn(move || {
                 let result = record(
-                    device_name.as_deref(),
+                    device_id.as_deref(),
                     on_first_audio,
                     receive_commands,
                     &ready,
@@ -121,31 +121,103 @@ impl Drop for Capture {
     }
 }
 
-pub fn list_inputs() -> Result<Vec<String>, String> {
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct InputDevice {
+    pub id: String,
+    pub name: String,
+}
+pub fn list_input_options() -> Result<Vec<InputDevice>, String> {
     #[cfg(target_os = "macos")]
-    {
-        crate::platform::input_devices()
-    }
+    let mut devices = crate::platform::input_devices()?;
     #[cfg(not(target_os = "macos"))]
-    {
-        let devices = cpal::default_host()
-            .input_devices()
-            .map_err(|error| format!("Could not list microphones: {error}"))?;
-        let mut names = devices
-            .map(|device| {
-                device
+    let mut devices = cpal::default_host()
+        .input_devices()
+        .map_err(|error| format!("Could not list microphones: {error}"))?
+        .map(|device| {
+            Ok(InputDevice {
+                id: format!("cpal:{}", device.id().map_err(|e| e.to_string())?),
+                name: device
+                    .description()
+                    .map_err(|e| e.to_string())?
                     .name()
-                    .map_err(|error| format!("Could not read microphone name: {error}"))
+                    .to_owned(),
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        names.sort();
-        names.dedup();
-        Ok(names)
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    devices.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+    devices.dedup_by(|a, b| a.id == b.id);
+    Ok(devices)
+}
+pub fn list_inputs() -> Result<Vec<String>, String> {
+    Ok(list_input_options()?
+        .into_iter()
+        .map(|device| device.name)
+        .collect())
+}
+pub fn resolve_input(settings: &serde_json::Value) -> Result<Option<String>, String> {
+    let saved = settings["inputDevice"]
+        .as_str()
+        .filter(|value| !value.is_empty());
+    let uid = settings["inputDeviceUID"]
+        .as_str()
+        .filter(|value| !value.is_empty());
+    if saved.is_none() && uid.is_none() {
+        return Ok(None);
+    }
+    if let Some(id) = saved.filter(|id| id.starts_with("cpal:")) {
+        return Ok(Some(id.to_owned()));
+    }
+    if saved.is_none() {
+        if let Some(uid) = uid {
+            return Ok(Some(format!("cpal:coreaudio:{uid}")));
+        }
+    }
+    resolve_input_from(settings, &list_input_options()?)
+}
+pub fn resolve_input_from(
+    settings: &serde_json::Value,
+    devices: &[InputDevice],
+) -> Result<Option<String>, String> {
+    let saved = settings["inputDevice"]
+        .as_str()
+        .filter(|value| !value.is_empty());
+    let uid = settings["inputDeviceUID"]
+        .as_str()
+        .filter(|value| !value.is_empty());
+    if saved.is_none() && uid.is_none() {
+        return Ok(None);
+    }
+    let wanted = saved
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("cpal:coreaudio:{}", uid.unwrap()));
+    if wanted.starts_with("cpal:") {
+        return devices.iter().find(|device| device.id == wanted).map(|device| Some(device.id.clone()))
+            .ok_or_else(|| "Your saved microphone is unavailable. Choose another microphone in General settings.".into());
+    }
+    let mut matches = devices.iter().filter(|device| device.name == wanted);
+    let first = matches.next();
+    match (first, matches.next()) {
+        (Some(device), None) => Ok(Some(device.id.clone())),
+        (Some(_), Some(_)) => Err("More than one microphone has your saved name. Choose the intended microphone in General settings.".into()),
+        _ => Err("Your saved microphone is unavailable. Choose another microphone in General settings.".into()),
+    }
+}
+pub(crate) fn selected_device(
+    host: &cpal::Host,
+    selected: Option<&str>,
+) -> Result<cpal::Device, String> {
+    if let Some(selected) = selected {
+        let id: cpal::DeviceId = selected.strip_prefix("cpal:").ok_or("Choose your microphone again in General settings")?
+            .parse().map_err(|_| "Your selected microphone belongs to another platform. Choose an available microphone in General settings.")?;
+        host.device_by_id(&id).ok_or_else(|| "Your selected microphone is unavailable. Choose another microphone in General settings.".into())
+    } else {
+        host.default_input_device()
+            .ok_or_else(|| "No microphone is available".into())
     }
 }
 
 fn record(
-    device_name: Option<&str>,
+    device_id: Option<&str>,
     on_first_audio: Arc<dyn Fn(usize) + Send + Sync>,
     commands: Receiver<Command>,
     ready: &SyncSender<Result<(), String>>,
@@ -153,19 +225,11 @@ fn record(
     levels: Option<Arc<dyn Fn([f32; 4]) + Send + Sync>>,
 ) -> Result<Vec<f32>, String> {
     let host = cpal::default_host();
-    let device = if let Some(name) = device_name {
-        host.input_devices()
-            .map_err(|error| format!("Could not list microphones: {error}"))?
-            .find(|device| device.name().is_ok_and(|candidate| candidate == name))
-            .ok_or_else(|| format!("Microphone ‘{name}’ is unavailable. Choose another input."))?
-    } else {
-        host.default_input_device()
-            .ok_or("No microphone is available")?
-    };
+    let device = selected_device(&host, device_id)?;
     let supported = device
         .default_input_config()
         .map_err(|error| format!("Could not read microphone format: {error}"))?;
-    let sample_rate = supported.sample_rate().0 as usize;
+    let sample_rate = supported.sample_rate() as usize;
     let channels = supported.channels() as usize;
     validate_format(sample_rate, channels)?;
     let config: cpal::StreamConfig = supported.clone().into();
@@ -189,6 +253,9 @@ fn record(
         SampleFormat::U8 => input_stream::<u8>(&device, &config, packets, errors, failure.clone()),
         SampleFormat::U16 => {
             input_stream::<u16>(&device, &config, packets, errors, failure.clone())
+        }
+        SampleFormat::U24 => {
+            input_stream::<cpal::U24>(&device, &config, packets, errors, failure.clone())
         }
         SampleFormat::U32 => {
             input_stream::<u32>(&device, &config, packets, errors, failure.clone())

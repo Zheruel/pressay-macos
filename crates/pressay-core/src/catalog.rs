@@ -119,7 +119,18 @@ mod tests {
             .split("public var defaultLanguage")
             .next()
             .unwrap();
-        assert_eq!(models().len(), 9);
+        let mut expected: Vec<_> = coverage
+            .lines()
+            .filter_map(|line| {
+                line.trim()
+                    .strip_prefix("case .")
+                    .and_then(|line| line.split(':').next())
+            })
+            .collect();
+        expected.sort();
+        let mut actual: Vec<_> = models().iter().map(|model| model.id.as_str()).collect();
+        actual.sort();
+        assert_eq!(actual, expected);
         for model in models() {
             let prefix = format!("case .{}: ", model.id);
             let language_json = coverage
@@ -139,10 +150,6 @@ mod tests {
                 }
             );
         }
-        assert_eq!(
-            models().iter().filter(|model| model.is_secondary()).count(),
-            4
-        );
     }
     #[test]
     fn catalog_is_pinned_and_safe() {

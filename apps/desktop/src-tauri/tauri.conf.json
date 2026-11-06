@@ -48,7 +48,10 @@
     },
     "icon": [
       "icons/icon.png"
-    ]
+    ],
+    "windows": {
+      "bundleVCRuntime": true
+    }
   },
   "plugins": {
     "updater": {

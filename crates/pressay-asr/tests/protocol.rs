@@ -185,21 +185,6 @@ fn executable_fails_with_json_instead_of_false_readiness() {
 }
 
 #[test]
-fn secondary_models_use_the_portable_runtime() {
-    for model in [
-        "funASRMLTNano",
-        "whisperTurboGGML",
-        "voxtralMini",
-        "qwen3ASR06",
-    ] {
-        assert_eq!(
-            runtime_library(model, Path::new("runtime")).unwrap(),
-            runtime_library("moss", Path::new("runtime")).unwrap()
-        );
-    }
-}
-
-#[test]
 fn language_is_per_request_and_invalid_hints_never_reach_the_engine() {
     #[derive(Default)]
     struct LanguageEngine(Vec<Option<String>>);

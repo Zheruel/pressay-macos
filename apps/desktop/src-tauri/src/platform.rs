@@ -17,11 +17,6 @@ extern "C" {
     fn pressay_accessibility_status() -> i32;
     fn pressay_input_status() -> i32;
     fn pressay_input_devices(buffer: *mut std::ffi::c_char, capacity: usize) -> i32;
-    fn pressay_input_device_name_for_uid(
-        uid: *const std::ffi::c_char,
-        buffer: *mut std::ffi::c_char,
-        capacity: usize,
-    ) -> bool;
     fn pressay_open_permission(kind: i32);
     fn pressay_focused_process() -> u64;
     fn pressay_release_target(token: u64);
@@ -127,7 +122,7 @@ pub fn set_wayland_current_cursor(enabled: bool) {
     let _ = enabled;
 }
 #[cfg(target_os = "macos")]
-pub fn input_devices() -> Result<Vec<String>, String> {
+pub fn input_devices() -> Result<Vec<crate::audio::InputDevice>, String> {
     let mut bytes = vec![0u8; 65_536];
     match unsafe { pressay_input_devices(bytes.as_mut_ptr().cast(), bytes.len()) } {
         0 => {}
@@ -135,27 +130,7 @@ pub fn input_devices() -> Result<Vec<String>, String> {
         _ => return Err("Microphone device metadata is too large or invalid".into()),
     }
     let json = std::ffi::CStr::from_bytes_until_nul(&bytes).map_err(|e| e.to_string())?;
-    let mut names: Vec<String> =
-        serde_json::from_slice(json.to_bytes()).map_err(|e| e.to_string())?;
-    names.sort();
-    names.dedup();
-    Ok(names)
-}
-/// Resolve the original Mac preference without opening an AudioUnit. A missing
-/// UID is preserved by callers and must prompt device selection, never default.
-pub fn input_device_name_for_uid(uid: &str) -> Option<String> {
-    #[cfg(target_os = "macos")]
-    {
-        let uid = std::ffi::CString::new(uid).ok()?;
-        native_string(|buffer, capacity| unsafe {
-            pressay_input_device_name_for_uid(uid.as_ptr(), buffer, capacity)
-        })
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = uid;
-        None
-    }
+    serde_json::from_slice(json.to_bytes()).map_err(|e| e.to_string())
 }
 pub fn request_permission(kind: &str) -> Result<(), String> {
     match kind {
@@ -326,6 +301,7 @@ pub fn target_application(target: u64) -> Option<String> {
 }
 /// Events/AX insertion leave all clipboard formats untouched. A successful
 /// return means the OS accepted insertion, not that an arbitrary app confirmed it.
+/// Insertion releases the target token; capture any ownership evidence first.
 pub fn insert(text: &str, target: u64) -> Result<(), String> {
     if text.trim().is_empty() {
         return Err("No recognized text to insert".into());
@@ -577,7 +553,7 @@ mod targets {
         }
         let application = application_for(&focus);
         let mut registry = registry().lock().unwrap();
-        registry.retain(|_, value| value.created.elapsed() < Duration::from_secs(300));
+        registry.retain(|_, value| value.created.elapsed() < Duration::from_secs(600));
         if registry.len() >= 32 {
             registry.clear();
         }
@@ -609,7 +585,7 @@ mod targets {
         valid
     }
     fn can_refresh(old: &Target, new: &Focus) -> bool {
-        if old.invalidated || old.created.elapsed() >= Duration::from_secs(300) {
+        if old.invalidated || old.created.elapsed() >= Duration::from_secs(600) {
             return false;
         }
         let same_owner = if old.focus.process != 0 {
@@ -650,7 +626,7 @@ mod targets {
         let target = registry().lock().unwrap().get(&token).cloned();
         target.is_some_and(|target| {
             !target.invalidated
-                && target.created.elapsed() < Duration::from_secs(300)
+                && target.created.elapsed() < Duration::from_secs(600)
                 && current().is_ok_and(|focus| {
                     focus.window == target.focus.window
                         && focus.foreground == target.focus.foreground

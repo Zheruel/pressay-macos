@@ -366,14 +366,14 @@ uint64_t pressay_focused_process(void) {
     focus.created = NSDate.date;
     @synchronized(PressayFocus.class) {
         if (!targets) targets = [NSMutableDictionary new];
-        for (NSNumber *key in targets.allKeys) if ([targets[key].created timeIntervalSinceNow] < -300 || targets.count >= 32) [targets removeObjectForKey:key];
+        for (NSNumber *key in targets.allKeys) if ([targets[key].created timeIntervalSinceNow] < -600 || targets.count >= 32) [targets removeObjectForKey:key];
         uint64_t token = nextTarget++; targets[@(token)] = focus; return token;
     }
 }
 static PressayFocus *checkedTarget(uint64_t token, BOOL checkRange) {
     PressayFocus *saved;
     @synchronized(PressayFocus.class) { saved = targets[@(token)]; }
-    if (!saved || saved.invalidated || [saved.created timeIntervalSinceNow] < -300) return nil;
+    if (!saved || saved.invalidated || [saved.created timeIntervalSinceNow] < -600) return nil;
     AXUIElementRef current = focusedElement();
     if (!current) return nil;
     BOOL matches = !secureElement(current) && CFEqual(current, saved.element);
@@ -387,7 +387,7 @@ bool pressay_refresh_target(uint64_t token) {
     if (!saved || saved.invalidated) return false;
     AXUIElementRef element = focusedElement(); pid_t pid = 0;
     BOOL valid = element && !secureElement(element) && AXUIElementGetPid(element, &pid) == kAXErrorSuccess
-        && pid == saved.pid && [saved.created timeIntervalSinceNow] >= -300;
+        && pid == saved.pid && [saved.created timeIntervalSinceNow] >= -600;
     if (valid) {
         PressayFocus *fresh = [PressayFocus new]; fresh.element = element; fresh.pid = pid; fresh.created = NSDate.date;
         CFRange range; fresh.hasRange = selectedRange(element, &range); if (fresh.hasRange) fresh.range = range;
@@ -541,7 +541,7 @@ int pressay_input_devices(char *buffer, size_t capacity) {
         AudioObjectPropertyAddress devicesAddress = {kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
         UInt32 size = 0;
         if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &devicesAddress, 0, NULL, &size) != noErr || size > 1024 * 1024) return 1;
-        NSMutableArray<NSString *> *names = [NSMutableArray new];
+        NSMutableArray<NSDictionary *> *names = [NSMutableArray new];
         if (size > 0) {
             NSMutableData *storage = [NSMutableData dataWithLength:size];
             if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &devicesAddress, 0, NULL, &size, storage.mutableBytes) != noErr) return 1;
@@ -554,37 +554,15 @@ int pressay_input_devices(char *buffer, size_t capacity) {
                 CFStringRef name = NULL; UInt32 nameBytes = sizeof(name);
                 if (AudioObjectGetPropertyData(devices[index], &nameAddress, 0, NULL, &nameBytes, &name) != noErr || !name) continue;
                 NSString *value = CFBridgingRelease(name);
-                if (value.length) [names addObject:value];
+                nameAddress.mSelector = kAudioDevicePropertyDeviceUID;
+                CFStringRef uid = NULL; UInt32 uidBytes = sizeof(uid);
+                if (AudioObjectGetPropertyData(devices[index], &nameAddress, 0, NULL, &uidBytes, &uid) != noErr || !uid) continue;
+                NSString *identifier = CFBridgingRelease(uid);
+                if (value.length && identifier.length) [names addObject:@{@"id": [@"cpal:coreaudio:" stringByAppendingString:identifier], @"name": value}];
             }
         }
         NSData *json = [NSJSONSerialization dataWithJSONObject:names options:0 error:nil];
         if (!json || json.length >= capacity) return 2;
         memcpy(buffer, json.bytes, json.length); buffer[json.length] = '\0'; return 0;
-    }
-}
-
-bool pressay_input_device_name_for_uid(const char *uid, char *buffer, size_t capacity) {
-    @autoreleasepool {
-        NSString *wanted = uid ? [NSString stringWithUTF8String:uid] : nil;
-        if (!wanted.length) return false;
-        AudioObjectPropertyAddress address={kAudioHardwarePropertyDevices,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
-        UInt32 size=0;
-        if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject,&address,0,NULL,&size)!=noErr || size>1024*1024) return false;
-        NSMutableData *storage=[NSMutableData dataWithLength:size];
-        if (AudioObjectGetPropertyData(kAudioObjectSystemObject,&address,0,NULL,&size,storage.mutableBytes)!=noErr) return false;
-        AudioObjectID *devices=storage.mutableBytes;
-        for (NSUInteger i=0;i<size/sizeof(AudioObjectID);i++) {
-            AudioObjectPropertyAddress property={kAudioDevicePropertyDeviceUID,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
-            CFStringRef value=NULL;UInt32 bytes=sizeof(value);
-            if (AudioObjectGetPropertyData(devices[i],&property,0,NULL,&bytes,&value)!=noErr || !value) continue;
-            BOOL matches=[(__bridge NSString *)value isEqualToString:wanted];CFRelease(value);
-            if (!matches) continue;
-            property.mSelector=kAudioDevicePropertyStreams;property.mScope=kAudioObjectPropertyScopeInput;bytes=0;
-            if (AudioObjectGetPropertyDataSize(devices[i],&property,0,NULL,&bytes)!=noErr || bytes==0) return false;
-            property.mSelector=kAudioObjectPropertyName;property.mScope=kAudioObjectPropertyScopeGlobal;bytes=sizeof(value);value=NULL;
-            if (AudioObjectGetPropertyData(devices[i],&property,0,NULL,&bytes,&value)!=noErr || !value) return false;
-            BOOL copied=copyString((__bridge NSString *)value,buffer,capacity);CFRelease(value);return copied;
-        }
-        return false;
     }
 }

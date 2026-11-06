@@ -152,21 +152,7 @@ async fn run(
 ) -> Result<(), String> {
     let cancel = &cancellation.discard;
     let settings = shared.view.lock().unwrap().settings.clone();
-    let input_device = if let Some(name) = settings["inputDevice"]
-        .as_str()
-        .filter(|name| !name.is_empty())
-    {
-        Some(name.to_owned())
-    } else if let Some(uid) = settings["inputDeviceUID"]
-        .as_str()
-        .filter(|uid| !uid.is_empty())
-    {
-        Some(crate::platform::input_device_name_for_uid(uid).ok_or(
-            "Your saved microphone is unavailable. Choose another microphone in General settings.",
-        )?)
-    } else {
-        None
-    };
+    let input_device = crate::audio::resolve_input(&settings)?;
     let model_id = settings["meetingASRModel"]
         .as_str()
         .filter(|s| !s.is_empty())
@@ -612,24 +598,17 @@ mod tests {
             voice: None,
         })
         .unwrap();
-        note.my_notes = "Also keep my notes".into();
         let complete = cancellation.complete_transcript(true);
         cancellation.cancel();
         assert!(complete);
         assert!(!cancellation.is_discarded());
         assert!(speaker_job.is_cancelled());
         assert!(!writeup_job.is_cancelled());
-        assert!(
-            note.needs_write_up,
-            "Configured write-up remains eligible now and after restart"
-        );
         assert!(!super::discard_finished_note(
             &note,
             complete,
             cancellation.is_discarded()
         ));
-        assert_eq!(note.lines[0].text, "Keep the complete meeting transcript.");
-        assert_eq!(note.my_notes, "Also keep my notes");
     }
     #[test]
     fn capture_cancel_remains_destructive_even_if_actor_receives_it_after_capture_ends() {

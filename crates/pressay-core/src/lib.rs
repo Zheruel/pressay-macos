@@ -7,7 +7,6 @@ pub mod catalog;
 pub mod dictation;
 pub mod download;
 pub mod onboarding;
-pub mod scheduler;
 pub mod storage;
 pub mod text;
 pub mod vocabulary;

@@ -971,27 +971,75 @@
     </dialog>
     <dialog id="ask-dialog" aria-labelledby="ask-title">
       <div class="ask-content">
-        <div class="row">
-          <h2 id="ask-title">Ask your meetings</h2>
-          <button id="close-ask" aria-label="Close">×</button>
+        <header class="ask-header">
+          <h2 id="ask-title">All meetings</h2>
+          <div
+            id="ask-scope"
+            class="settings-tabs"
+            role="group"
+            aria-label="Ask about"
+            hidden
+          >
+            <button type="button" data-ask-scope="this" aria-pressed="true">
+              This meeting
+            </button>
+            <button type="button" data-ask-scope="all" aria-pressed="false">
+              All meetings
+            </button>
+          </div>
+          <button
+            id="ask-new-chat"
+            class="quiet"
+            aria-label="New chat"
+            title="New chat"
+          >
+            <svg
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M8 4H4v12h12v-5M9 11l1-4 6-6 3 3-6 6z" />
+            </svg>
+          </button>
+          <button
+            id="close-ask"
+            class="quiet"
+            aria-label="Close Ask"
+            title="Close"
+          >
+            ×
+          </button>
+        </header>
+        <div id="ask-messages">
+          <div id="ask-suggestions"></div>
+          <div id="ask-conversation" aria-live="polite"></div>
         </div>
-        <p class="muted">
-          Answers use your selected notes and transcripts. Text is sent to your
-          chosen AI provider.
-        </p>
-        <div id="ask-conversation" aria-live="polite"></div>
         <form id="ask-form">
-          <label for="ask-question">Your question</label
-          ><textarea
+          <textarea
             id="ask-question"
-            rows="3"
-            placeholder="What did we decide?"
+            rows="1"
+            placeholder="Ask a question"
+            aria-label="Your question"
             required
           ></textarea>
-          <div class="row">
-            <button id="cancel-ask" type="button" hidden>Cancel</button
-            ><button id="submit-ask" class="primary">Ask</button>
-          </div>
+          <button
+            id="cancel-ask"
+            type="button"
+            class="quiet"
+            hidden
+            aria-label="Cancel answer"
+          >
+            ■
+          </button>
+          <button
+            id="submit-ask"
+            class="quiet"
+            aria-label="Send question"
+            title="Send question"
+          >
+            ↑
+          </button>
         </form>
       </div>
     </dialog>

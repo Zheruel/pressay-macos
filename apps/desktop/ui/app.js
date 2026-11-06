@@ -29,17 +29,15 @@ async function refreshAppMetadata(history) {
     renderRecent(current.view.history, current.shortcut);
     renderHistory(current.view);
   } catch {
-    /* A missing application icon must not interrupt dictation. */
   } finally {
     metadataPending = false;
   }
 }
 let current,
   step = 0,
-  historyVersion = "",
-  meetingsVersion = "",
   recentVersion = "",
-  initialized = false;
+  initialized = false,
+  modelSelectionPending = null;
 const dialog = $("onboarding");
 function error(message) {
   $("error").textContent = String(message);
@@ -67,6 +65,7 @@ function navigate(page) {
     b.setAttribute("aria-current", b.dataset.page === page ? "page" : "false");
   });
   if (changed) document.querySelector("main").scrollTop = 0;
+  if (page !== "meetings") $("ask-dialog").close();
 }
 document
   .querySelectorAll("[data-page]")
@@ -505,6 +504,7 @@ for (const id of ["model", "setup-model"])
     $("model-next").disabled = !selectedModelReady();
     renderSetup();
     if (id === "model") {
+      modelSelectionPending = $(id).value;
       call("prepare_model", { id: $(id).value }).catch(() => {});
     }
   };
@@ -859,12 +859,16 @@ function render(data) {
       $(id + "-size").textContent = size($(id).value);
     }
     refreshInputDevices().catch(() => {});
-    // Native startup opens the separate setup window when onboarding is incomplete.
   }
 }
 function renderRecent(history, shortcut) {
   const records = history.slice(0, 6);
-  const version = JSON.stringify([records, shortcut, appMetadata]);
+  const version = JSON.stringify([
+    records,
+    shortcut,
+    appMetadata,
+    Math.floor(Date.now() / 60000),
+  ]);
   if (version === recentVersion) return;
   recentVersion = version;
   const list = $("recent-dictations");

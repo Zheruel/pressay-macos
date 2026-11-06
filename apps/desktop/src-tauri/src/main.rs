@@ -86,6 +86,8 @@ async fn input_devices() -> Result<Vec<String>, String> {
 #[derive(Serialize)]
 struct InputDeviceSelection {
     devices: Vec<String>,
+    #[serde(rename = "deviceOptions")]
+    device_options: Vec<audio::InputDevice>,
     selected: Option<String>,
     unavailable: bool,
 }
@@ -95,21 +97,28 @@ async fn input_device_selection(
 ) -> Result<InputDeviceSelection, String> {
     let settings = state.view.lock().unwrap().settings.clone();
     tokio::task::spawn_blocking(move || {
-        let devices = audio::list_inputs()?;
-        let saved = settings["inputDevice"]
-            .as_str()
-            .filter(|name| !name.is_empty());
-        let legacy = settings["inputDeviceUID"]
-            .as_str()
-            .filter(|uid| !uid.is_empty());
-        let selected = saved
-            .map(str::to_owned)
-            .or_else(|| legacy.and_then(platform::input_device_name_for_uid));
-        let unavailable = selected
-            .as_ref()
-            .map_or(legacy.is_some(), |name| !devices.contains(name));
+        let device_options = audio::list_input_options()?;
+        let resolved = audio::resolve_input_from(&settings, &device_options);
+        let unavailable = resolved.is_err();
+        let selected = resolved.unwrap_or_else(|_| {
+            settings["inputDevice"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+                .or_else(|| {
+                    settings["inputDeviceUID"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .map(|uid| format!("cpal:coreaudio:{uid}"))
+                })
+        });
+        let devices = device_options
+            .iter()
+            .map(|device| device.name.clone())
+            .collect();
         Ok(InputDeviceSelection {
             devices,
+            device_options,
             selected,
             unavailable,
         })
@@ -232,6 +241,16 @@ async fn show_workspace(page: String, app: tauri::AppHandle) -> Result<(), Strin
 }
 fn main() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .with_filter(|label| label == "main")
+                .build(),
+        )
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -343,6 +362,8 @@ fn main() {
             )
             .map_err(std::io::Error::other)?;
             app.manage(shared.clone());
+            let update_failure = lifecycle::take_update_failure(&data);
+            let update_failed = update_failure.is_some();
             feedback::initialize();
             let stopping = shared.clone();
             platform::set_stop_callback(Arc::new(move || {
@@ -436,7 +457,7 @@ fn main() {
                 .as_bool()
                 .unwrap_or(false)
             {
-                if !(has_tray && std::env::args().any(|a| a == "--background")) {
+                if update_failed || !(has_tray && std::env::args().any(|a| a == "--background")) {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.show();
                         let _ = window.set_focus();
@@ -447,6 +468,9 @@ fn main() {
                     .unwrap_or("parakeetUltra")
                     .to_string();
                 let _ = shared.send(Command::Prepare(model));
+            }
+            if let Some(message) = update_failure {
+                lifecycle::show_update_failure(app.handle(), message);
             }
             Ok(())
         })

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an isolated Pressay Preview installer. No release publication or signing credentials."""
+"""Build the isolated Pressay Preview app and installer."""
 from pathlib import Path
 import argparse
 import hashlib
