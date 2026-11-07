@@ -491,7 +491,7 @@ mod tests {
             scale: 2.,
         };
         let (p, s) = placement(top, 650.);
-        assert_eq!(s, [696, 1300]);
+        assert_eq!(s, [(WIDTH * 2.) as u32, 1300]);
         assert!(p[0] >= 12 && p[0] + s[0] as i32 <= 2868);
         assert!(p[1] >= 62);
         let bottom = Anchor {
