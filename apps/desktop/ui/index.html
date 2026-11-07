@@ -61,11 +61,7 @@
             <div class="hero-meta" id="hero-meta"></div>
             <p class="hero-note" id="hero-note" hidden></p>
             <div class="hero-actions" id="hero-actions" hidden>
-              <button id="hero-copy" type="button"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="9.5" height="10" rx="2" /><path d="M13 7V5a2 2 0 0 0-2-2H5.5a2 2 0 0 0-2 2v6.5a2 2 0 0 0 2 2H7" /></svg><span>Copy</span></button
-              ><button id="hero-paste" type="button"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4H5.5a2 2 0 0 0-2 2v9.5a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H13" /><rect x="7" y="2.5" width="6" height="3" rx="1" /><path d="m8 12 2 2 3.5-4" /></svg><span>Paste again</span></button>
-            </div>
-            <div class="hero-actions">
-              <button id="cancel" type="button" hidden>Cancel</button>
+              <button id="hero-copy" type="button"><svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="9.5" height="10" rx="2" /><path d="M13 7V5a2 2 0 0 0-2-2H5.5a2 2 0 0 0-2 2v6.5a2 2 0 0 0 2 2H7" /></svg><span>Copy</span></button>
             </div>
             <p class="hero-status" id="hero-status" role="status"></p>
           </div>
@@ -91,21 +87,28 @@
         </div>
         <div class="home-list-head history-filters">
           <h2 id="history-heading">Earlier</h2>
-          <label class="home-search">
-            <svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5" /><path d="m12.3 12.3 4.2 4.2" /></svg><input
+          <div class="home-search" role="search">
+            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5" /><path d="m12.3 12.3 4.2 4.2" /></svg
+            ><input
               id="history-search"
-              type="search"
+              type="text"
               placeholder="Search dictations"
               aria-label="Search dictations"
-            /><kbd class="history-search-key" aria-hidden="true">⌘F</kbd>
-          </label>
-          <label class="pin-filter"
-            ><input id="history-pinned" type="checkbox" />Pinned</label
-          >
+              autocomplete="off"
+              spellcheck="false"
+            /><button
+              id="clear-history-search"
+              type="button"
+              aria-label="Clear search"
+              hidden
+            >
+              ×</button
+            ><kbd class="history-search-key" aria-hidden="true">⌘F</kbd>
+          </div>
         </div>
         <div id="history" class="history"></div>
         <p id="history-retention" class="muted">
-          Dictations are kept for 30 days. Pinned and corrected ones stay.
+          Dictations are kept for 30 days. Corrected ones stay.
         </p>
       </section>
       <section data-panel="meetings" class="notes-page" hidden>

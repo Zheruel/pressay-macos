@@ -28,6 +28,7 @@ async function refreshAppMetadata(history) {
     );
     heroKey = "";
     historyKey = "";
+    historyIndex.clear();
     renderHistory(current.view);
   } catch {
   } finally {
@@ -84,7 +85,6 @@ $("readiness").onclick = () => openSetup();
 function openSetup() {
   return call("open_onboarding").catch(() => {});
 }
-$("cancel").onclick = () => call("cancel").catch(() => {});
 $("hero-copy").onclick = async () => {
   const record = current?.view.history[0];
   if (!record) return;
@@ -92,16 +92,6 @@ $("hero-copy").onclick = async () => {
     await call("copy_text", { text: record.correction || record.text });
     flashHeroStatus("Copied");
   } catch {}
-};
-$("hero-paste").onclick = async () => {
-  const record = current?.view.history[0];
-  if (!record) return;
-  flashHeroStatus("Returning to the original app…", 0);
-  try {
-    flashHeroStatus(await call("retry_dictation", { id: record.id }));
-  } catch (e) {
-    flashHeroStatus(String(e));
-  }
 };
 let heroStatusTimer;
 function flashHeroStatus(text, ms = 2400) {
@@ -458,7 +448,6 @@ function renderHero(s, data, ready) {
   $("keycap-hint").textContent = listening
     ? "Release to type"
     : `Hold ${data.shortcut || "your talk key"} to talk`;
-  $("cancel").hidden = !["starting", "recording", "processing", "polishing"].includes(s.stage);
   $("hero-wave").hidden = !listening;
   const record = s.history[0];
   let label, text, quiet = false;

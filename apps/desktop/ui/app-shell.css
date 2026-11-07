@@ -512,13 +512,6 @@ kbd,
   font: 500 11px -apple-system, sans-serif;
   box-shadow: inset 0 -1px 0 #00000059;
 }
-.pin-filter {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 12px;
-}
 .home .history {
   display: block;
 }
@@ -1163,28 +1156,6 @@ main > .notes-page {
   font-size: 10px;
   font-weight: 700;
 }
-.pin-filter {
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 13px;
-  cursor: pointer;
-}
-.pin-filter input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-.pin-filter:hover {
-  background: var(--raised);
-}
-.pin-filter:has(input:checked) {
-  background: var(--accentSurface);
-  color: var(--accent);
-  font-weight: 600;
-}
-.pin-filter:has(input:focus-visible) {
-  outline: 3px solid var(--accent);
-}
 .notes-side #recent-meetings-heading {
   display: none;
 }
@@ -1241,4 +1212,97 @@ main > .notes-page {
 .notes-page #meeting-clock {
   font-size: 15px;
   font-weight: 600;
+}
+
+/* ---------- Dictation search ---------- */
+.home-list-head h2 {
+  font-variant-numeric: tabular-nums;
+}
+.home .home-search {
+  position: relative;
+  width: 280px;
+  height: 32px;
+  padding: 0 8px 0 11px;
+  border-radius: 9px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--faint);
+  transition:
+    box-shadow 0.15s,
+    width 0.2s ease-out;
+}
+.home .home-search:hover {
+  background: var(--raised);
+}
+.home .home-search:focus-within {
+  width: 340px;
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.home-search input {
+  height: 30px;
+  font-size: 13px;
+}
+.home-search:focus-within kbd,
+.home-search:has(input:not(:placeholder-shown)) kbd {
+  display: none;
+}
+#clear-history-search {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  color: var(--base);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+#clear-history-search[hidden] {
+  display: none;
+}
+#clear-history-search:hover {
+  background: color-mix(in srgb, var(--text) 40%, transparent);
+}
+.home .history-row-text mark,
+.home .history-row-meta mark {
+  padding: 0 1px;
+  border-radius: 3px;
+  color: inherit;
+  background: color-mix(in srgb, var(--violet-2) 34%, transparent);
+}
+/* Searching hides the hero so results start at the top. */
+.home.searching .home-hero,
+.home.searching .week {
+  display: none;
+}
+.home.searching .home-list-head {
+  margin-top: 4px;
+}
+.history-more {
+  display: block;
+  margin: 14px auto 0;
+  min-height: 30px;
+  height: 30px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--raised-strong);
+  color: var(--muted);
+  font-weight: 500;
+}
+.history-more:hover {
+  color: var(--text);
+}
+.native-history-empty h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: var(--text);
+}
+.native-history-empty p {
+  margin: 0;
 }

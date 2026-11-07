@@ -590,6 +590,64 @@ function historyIcon(kind) {
   svg.append(path);
   return svg;
 }
+// Search folds case and accents, and every word must match somewhere in the
+// text or the app name. The folded text is cached per record, so typing only
+// scans strings, and the list renders in pages so long histories stay fast.
+const historyIndex = new Map();
+const HISTORY_PAGE = 100;
+let historyLimit = HISTORY_PAGE,
+  historyQuery = "";
+function foldText(text) {
+  return text
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase();
+}
+function searchTokens(query) {
+  return foldText(query).split(/\s+/u).filter(Boolean);
+}
+function historyHaystack(record) {
+  const app = historyAppName(record),
+    source = `${record.correction || ""}\u0000${record.text}\u0000${app}`;
+  let entry = historyIndex.get(record.id);
+  if (!entry || entry.source !== source) {
+    entry = {
+      source,
+      folded: foldText(
+        `${record.correction || record.text} ${record.raw} ${app}`,
+      ),
+    };
+    historyIndex.set(record.id, entry);
+  }
+  return entry.folded;
+}
+function historySignature(history) {
+  let signature = String(history.length);
+  for (const r of history)
+    signature += `|${r.id}:${(r.correction || "").length}:${r.legacy?.warning ? 1 : 0}`;
+  return signature;
+}
+function highlightInto(container, text, tokens) {
+  if (!tokens.length) {
+    container.textContent = text;
+    return;
+  }
+  const escaped = tokens
+    .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(`(${escaped.join("|")})`, "giu");
+  const parts = text.split(pattern);
+  container.replaceChildren(
+    ...parts.map((part, index) =>
+      index % 2 ? element("mark", part) : document.createTextNode(part),
+    ),
+  );
+}
+function setHistoryQuery(value) {
+  $("history-search").value = value;
+  historyLimit = HISTORY_PAGE;
+  renderHistory(current.view);
+}
 function renderHistory(s) {
   if (
     historyEditing &&
@@ -597,54 +655,61 @@ function renderHistory(s) {
   )
     return;
   historyEditing = null;
-  const query = $("history-search").value.toLocaleLowerCase();
-  const pinned = $("history-pinned").checked;
-  const key = JSON.stringify([
-    s.history,
+  const query = $("history-search").value.trim();
+  if (query !== historyQuery) {
+    historyQuery = query;
+    historyLimit = HISTORY_PAGE;
+  }
+  const key = [
+    historySignature(s.history),
     query,
-    pinned,
+    historyLimit,
     localDay(new Date()),
-    typeof appMetadata === "undefined" ? null : appMetadata,
-  ]);
+    typeof appMetadata === "undefined" ? 0 : Object.keys(appMetadata).length,
+  ].join("\u0001");
   if (key === historyKey) return;
   historyKey = key;
-  $("history").replaceChildren();
+  const searching = !!query,
+    tokens = searchTokens(query);
   $("clear-history").disabled = !s.history.length;
+  $("clear-history-search").hidden = !searching;
+  document
+    .querySelector('[data-panel="dictation"]')
+    .classList.toggle("searching", searching);
   // The newest dictation is the Home hero; the list starts after it unless
-  // the person is searching or filtering.
-  const filtering = !!query || pinned;
+  // the person is searching.
   document.querySelector(".history-filters").hidden =
-    !filtering && s.history.length < 2;
-  $("history-retention").hidden = s.history.length < 2;
-  const records = (filtering ? s.history : s.history.slice(1)).filter(
-    (r) =>
-      (!pinned || r.pinned) &&
-      `${r.text} ${r.correction || ""} ${r.raw} ${historyAppName(r)}`
-        .toLocaleLowerCase()
-        .includes(query),
-  );
-  $("history-heading").textContent = filtering
-    ? `${records.length} ${records.length === 1 ? "dictation" : "dictations"}`
+    !searching && s.history.length < 2;
+  $("history-retention").hidden = searching || s.history.length < 2;
+  const matches = searching
+    ? s.history.filter((r) => {
+        const haystack = historyHaystack(r);
+        return tokens.every((token) => haystack.includes(token));
+      })
+    : s.history.slice(1);
+  const records = matches.slice(0, historyLimit);
+  $("history-heading").textContent = searching
+    ? matches.length
+      ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "result" : "results"}`
+      : "No results"
     : records.length
       ? historyDay(records[0].created_at)
       : "Earlier";
-  if (!records.length && (filtering || !s.history.length)) {
+  $("history").replaceChildren();
+  if (!matches.length && (searching || !s.history.length)) {
     const empty = element("div", undefined, "native-history-empty");
     empty.append(
-      historyIcon("clock"),
       element(
         "h2",
-        s.history.length ? "Nothing matches" : "No dictations yet",
+        searching ? `Nothing matches “${query}”` : "No dictations yet",
       ),
       element(
         "p",
-        s.history.length
-          ? "Try another word or an app name."
-          : `Your dictations stay here for 30 days. Hold ${current.shortcut || "your shortcut"} in any app to get started.`,
+        searching
+          ? "Try fewer words, or search for an app name."
+          : `Hold ${current.shortcut || "your talk key"} in any app to get started.`,
       ),
     );
-    if (!s.history.length)
-      empty.append(element("kbd", current.shortcut || "Hold to dictate"));
     $("history").append(empty);
   }
   let groupTitle = null,
@@ -655,7 +720,8 @@ function renderHistory(s) {
       const section = element("section", undefined, "history-day");
       group = element("div", undefined, "history-day-rows");
       // The first day's title sits in the header row beside search.
-      if (groupTitle !== null || filtering) section.append(element("h3", title));
+      if (groupTitle !== null || searching)
+        section.append(element("h3", title));
       section.append(group);
       $("history").append(section);
       groupTitle = title;
@@ -684,17 +750,16 @@ function renderHistory(s) {
       icon.replaceChildren(image);
     }
     const content = element("div", undefined, "history-row-content");
-    const text = element("p", r.correction || r.text, "history-row-text");
-    const meta = [appName, r.pinned ? "Pinned" : "", r.correction ? "Corrected" : ""]
-      .filter(Boolean)
-      .join(", ");
+    const text = element("p", undefined, "history-row-text");
+    highlightInto(text, r.correction || r.text, tokens);
     content.append(text);
-    if (filtering) content.append(element("p", meta, "history-row-meta"));
+    if (searching) {
+      const meta = element("p", undefined, "history-row-meta");
+      highlightInto(meta, appName, tokens);
+      content.append(meta);
+    }
     const warning = dictationWarning(r);
     if (warning) content.append(warningNote(warning));
-    const pasteStatus = element("small", "", "history-row-status");
-    pasteStatus.setAttribute("role", "status");
-    content.append(pasteStatus);
     const copy = button(
       "",
       async () => {
@@ -719,21 +784,6 @@ function renderHistory(s) {
       });
     actions.append(
       act("Copy", () => call("copy_text", { text: r.correction || r.text })),
-      act("Paste again", async () => {
-        pasteStatus.textContent = "Returning to the original application…";
-        try {
-          pasteStatus.textContent = await call("retry_dictation", { id: r.id });
-        } catch (e) {
-          pasteStatus.textContent = String(e);
-        }
-      }),
-      act(r.pinned ? "Unpin" : "Pin", () =>
-        call("edit_dictation", {
-          id: r.id,
-          pinned: !r.pinned,
-          correction: null,
-        }),
-      ),
       act("Correct", () => {
         if (historyEditing) return;
         historyEditing = r.id;
@@ -821,9 +871,20 @@ function renderHistory(s) {
       menu.open = true;
       summary.focus();
     };
-    if (!filtering) icon.title = appName;
+    if (!searching) icon.title = appName;
     article.append(time, icon, content, copy, menu);
     group.append(article);
+  }
+  if (matches.length > records.length) {
+    const more = button(
+      `Show ${Math.min(HISTORY_PAGE, matches.length - records.length)} more`,
+      () => {
+        historyLimit += HISTORY_PAGE;
+        renderHistory(current.view);
+      },
+      "history-more",
+    );
+    $("history").append(more);
   }
 }
 function dictationWarning(record) {
@@ -2093,8 +2154,31 @@ function setupWorkspace() {
       return;
     await call("clear_history").catch(() => {});
   };
-  for (const id of ["history-search", "history-pinned"])
-    $(id).addEventListener("input", () => renderHistory(current.view));
+  let searchFrame = 0;
+  $("history-search").addEventListener("input", () => {
+    // One render per frame, however fast the person types.
+    cancelAnimationFrame(searchFrame);
+    searchFrame = requestAnimationFrame(() => {
+      historyLimit = HISTORY_PAGE;
+      renderHistory(current.view);
+      document.querySelector("main").scrollTop = 0;
+    });
+  });
+  $("history-search").addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    if ($("history-search").value) setHistoryQuery("");
+    else $("history-search").blur();
+  });
+  document.querySelector(".home-search").onpointerdown = (event) => {
+    if (event.target.closest("input, button")) return;
+    event.preventDefault();
+    $("history-search").focus();
+  };
+  $("clear-history-search").onclick = () => {
+    setHistoryQuery("");
+    $("history-search").focus();
+  };
   document.querySelector(".history-search-key").textContent =
     current.platform === "macos" ? "⌘F" : "Ctrl F";
   document.addEventListener("keydown", (event) => {
@@ -2105,6 +2189,7 @@ function setupWorkspace() {
     ) {
       event.preventDefault();
       $("history-search").focus();
+      $("history-search").select();
     }
   });
   $("notes-search").oninput = () => renderNotes(current.view);
