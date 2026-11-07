@@ -11,6 +11,10 @@ pressay_asr *pressay_asr_load(const char *library, const char *model, int orukee
 // partial text; the caller must split/retry instead of silently accepting it.
 int pressay_asr_run(pressay_asr *, const float *, size_t, const char **text,
                     char *error, size_t error_size);
+// Optional language and explicit formatting for the portable secondary models.
+// The original entry point above remains ABI-compatible with the Swift worker.
+int pressay_asr_run_options(pressay_asr *, const float *, size_t, const char *language,
+                           int formatting, const char **text, char *error, size_t error_size);
 void pressay_asr_free(pressay_asr *);
 #ifdef __cplusplus
 }

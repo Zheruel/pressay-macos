@@ -1,0 +1,234 @@
+name: Signed desktop release
+
+# Separate from the stable Swift release. Dispatching builds signed artifacts;
+# publishing onto an existing versioned release is a second, explicit choice.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub release tag used in download URLs
+        required: true
+        type: string
+      publish:
+        description: Upload desktop assets and update the permanent desktop feed
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signed-desktop-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Signed ${{ matrix.platform }} desktop
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-26
+            bundles: app
+          - platform: windows-x86_64
+            runner: windows-2025
+            bundles: nsis
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+            bundles: appimage,deb
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write # Azure Artifact Signing uses OIDC, not an exported certificate.
+    env:
+      PRESSAY_UPDATE_PUBLIC_KEY: ${{ vars.PRESSAY_UPDATE_PUBLIC_KEY }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      PRESSAY_AZURE_SIGNING_ENDPOINT: ${{ vars.PRESSAY_AZURE_SIGNING_ENDPOINT }}
+      PRESSAY_AZURE_SIGNING_ACCOUNT: ${{ vars.PRESSAY_AZURE_SIGNING_ACCOUNT }}
+      PRESSAY_AZURE_CERTIFICATE_PROFILE: ${{ vars.PRESSAY_AZURE_CERTIFICATE_PROFILE }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install pinned packaging tools
+        shell: bash
+        run: |
+          npm ci --prefix apps/desktop
+          python -m pip install -r packaging/desktop/requirements.txt
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+      - name: Verify updater signing key before building
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: python scripts/package-desktop-release.py preflight --output .build/desktop-release-config.json
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libxkbcommon-dev libdbus-1-dev dbus-daemon libfuse2t64 patchelf xvfb xauth
+      - name: Install Mac Metal compiler
+        if: runner.os == 'macOS'
+        run: |
+          if ! xcrun metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+      - name: Import Developer ID and notarization credentials
+        if: runner.os == 'macOS'
+        env:
+          DESKTOP_APPLE_CERTIFICATE: ${{ secrets.DESKTOP_APPLE_CERTIFICATE }}
+          DESKTOP_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.DESKTOP_APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          for NAME in DESKTOP_APPLE_CERTIFICATE DESKTOP_APPLE_CERTIFICATE_PASSWORD APPLE_NOTARY_KEY APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER; do
+            [[ -n "${!NAME}" ]] || { echo "Missing $NAME" >&2; exit 1; }
+          done
+          umask 077
+          KEYCHAIN="$RUNNER_TEMP/desktop-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          CERTIFICATE="$RUNNER_TEMP/desktop-signing.p12"
+          NOTARY_KEY="$RUNNER_TEMP/desktop-notary.p8"
+          trap 'rm -f "$CERTIFICATE" "$NOTARY_KEY"' EXIT
+          printf '%s' "$DESKTOP_APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "DESKTOP_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERTIFICATE" -k "$KEYCHAIN" -P "$DESKTOP_APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+          [[ -n "$IDENTITY" ]] || { echo 'A Developer ID Application identity is required.' >&2; exit 1; }
+          printf '%s' "$APPLE_NOTARY_KEY" > "$NOTARY_KEY"
+          xcrun notarytool store-credentials pressay-desktop --key "$NOTARY_KEY" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --keychain "$KEYCHAIN" >/dev/null
+          {
+            echo "APPLE_SIGNING_IDENTITY=$IDENTITY"
+            echo 'PRESSAY_NOTARY_PROFILE=pressay-desktop'
+            echo "PRESSAY_NOTARY_KEYCHAIN=$KEYCHAIN"
+          } >> "$GITHUB_ENV"
+      - name: Run workspace tests
+        shell: bash
+        run: cargo test --workspace --locked
+      - name: Verify native X11 insertion and clipboard preservation
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cargo test -p pressay-desktop --locked x11_insertion -- --ignored
+      - name: Build runtime resources and all workers
+        shell: bash
+        run: python scripts/build-desktop.py --no-bundle
+      - name: Build desktop with the configured updater key
+        working-directory: apps/desktop
+        shell: bash
+        run: node node_modules/@tauri-apps/cli/tauri.js build --ci --no-bundle --config ../../.build/desktop-release-config.json
+      - name: Generate Windows native signing catalog
+        if: runner.os == 'Windows'
+        shell: bash
+        run: python scripts/package-desktop-release.py windows-catalog --output .build/windows-signing-files.txt
+      - name: Authenticate to Azure Artifact Signing using OIDC
+        if: runner.os == 'Windows'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ vars.PRESSAY_AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.PRESSAY_AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.PRESSAY_AZURE_SUBSCRIPTION_ID }}
+      - name: Sign Windows workers and native libraries
+        if: runner.os == 'Windows'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        with:
+          endpoint: ${{ vars.PRESSAY_AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.PRESSAY_AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.PRESSAY_AZURE_CERTIFICATE_PROFILE }}
+          files-catalog: ${{ github.workspace }}/.build/windows-signing-files.txt
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Bundle installers (Windows hook signs main app and uninstaller)
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          BUNDLES: ${{ matrix.bundles }}
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: node node_modules/@tauri-apps/cli/tauri.js bundle --ci --bundles "$BUNDLES" --config ../../.build/desktop-release-config.json
+      - name: Notarize Mac installer and sign final updater artifacts
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: python scripts/package-desktop-release.py package --tag "$RELEASE_TAG" --output .build/desktop-release
+      - uses: actions/upload-artifact@v6
+        with:
+          name: desktop-${{ matrix.platform }}
+          path: .build/desktop-release/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove temporary Apple keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          if [[ -n "${DESKTOP_KEYCHAIN:-}" ]]; then security delete-keychain "$DESKTOP_KEYCHAIN" || true; fi
+
+  manifest:
+    name: Verify every platform and assemble update feed
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      PRESSAY_UPDATE_PUBLIC_KEY: ${{ vars.PRESSAY_UPDATE_PUBLIC_KEY }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: desktop-*
+          path: .build/desktop-release
+          merge-multiple: true
+      - run: python -m pip install -r packaging/desktop/requirements.txt
+      - run: python scripts/package-desktop-release.py manifest --tag "$RELEASE_TAG" --output .build/desktop-release
+      - uses: actions/upload-artifact@v6
+        with:
+          name: desktop-release-verified
+          path: |
+            .build/desktop-release/Pressay-Desktop-*
+            .build/desktop-release/desktop-latest.json
+            .build/desktop-release/DESKTOP-SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Attach desktop artifacts and update permanent feed
+    if: inputs.publish
+    needs: manifest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: desktop-release-verified
+          path: desktop-release
+      - name: Verify destination and upload immutable artifacts before the feed
+        run: |
+          [[ "$RELEASE_TAG" != desktop-updates ]] || { echo 'Select a versioned release for installer assets.' >&2; exit 1; }
+          [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == false ]] || { echo 'The selected versioned release must already be published.' >&2; exit 1; }
+          gh release upload "$RELEASE_TAG" desktop-release/Pressay-Desktop-* desktop-release/DESKTOP-SHA256SUMS
+          if ! gh release view desktop-updates >/dev/null 2>&1; then
+            gh release create desktop-updates --latest=false --title 'Pressay desktop update feed' --notes 'Permanent signed desktop updater feed. Installers remain on their versioned releases. This release does not replace the latest native Swift release.'
+          fi
+          gh release upload desktop-updates desktop-release/desktop-latest.json --clobber

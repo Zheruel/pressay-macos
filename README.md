@@ -174,6 +174,30 @@ myRepository <= my repository
 
 The dictionary starts empty and only contains words you add. Pressay does not learn from corrections or scan your history for new entries. Remove words from their context menu at any time.
 
+## Cross-platform app
+
+Pressay now ships as a shared Rust core and Tauri app for macOS,
+Windows and Linux: local dictation, history/audio, vocabulary, optional Claude
+and ChatGPT cleanup, voice notes, live meetings with speaker separation, meeting
+write-ups, action items and Ask Notes. It includes guided permission setup with
+real practice dictation, configurable hold keys, call-bound automatic stopping,
+launch at login, retention and signed-update integration. Background recognition
+starts at speech pauses; the original trim rules, sounds and live overlay are
+preserved. The catalog includes five recommended models and four Other models,
+with Orukeet and Mega-ASR retained on Mac. Linux includes X11 and consent-based
+Wayland portal paths. Dictation stops and transcribes automatically at five
+minutes; meetings support up to eight hours.
+
+It uses the `dev.localflow.app` identity and installs in place of the Swift app,
+but keeps its own data store and credential entries; the Swift app's data is
+left untouched for rollback. Implemented features do not mean
+all platforms have passed physical-device and clean-install acceptance. Wayland
+requires compatible portals and explicit current-cursor insertion consent;
+model availability and native integrations vary by platform. See the
+[build instructions](apps/desktop/README.md),
+[architecture decision](docs/architecture/001-shared-rust-core.md), and
+[validation record](docs/cross-platform-validation.md).
+
 ## Development
 
 ```bash

@@ -1,0 +1,2 @@
+# Verify Tauri/Minisign Ed25519 signatures using libsodium, not custom crypto.
+PyNaCl==1.6.2

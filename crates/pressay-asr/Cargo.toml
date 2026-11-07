@@ -1,0 +1,25 @@
+[package]
+name = "pressay-asr"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Isolated, portable adapter for Pressay's existing native speech runtimes"
+
+[lib]
+name = "pressay_asr"
+
+[[bin]]
+name = "pressay-asr-worker"
+path = "src/main.rs"
+
+[[bin]]
+name = "pressay-analysis-worker"
+path = "src/analysis_main.rs"
+
+[dependencies]
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+cc = "1"

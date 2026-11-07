@@ -8,6 +8,13 @@ VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/
 TOOLS="${SPARKLE_TOOLS_DIR:?Set SPARKLE_TOOLS_DIR to Sparkle's bin directory}"
 KEY="${SPARKLE_KEY_FILE:?Set SPARKLE_KEY_FILE to the private update key file}"
 
+codesign --verify --deep --strict "$APP"
+if [[ "${PRESSAY_NOTARIZE:-0}" == 1 ]]; then
+    # The update archive must contain the same stapled app as the DMG.
+    xcrun stapler validate "$APP"
+    spctl --assess --type execute --verbose=2 "$APP"
+fi
+
 mkdir -p "$OUTPUT"
 rm -f "$OUTPUT/Pressay-macos-arm64.zip" "$OUTPUT/appcast.xml"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUTPUT/Pressay-macos-arm64.zip"

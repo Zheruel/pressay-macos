@@ -1,0 +1,511 @@
+/* Native OnboardingWindow.swift geometry, typography and single-column flow. */
+#onboarding {
+  width: 540px;
+  max-width: calc(100vw - 24px);
+  height: 720px;
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--base);
+  color: var(--text);
+  box-shadow: 0 20px 70px #0004;
+  overflow: hidden;
+}
+#onboarding::backdrop {
+  background: #0003;
+  backdrop-filter: none;
+}
+#onboarding .setup-native {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 49px 39px 27px;
+  position: relative;
+}
+#onboarding .setup-symbols {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+#onboarding #close-setup {
+  position: absolute;
+  left: 12px;
+  top: 9px;
+  right: auto;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 22px;
+}
+#onboarding .setup-native-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 27px;
+  padding: 0;
+  border: 0;
+}
+#onboarding .setup-native-header img {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+}
+#onboarding #setup-step-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  color: var(--muted);
+}
+#onboarding h1 {
+  margin: 0;
+  font-size: 31px;
+  font-weight: 600;
+  line-height: 1.16;
+  letter-spacing: -0.8px;
+}
+#onboarding #setup-description {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 20px;
+  max-width: none;
+}
+#onboarding .setup-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 25px 0 8px;
+  scrollbar-width: none;
+}
+#onboarding .setup-scroll::-webkit-scrollbar {
+  display: none;
+}
+#onboarding section {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#onboarding .setup-group {
+  background: var(--surface);
+  border: 0;
+  border-radius: 11px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+#onboarding section.setup-welcome {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+#onboarding .setup-explanation {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+#onboarding svg:not(.setup-symbols) {
+  width: 23px;
+  height: 23px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#onboarding h2 {
+  margin: 0 0 5px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0;
+}
+#onboarding .setup-explanation p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 15px;
+}
+#onboarding .setup-permission-card,
+#onboarding .setup-model-card {
+  padding: 22px;
+}
+#onboarding .setup-permission-heading,
+#onboarding .setup-model-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#onboarding .setup-permission-heading {
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+#onboarding .setup-permission-heading svg {
+  width: 28px;
+  height: 28px;
+}
+#onboarding #setup-permission-status {
+  color: var(--warning);
+  font-size: 12px;
+}
+#onboarding #setup-permission-status.allowed,
+#onboarding .setup-success,
+#onboarding #setup-model-ready {
+  color: var(--success);
+}
+#onboarding #setup-permission-instructions {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+#onboarding button {
+  width: auto;
+  min-height: 32px;
+  border: 1px solid var(--strong);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--button);
+  box-shadow: none;
+}
+#onboarding button.primary {
+  background: var(--accent);
+  color: var(--accentText);
+}
+#onboarding button.quiet {
+  border-color: transparent;
+  background: transparent;
+  padding-inline: 8px;
+}
+#onboarding button:disabled {
+  opacity: 0.45;
+}
+#onboarding button:focus-visible,
+#onboarding select:focus-visible,
+#onboarding input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+#onboarding .setup-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+#onboarding #platform-note {
+  margin: 20px 0 12px;
+}
+#onboarding .setup-recovery {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 12px 0 0;
+}
+#onboarding #setup-model {
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  color: var(--text);
+  background-color: var(--surface);
+  border: 0;
+  padding: 0 18px 0 0;
+  height: auto;
+}
+#onboarding #setup-model-size {
+  display: none;
+}
+#onboarding #setup-model-status {
+  margin-top: 14px;
+}
+#onboarding #setup-prepare {
+  margin-top: 14px;
+}
+#onboarding .download {
+  margin-top: 14px;
+  padding: 0;
+  background: transparent;
+}
+#onboarding .download-label {
+  font-size: 11px;
+  margin: 8px 0 0;
+}
+#onboarding progress {
+  width: 100%;
+  height: 5px;
+  accent-color: var(--accent);
+}
+#onboarding .setup-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 58px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+#onboarding .setup-setting strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+#onboarding .setup-setting p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+#onboarding #setup-shortcut {
+  flex-shrink: 0;
+  max-width: 180px;
+}
+#onboarding #setup-shortcut-status:empty {
+  display: none;
+}
+#onboarding .setup-switch {
+  position: relative;
+  width: 32px;
+  height: 19px;
+  flex-shrink: 0;
+  margin: 0;
+}
+#onboarding .setup-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+#onboarding .setup-switch span {
+  display: block;
+  width: 32px;
+  height: 19px;
+  border-radius: 10px;
+  background: var(--strong);
+  pointer-events: none;
+}
+#onboarding .setup-switch span::after {
+  content: "";
+  display: block;
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px #0003;
+}
+#onboarding .setup-switch input:checked + span {
+  background: var(--accent);
+}
+#onboarding .setup-switch input:checked + span::after {
+  left: 15px;
+}
+#onboarding .setup-switch input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+#onboarding .setup-microphone-note {
+  margin-top: 20px;
+}
+#onboarding .setup-practice-prompt {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  margin: 0 0 14px;
+}
+#onboarding #practice {
+  display: block;
+  height: 150px;
+  min-height: 150px;
+  width: 100%;
+  resize: none;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid var(--strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font:
+    17px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+#onboarding #practice-status,
+#onboarding #setup-practice-evidence {
+  margin-bottom: 14px;
+}
+#onboarding .setup-footer {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 0;
+  margin: 8px 0 0;
+  border: 0;
+}
+#onboarding .setup-footer > span {
+  flex: 1;
+}
+#onboarding .setup-progress {
+  display: flex;
+  gap: 5px;
+  margin-top: 24px;
+  flex-shrink: 0;
+}
+#onboarding .setup-progress i {
+  height: 3px;
+  flex: 1;
+  border-radius: 3px;
+  background: var(--line);
+}
+#onboarding .setup-progress i.complete {
+  background: var(--accent);
+}
+#onboarding .setup-error {
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 14px 0 0;
+}
+#onboarding .setup-error:empty {
+  display: none;
+}
+#onboarding .setup-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 560px) {
+  #onboarding .setup-native {
+    padding-inline: 24px;
+  }
+  #onboarding h1 {
+    font-size: 28px;
+  }
+}
+
+#onboarding #setup-title:focus {
+  outline: none;
+}
+#onboarding #setup-permission-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 4px 9px;
+  border-radius: 20px;
+  background: #faf1df;
+}
+#onboarding #setup-permission-status::before {
+  content: "●";
+  font-size: 7px;
+}
+#onboarding #setup-permission-status.allowed {
+  background: #eaf5ef;
+}
+#onboarding #setup-permission-status.allowed::before {
+  content: "✓";
+  font-size: 9px;
+}
+#onboarding #setup-practice-evidence.setup-success {
+  font-size: 13px;
+  font-weight: 500;
+}
+@media (prefers-color-scheme: dark) {
+  #onboarding #setup-permission-status {
+    background: #393227;
+  }
+  #onboarding #setup-permission-status.allowed {
+    background: #293c34;
+  }
+}
+#onboarding .setup-model-card + .setup-setting,
+#onboarding .setup-setting + #setup-shortcut-status + .setup-setting {
+  margin-top: 20px;
+}
+#onboarding #platform-note {
+  margin-bottom: 20px;
+}
+#onboarding #setup-permission-recovery {
+  margin-top: 20px;
+}
+
+#onboarding #setup-practice-evidence.setup-success {
+  color: var(--success);
+}
+#onboarding .setup-practice-microphone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+#onboarding .setup-practice-microphone svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+}
+#onboarding .setup-practice-microphone #practice-status {
+  margin: 0;
+}
+#onboarding .setup-practice-microphone.is-live {
+  color: var(--success);
+}
+
+/* The dedicated native setup window reuses only this view, not the main shell. */
+body.onboarding-window {
+  display: block;
+  width: 100vw;
+  min-width: 0;
+  height: 100dvh;
+  margin: 0;
+  overflow: hidden;
+  background: var(--base);
+}
+body.onboarding-window > :not(#onboarding) {
+  display: none !important;
+}
+body.onboarding-window #onboarding {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+body.onboarding-window #onboarding::backdrop {
+  background: var(--base);
+}
+body.onboarding-window #close-setup {
+  display: none;
+}
+body.onboarding-window #onboarding .setup-native {
+  padding: 50px 40px 28px;
+}
+@media (max-width: 500px) {
+  body.onboarding-window #onboarding .setup-native {
+    padding-inline: 24px;
+  }
+}
+body.onboarding-window #onboarding h1 {
+  font-size: 31px;
+}

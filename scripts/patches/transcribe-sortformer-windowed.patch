@@ -1,0 +1,190 @@
+diff --git a/src/arch/sortformer/model.cpp b/src/arch/sortformer/model.cpp
+index 09eb445..7109802 100644
+--- a/src/arch/sortformer/model.cpp
++++ b/src/arch/sortformer/model.cpp
+@@ -746,13 +746,15 @@ transcribe_status run_diar_streaming_core(DiarStreamScratch &            sc,
+                                           const float *                  mel_buf,
+                                           int                            mel_n_mels,
+                                           int                            mel_n_frames,
+-                                          transcribe::SessionCore *      abort_session) {
++                                          transcribe::SessionCore *      abort_session,
++                                          const transcribe::MelFrontend *frontend,
++                                          const float *pcm, size_t n_samples) {
+     const int ed       = chp.enc_d_model;
+     const int n_spk    = hp.max_speakers;
+     const int sub      = hp.enc_subsampling_factor;
+     const int feat_len = mel_n_frames;
+ 
+-    if (sub <= 0 || P.chunk_len <= 0 || sched == nullptr || mel_buf == nullptr) {
++    if (sub <= 0 || P.chunk_len <= 0 || sched == nullptr || (mel_buf == nullptr && (frontend == nullptr || pcm == nullptr))) {
+         return TRANSCRIBE_ERR_INVALID_ARG;
+     }
+     sc.stream.reset(ed);
+@@ -822,10 +824,19 @@ transcribe_status run_diar_streaming_core(DiarStreamScratch &            sc,
+ 
+         // Mel window [n_mels, M] from full mel [n_mels, feat_len], cols
+         // [win_lo, win_hi). ggml ne=[M, n_mels] -> offset mel*M + col.
+-        sc.chunk_mel_buf.resize(static_cast<size_t>(mel_n_mels) * M);
+-        for (int mel = 0; mel < mel_n_mels; ++mel) {
+-            const float * src = mel_buf + static_cast<size_t>(mel) * feat_len + win_lo;
+-            std::copy(src, src + M, sc.chunk_mel_buf.data() + static_cast<size_t>(mel) * M);
++        if (frontend != nullptr) {
++            const transcribe_status status = frontend->compute_window(pcm, n_samples, win_lo, M,
++                                                                       sc.chunk_mel_buf, n_threads);
++            if (status != TRANSCRIBE_OK) {
++                transcribe::debug::pop_name_prefix();
++                return status;
++            }
++        } else {
++            sc.chunk_mel_buf.resize(static_cast<size_t>(mel_n_mels) * M);
++            for (int mel = 0; mel < mel_n_mels; ++mel) {
++                const float * src = mel_buf + static_cast<size_t>(mel) * feat_len + win_lo;
++                std::copy(src, src + M, sc.chunk_mel_buf.data() + static_cast<size_t>(mel) * M);
++            }
+         }
+ 
+         ggml_backend_sched_reset(sched);
+@@ -916,7 +927,8 @@ static transcribe_status run_streaming(SortformerSession *          pc,
+                                        int                          mel_n_frames,
+                                        double                       ms_per_frame,
+                                        transcribe_sortformer_preset preset,
+-                                       DiarizeProbs &               out) {
++                                       DiarizeProbs &               out,
++                                       const float *pcm = nullptr, size_t n_samples = 0) {
+     const SortformerStreamParams P = resolve_stream_params(pm->hparams, preset);
+     if (const transcribe_status st = ensure_sched(pc, pm); st != TRANSCRIBE_OK) {
+         return st;
+@@ -925,7 +937,8 @@ static transcribe_status run_streaming(SortformerSession *          pc,
+     const int64_t           t_stream_start = ggml_time_us();
+     const transcribe_status st = run_diar_streaming_core(pc->scratch, pm->hparams, pm->conformer_hp, pm->conformer,
+                                                          pm->weights, pm->backend.c_str(), pc->sched, pc->n_threads, P,
+-                                                         pc->mel_buf.data(), mel_n_mels, mel_n_frames, pc);
++                                                         pc->mel_buf.data(), mel_n_mels, mel_n_frames, pc,
++                                                         pcm ? &*pm->mel : nullptr, pcm, n_samples);
+     if (st != TRANSCRIBE_OK) {
+         return st;
+     }
+@@ -963,11 +976,18 @@ static transcribe_status diarize_pcm(SortformerSession *          pc,
+     if (!pm->mel.has_value()) {
+         return TRANSCRIBE_ERR_INVALID_ARG;
+     }
+-    int mel_n_mels = 0, mel_n_frames = 0;
+-    if (const transcribe_status mst =
+-            pm->mel->compute(pcm, static_cast<size_t>(n_samples), pc->mel_buf, mel_n_mels, mel_n_frames);
+-        mst != TRANSCRIBE_OK) {
+-        return mst;
++    int mel_n_mels = pm->mel->num_mels();
++    int mel_n_frames = pm->mel->n_frames_for(static_cast<size_t>(n_samples));
++    // Product path computes bounded, context-exact mel windows in the same
++    // streaming loop. Full-clip mel is retained only for explicit debug dumps.
++    const bool offline_dump = transcribe::debug::enabled() &&
++                              std::getenv("TRANSCRIBE_SORTFORMER_OFFLINE_DUMP") != nullptr;
++    if (offline_dump) {
++        const transcribe_status status = pm->mel->compute(pcm, static_cast<size_t>(n_samples),
++                                                         pc->mel_buf, mel_n_mels, mel_n_frames);
++        if (status != TRANSCRIBE_OK) return status;
++    } else {
++        std::vector<float>().swap(pc->mel_buf);
+     }
+ 
+     const double ms_per_frame =
+@@ -978,14 +998,15 @@ static transcribe_status diarize_pcm(SortformerSession *          pc,
+     // attention over the WHOLE clip — fine for the short oracle, but it would
+     // OOM on the many-minute audio the DER runner feeds (which also enables
+     // dumping, to read diar.probs). The streaming path is always the product.
+-    if (transcribe::debug::enabled() && std::getenv("TRANSCRIBE_SORTFORMER_OFFLINE_DUMP") != nullptr) {
++    if (offline_dump) {
+         if (const transcribe_status st = run_offline_forward(pc, pm, mel_n_frames); st != TRANSCRIBE_OK) {
+             return st;
+         }
+     }
+ 
+     // Streaming AOSC/FIFO forward drives the product output + diar.probs.
+-    return run_streaming(pc, pm, mel_n_mels, mel_n_frames, ms_per_frame, preset, out);
++    return run_streaming(pc, pm, mel_n_mels, mel_n_frames, ms_per_frame, preset, out,
++                         offline_dump ? nullptr : pcm, static_cast<size_t>(n_samples));
+ }
+ 
+ // Kind+slot probe: the operating-point preset on the DIARIZE_RUN slot.
+@@ -1088,3 +1109,6 @@ extern "C" void transcribe_sortformer_diarize_ext_init(struct transcribe_sortfor
+     p->ext.kind = TRANSCRIBE_EXT_KIND_SORTFORMER_DIARIZE;
+     p->preset   = TRANSCRIBE_SORTFORMER_PRESET_DEFAULT;
+ }
++
++// Pressay verifies this capability before permitting long-recording analysis.
++extern "C" TRANSCRIBE_API int pressay_sortformer_windowed_frontend_version() { return 1; }
+diff --git a/src/arch/sortformer/sortformer.h b/src/arch/sortformer/sortformer.h
+index a9cb6a2..e834f76 100644
+--- a/src/arch/sortformer/sortformer.h
++++ b/src/arch/sortformer/sortformer.h
+@@ -245,6 +245,9 @@ transcribe_status run_diar_streaming_core(DiarStreamScratch &
+                                           const float *                                 mel_buf,
+                                           int                                           mel_n_mels,
+                                           int                                           mel_n_frames,
+-                                          transcribe::SessionCore *                     abort_session);
++                                          transcribe::SessionCore *                     abort_session,
++                                          const transcribe::MelFrontend *               frontend = nullptr,
++                                          const float *                                 pcm = nullptr,
++                                          size_t                                        n_samples = 0);
+ 
+ }  // namespace transcribe::sortformer
+diff --git a/src/transcribe-mel.cpp b/src/transcribe-mel.cpp
+index af4e23c..19111cd 100644
+--- a/src/transcribe-mel.cpp
++++ b/src/transcribe-mel.cpp
+@@ -373,6 +373,36 @@ int MelFrontend::n_frames_for(size_t n_samples) const {
+     return static_cast<int>(n_samples / static_cast<size_t>(cfg_.hop_length)) + 1;
+ }
+ 
++transcribe_status MelFrontend::compute_window(const float *pcm, size_t n_samples,
++                                               int first_frame, int count,
++                                               std::vector<float> &out_mel, int n_threads) const {
++    if (pcm == nullptr || cfg_.normalize != "none" || cfg_.pad_mode != "constant" ||
++        cfg_.hop_length <= 0 || first_frame < 0 || count <= 0 ||
++        first_frame > n_frames_for(n_samples) - count) {
++        return TRANSCRIBE_ERR_INVALID_ARG;
++    }
++    // Align the local origin to the global hop grid. More than half an FFT
++    // of real context on both sides means neither artificial local padding
++    // nor the local first pre-emphasis sample can affect a returned frame.
++    const int context = (cfg_.n_fft / 2 + 1 + cfg_.hop_length - 1) / cfg_.hop_length;
++    const int local_first = std::max(0, first_frame - context);
++    const size_t begin = static_cast<size_t>(local_first) * cfg_.hop_length;
++    const size_t end = std::min(n_samples,
++        static_cast<size_t>(first_frame + count + context) * cfg_.hop_length);
++    std::vector<float> local;
++    int n_mels = 0, n_frames = 0;
++    const transcribe_status status = compute(pcm + begin, end - begin, local, n_mels, n_frames, n_threads);
++    if (status != TRANSCRIBE_OK) return status;
++    const int offset = first_frame - local_first;
++    if (offset + count > n_frames) return TRANSCRIBE_ERR_INVALID_ARG;
++    out_mel.resize(static_cast<size_t>(n_mels) * count);
++    for (int mel = 0; mel < n_mels; ++mel) {
++        const float *row = local.data() + static_cast<size_t>(mel) * n_frames + offset;
++        std::copy(row, row + count, out_mel.data() + static_cast<size_t>(mel) * count);
++    }
++    return TRANSCRIBE_OK;
++}
++
+ transcribe_status MelFrontend::compute(const float *        pcm,
+                                        size_t               n_samples,
+                                        std::vector<float> & out_mel,
+diff --git a/src/transcribe-mel.h b/src/transcribe-mel.h
+index 49abaef..3fb4863 100644
+--- a/src/transcribe-mel.h
++++ b/src/transcribe-mel.h
+@@ -166,6 +166,14 @@ class MelFrontend {
+                               int                  n_threads  = 0,
+                               int                  out_frames = 0) const;
+ 
++    // Context-exact bounded frontend for Sortformer (normalize=none,
++    // constant center padding). Compute only [first_frame, first_frame+count)
++    // of the whole clip; internal context includes the pre-emphasis predecessor.
++    transcribe_status compute_window(const float *pcm, size_t n_samples,
++                                     int first_frame, int count,
++                                     std::vector<float> &out_mel,
++                                     int n_threads = 0) const;
++
+     // Number of mel bins (matches MelConfig::num_mels).
+     int num_mels() const { return cfg_.num_mels; }
+ 

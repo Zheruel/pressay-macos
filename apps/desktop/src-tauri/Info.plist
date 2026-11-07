@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Pressay captures the other side of a meeting only while you record it. Audio is transcribed on this device.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Pressay uses your microphone while you dictate or record a meeting. Speech is recognized on this device.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Pressay adds the action items you choose to your Reminders list.</string>
+</dict>
+</plist>

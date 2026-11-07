@@ -63,3 +63,18 @@ The `Config/Sounds/*.wav` earcons are synthesized by Pressay's own `scripts/gene
 ## Apple frameworks
 
 Pressay uses system frameworks including SwiftUI, AppKit, AVFoundation, Accessibility, SwiftData, ServiceManagement, and Foundation Models. Their use is governed by the applicable Apple SDK and platform terms; these frameworks are not redistributed by this repository.
+
+## Cross-platform preview
+
+The experimental desktop shell uses Tauri 2 and its global-shortcut/single-instance
+plugins (MIT/Apache-2.0), CPAL (Apache-2.0), Rubato (MIT), Enigo (MIT), and Arboard
+(MIT/Apache-2.0). The Rust core uses Tokio, Reqwest, Rusqlite/SQLite, Serde, Regex,
+SHA-2, Tempfile and UUID under their respective upstream licenses. Exact versions
+and sources are recorded in `Cargo.lock`; these dependencies remain independent
+of the shipping Swift UI.
+
+The portable worker reuses the existing pinned transcribe.cpp C API and runtime,
+not a model implementation rewritten in Rust. The portable runtime builder copies
+the transcribe.cpp and ggml license files into each bundled runtime directory.
+Optimized Orukeet on Mac retains the upstream runtime archive and its notices.
+Model weights are downloaded separately and retain their existing licenses.

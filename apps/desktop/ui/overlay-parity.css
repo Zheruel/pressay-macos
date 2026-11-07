@@ -1,0 +1,346 @@
+:root {
+  color-scheme: dark;
+  font:
+    12.5px -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  --band: 32px;
+  --gap: 0px;
+  --shoulder: 7px;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+}
+[hidden] {
+  display: none !important;
+}
+#island {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 104px;
+  height: 6px;
+  transform: translateX(-50%);
+  transform-origin: 50% 0;
+  opacity: 0;
+  color: #fff;
+  transition:
+    width 0.42s cubic-bezier(0.22, 1.25, 0.4, 1),
+    height 0.42s cubic-bezier(0.22, 1.25, 0.4, 1),
+    opacity 0.3s;
+}
+body:not([data-phase="idle"]) #island {
+  opacity: 1;
+}
+#island-background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 6px 14px #00000057);
+  pointer-events: none;
+}
+#island-shape {
+  fill: #000;
+}
+#island-content {
+  position: relative;
+  height: 100%;
+  padding: 0 var(--shoulder);
+  overflow: hidden;
+}
+.island-ears {
+  height: var(--band);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.island-leading,
+.island-trailing {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.island-notch {
+  width: var(--gap);
+  flex-shrink: 0;
+}
+body:not(.has-notch) .island-notch {
+  display: none;
+}
+body.has-notch .island-ears {
+  gap: 0;
+}
+body.has-notch .island-leading {
+  flex: 1;
+  padding-left: 13px;
+}
+body.has-notch .island-trailing {
+  flex: 1;
+  justify-content: flex-end;
+  padding-right: 13px;
+}
+.island-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+}
+.island-glyph svg {
+  display: none;
+  width: 21px;
+  height: 21px;
+}
+.glyph-mic circle {
+  fill: #ff9f0a33;
+}
+.glyph-mic path {
+  fill: none;
+  stroke: #ff9f0a;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: scale(0.65);
+  transform-origin: center;
+}
+.glyph-dot {
+  display: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff453b;
+  animation: meeting-dot 2.1s ease-in-out infinite;
+}
+.glyph-processing path {
+  stroke: #ffffffe6;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.glyph-polishing {
+  fill: #b499ff;
+  animation: polish 1.4s ease-in-out infinite;
+}
+.glyph-success circle {
+  fill: #30d159;
+}
+.glyph-success path {
+  fill: none;
+  stroke: white;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+body[data-phase="starting"] .glyph-mic,
+body[data-phase="recording"] .glyph-mic,
+body[data-phase="processing"] .glyph-processing,
+body[data-phase="meeting_finishing"] .glyph-processing,
+body[data-phase="polishing"] .glyph-polishing,
+body[data-phase="success"] .glyph-success {
+  display: block;
+}
+body[data-phase="meeting"] .glyph-dot {
+  display: block;
+}
+body[data-phase="starting"] .glyph-mic {
+  animation: polish 1.26s ease-in-out infinite;
+}
+body[data-phase="success"] .glyph-success {
+  animation: success-pop 0.45s cubic-bezier(0.22, 1.25, 0.4, 1);
+  width: 19px;
+  height: 19px;
+}
+#island-timer {
+  color: #ffffff9e;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-family:
+    ui-rounded,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+body:not([data-phase="recording"]):not([data-phase="meeting"]) #island-timer {
+  display: none;
+}
+.overlay-wave {
+  display: flex;
+  gap: 2.5px;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+}
+.overlay-wave i {
+  width: 3px;
+  height: 4px;
+  border-radius: 3px;
+  background: linear-gradient(to top, #a16bff, #7ad1ff);
+  transition: height 0.09s;
+}
+body[data-phase="meeting"] .overlay-wave i {
+  background: linear-gradient(to top, #ff453b, #ff9e4d);
+}
+body[data-phase="starting"] .overlay-wave {
+  opacity: 0.45;
+  animation: polish 1.26s ease-in-out infinite;
+}
+body:not([data-phase="starting"]):not([data-phase="recording"]):not(
+    [data-phase="meeting"]
+  )
+  .overlay-wave {
+  display: none;
+}
+#overlay-status {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+#overlay-status:empty {
+  display: none;
+}
+body[data-phase="processing"] #overlay-status,
+body[data-phase="polishing"] #overlay-status,
+body[data-phase="meeting_finishing"] #overlay-status {
+  background: linear-gradient(100deg, #ffffff6b 20%, #fff 45%, #ffffff6b 70%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.4s linear infinite;
+}
+#island-banner {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 18px;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+body.has-notch #island-banner {
+  height: 36px;
+  margin-top: var(--band);
+}
+#island-banner > span:first-child {
+  color: #ff9f0a;
+  font-size: 16px;
+}
+#island-error {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+body[data-phase="error"] .island-ears {
+  display: none;
+}
+body[data-phase="error"] #island {
+  animation: warning-wiggle 0.3s;
+}
+#island-meeting-controls {
+  height: 44px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #ffffff9e;
+}
+#overlay-stop {
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 20px;
+  font:
+    600 12px -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  color: white;
+  background: #ff453b;
+  cursor: pointer;
+}
+#overlay-stop span {
+  font-size: 10px;
+  margin-right: 3px;
+}
+#overlay-stop:active {
+  opacity: 0.7;
+}
+#overlay-stop:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+#overlay-stop:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+@keyframes shimmer {
+  to {
+    background-position: -220% 0;
+  }
+}
+@keyframes meeting-dot {
+  50% {
+    opacity: 0.55;
+  }
+}
+@keyframes polish {
+  50% {
+    opacity: 0.6;
+  }
+}
+@keyframes success-pop {
+  from {
+    transform: scale(0.4);
+  }
+  55% {
+    transform: scale(1.07);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+@keyframes warning-wiggle {
+  20% {
+    transform: translateX(calc(-50% + 8px));
+  }
+  40% {
+    transform: translateX(calc(-50% - 7px));
+  }
+  60% {
+    transform: translateX(calc(-50% + 5px));
+  }
+  80% {
+    transform: translateX(calc(-50% - 3px));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0.18s !important;
+  }
+  body #overlay-status {
+    background: none;
+    color: #ffffffd9;
+  }
+}

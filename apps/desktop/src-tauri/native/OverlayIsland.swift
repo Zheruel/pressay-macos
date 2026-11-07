@@ -1,0 +1,941 @@
+import AppKit
+import SwiftUI
+// Adapted from Sources/PressayApp/OverlayPanel.swift. Keep island geometry, colors,
+// glyphs and interaction in sync with the shipping Swift UI. This view owns no audio.
+import Foundation
+
+enum DictationPhase: Equatable {
+    case idle, arming, recording, processing, succeeded, failed(String)
+}
+@MainActor
+final class IslandMeetingSession: ObservableObject {
+    enum Phase { case recording, finishing }
+    @Published var phase = Phase.recording
+    @Published var micLevel: Float = 0
+    @Published var othersLevel: Float = 0
+    @Published var startedAt = Date()
+    @Published var stoppedAt: Date?
+    @Published var offset: TimeInterval = 0
+}
+@MainActor
+private final class IslandPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
+enum OverlayStyle {
+    case dictation
+    case meeting
+
+    var colors: [Color] {
+        switch self {
+        case .dictation: [Color(red: 0.63, green: 0.42, blue: 1), Color(red: 0.48, green: 0.82, blue: 1)]
+        case .meeting: [Color(red: 1, green: 0.27, blue: 0.23), Color(red: 1, green: 0.62, blue: 0.3)]
+        }
+    }
+
+    var gradient: LinearGradient {
+        LinearGradient(colors: colors, startPoint: .bottom, endPoint: .top)
+    }
+}
+
+/// The camera housing at the top of the screen; zero on screens without one.
+struct NotchGeometry: Equatable {
+    var width: CGFloat
+    var height: CGFloat
+
+    static let none = NotchGeometry(width: 0, height: 0)
+    var exists: Bool { width > 0 }
+
+    @MainActor
+    static func of(_ screen: NSScreen) -> NotchGeometry {
+        guard screen.safeAreaInsets.top > 0,
+              let left = screen.auxiliaryTopLeftArea,
+              let right = screen.auxiliaryTopRightArea else { return .none }
+        return NotchGeometry(
+            width: screen.frame.width - left.width - right.width,
+            height: screen.safeAreaInsets.top
+        )
+    }
+}
+
+@MainActor
+final class OverlayState: ObservableObject {
+    @Published var phase: DictationPhase = .idle
+    @Published var levels: [Float] = [0, 0, 0, 0]
+    @Published var message = ""
+    @Published var style: OverlayStyle = .dictation
+    /// Drives the grow/collapse animation; the panel orders out after the fold.
+    @Published var visible = false
+    @Published var polishing = false
+    @Published var recordingStarted: Date?
+    @Published var notch = NotchGeometry.none
+    @Published var successText = "Inserted"
+    /// A recording meeting lives in the island whenever no dictation state is showing.
+    @Published var meeting: IslandMeetingSession?
+    @Published var hovering = false
+    /// Where the island is drawn in the stage, top-left origin, for hit testing.
+    var islandFrame = CGRect.zero
+    var stopMeeting: () -> Void = {}
+}
+
+/// Grows out of the notch (or top edge) so it never covers the text being written.
+@MainActor
+final class OverlayPanelController {
+    let state = OverlayState()
+    private var panel: NSPanel?
+    private var dismissTask: Task<Void, Never>?
+    private var orderOutTask: Task<Void, Never>?
+    private var hoverTask: Task<Void, Never>?
+
+    /// Fixed stage; the island morphs inside it because window resizing can't spring smoothly.
+    private static let stage = NSSize(width: 560, height: 150)
+
+    /// Key is down but the mic has not delivered audio yet. Acknowledges the
+    /// press immediately so the wait for a cold Bluetooth link doesn't read as
+    /// a dropped key press.
+    func showArming(style: OverlayStyle = .dictation) {
+        dismissTask?.cancel()
+        state.style = style
+        state.phase = .arming
+        state.message = ""
+        present()
+    }
+
+    func showRecording(style: OverlayStyle = .dictation) {
+        dismissTask?.cancel()
+        state.style = style
+        if state.phase != .recording { state.recordingStarted = Date() }
+        state.phase = .recording
+        state.message = ""
+        present()
+    }
+
+    func showProcessing() {
+        dismissTask?.cancel()
+        state.polishing = false
+        state.phase = .processing
+        state.message = ""
+        present()
+    }
+
+    func showPolishing() {
+        guard state.phase == .processing else { return }
+        state.polishing = true
+    }
+
+    func showSuccess() {
+        state.successText = "Inserted"
+        state.phase = .succeeded
+        state.message = ""
+        present()
+        dismiss(after: .milliseconds(900))
+    }
+
+    func showError(_ message: String) {
+        state.phase = .failed(message)
+        state.message = message
+        present()
+        dismiss(after: .seconds(2.6))
+    }
+
+    /// The island stays up for the whole meeting: hover shows Stop.
+    func showMeeting(_ session: IslandMeetingSession, stop: @escaping () -> Void) {
+        dismissTask?.cancel()
+        state.stopMeeting = stop
+        state.meeting = session
+        ensurePanel()
+        present()
+        hoverTask?.cancel()
+        hoverTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.trackPointer()
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+    }
+
+    /// A panel that takes clicks takes them across its whole transparent stage, so it takes them
+    /// only while the pointer is over the island.
+    private func trackPointer() {
+        guard let panel else { return }
+        let island = state.islandFrame
+        let frame = NSRect(
+            x: panel.frame.minX + island.minX, y: panel.frame.maxY - island.maxY,
+            width: island.width, height: island.height
+        )
+        let inside = frame.contains(NSEvent.mouseLocation)
+        if state.hovering != inside { state.hovering = inside }
+        if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
+    }
+
+    func endMeeting(saved: Bool) {
+        guard state.meeting != nil else { return }
+        hoverTask?.cancel()
+        state.meeting = nil
+        state.hovering = false
+        panel?.ignoresMouseEvents = true
+        guard saved else { return hide() }
+        state.successText = "Saved"
+        state.phase = .succeeded
+        present()
+        dismiss(after: .milliseconds(1200))
+    }
+
+    func hide() {
+        dismissTask?.cancel()
+        if state.meeting != nil {
+            // A dictation notice shown over a meeting folds back into the meeting.
+            state.phase = .idle
+            state.message = ""
+            state.polishing = false
+            return
+        }
+        state.visible = false
+        orderOutTask?.cancel()
+        orderOutTask = Task { [weak self] in
+            // Lets the island fold back into the notch before the window goes.
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled, let self else { return }
+            panel?.orderOut(nil)
+            state.phase = .idle
+            state.levels = [0, 0, 0, 0]
+            state.style = .dictation
+            state.polishing = false
+            state.recordingStarted = nil
+            state.successText = "Inserted"
+        }
+    }
+
+    func shutdown() {
+        dismissTask?.cancel(); orderOutTask?.cancel(); hoverTask?.cancel()
+        state.meeting = nil; state.hovering = false; state.visible = false
+        state.phase = .idle; state.recordingStarted = nil; state.levels = [0, 0, 0, 0]
+        panel?.orderOut(nil); panel?.close(); panel = nil
+    }
+
+    private func present() {
+        orderOutTask?.cancel()
+        ensurePanel()
+        let wasOnScreen = panel?.isVisible == true
+        if !wasOnScreen { positionPanel() }
+        panel?.orderFrontRegardless()
+        guard !state.visible else { return }
+        if wasOnScreen {
+            state.visible = true
+        } else {
+            // One collapsed frame first, so the island grows out of the notch.
+            Task { @MainActor [weak self] in
+                self?.state.visible = true
+            }
+        }
+    }
+
+    private func ensurePanel() {
+        guard panel == nil else { return }
+        let panel = IslandPanel(
+            contentRect: NSRect(origin: .zero, size: Self.stage),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.isReleasedWhenClosed = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        // Above the menu bar, so the island can merge with the notch.
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 2)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+        panel.contentView = NSHostingView(rootView: IslandView(state: state))
+        self.panel = panel
+    }
+
+    private func positionPanel() {
+        guard let panel, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        state.notch = .of(screen)
+        let frame = screen.frame
+        panel.setFrameOrigin(NSPoint(x: frame.midX - Self.stage.width / 2, y: frame.maxY - Self.stage.height))
+    }
+
+    private func dismiss(after duration: Duration) {
+        dismissTask?.cancel()
+        dismissTask = Task { [weak self] in
+            try? await Task.sleep(for: duration)
+            guard !Task.isCancelled else { return }
+            self?.hide()
+        }
+    }
+}
+
+// MARK: - Island
+
+private enum Palette {
+    static let mic = Color(nsColor: .systemOrange)
+    static let success = Color(red: 0.19, green: 0.82, blue: 0.35)
+    static let secondary = Color.white.opacity(0.62)
+}
+
+private struct IslandMetrics: Equatable {
+    var width: CGFloat
+    var height: CGFloat
+    var radius: CGFloat
+    var shoulder: CGFloat
+    var lifted: Bool
+}
+
+private struct IslandView: View {
+    @ObservedObject var state: OverlayState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var bump: CGFloat = 1
+    @State private var shake: CGFloat = 0
+
+    private var notch: NotchGeometry { state.notch }
+    /// Height of the band beside the camera; also the whole island when compact.
+    private var band: CGFloat { notch.exists ? max(notch.height, 30) : 32 }
+    private var gap: CGFloat { notch.exists ? notch.width : 0 }
+
+    private var isFailed: Bool {
+        if case .failed = state.phase { return true }
+        return false
+    }
+
+    /// Dictation states take precedence; the meeting shows in between.
+    private var meeting: IslandMeetingSession? { state.phase == .idle ? state.meeting : nil }
+
+    private var ear: CGFloat? {
+        guard state.visible, !isFailed else { return nil }
+        if meeting != nil { return notch.exists ? 78 : 64 }
+        switch state.phase {
+        case .arming: return 36
+        case .recording: return notch.exists ? 78 : 64
+        case .processing: return notch.exists ? (state.polishing ? 90 : 102) : (state.polishing ? 66 : 74)
+        case .succeeded: return notch.exists ? 82 : 60
+        case .idle, .failed: return nil
+        }
+    }
+
+    private var metrics: IslandMetrics {
+        if state.visible, meeting != nil, state.hovering {
+            let height = (notch.exists ? band : 32) + 44
+            return IslandMetrics(width: max(gap + 156, 240), height: height, radius: 20, shoulder: 9, lifted: true)
+        }
+        if state.visible, isFailed {
+            let height = notch.exists ? band + 36 : 40
+            return IslandMetrics(width: max(gap + 190, 340), height: height, radius: 20, shoulder: 9, lifted: true)
+        }
+        if let ear {
+            return IslandMetrics(width: gap + 2 * ear, height: band, radius: band * 0.44, shoulder: 7, lifted: true)
+        }
+        // Collapsed: exactly the hardware notch, or a sliver tucked under the top edge.
+        return notch.exists
+            ? IslandMetrics(width: notch.width, height: notch.height, radius: 9, shoulder: 5, lifted: false)
+            : IslandMetrics(width: 90, height: 6, radius: 3, shoulder: 3, lifted: false)
+    }
+
+    private var morph: Animation {
+        if reduceMotion { return .easeOut(duration: 0.18) }
+        return state.visible
+            ? .spring(response: 0.42, dampingFraction: 0.72)
+            : .spring(response: 0.34, dampingFraction: 0.92)
+    }
+
+    var body: some View {
+        let m = metrics
+        let shape = IslandShape(shoulder: m.shoulder, radius: m.radius)
+        ZStack(alignment: .top) {
+            shape.fill(.black)
+            content
+                .padding(.horizontal, m.shoulder)
+        }
+        .frame(width: m.width + 2 * m.shoulder, height: m.height)
+        .clipShape(shape)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { state.islandFrame = $0 }
+        .shadow(color: .black.opacity(m.lifted ? 0.34 : 0), radius: 14, y: 6)
+        .scaleEffect(bump, anchor: .top)
+        .offset(x: shake)
+        // Without a notch to hide in, the sliver fades as it tucks away.
+        .opacity(state.visible || notch.exists ? 1 : 0)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(morph, value: m)
+        .animation(state.visible ? .easeOut(duration: 0.12) : .easeIn(duration: 0.3), value: state.visible)
+        .onChange(of: state.phase) { _, phase in
+            switch phase {
+            case .succeeded: pop()
+            case .failed: wiggle()
+            default: break
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if state.visible, let meeting {
+            MeetingIsland(
+                session: meeting, state: state, notch: notch, band: band, gap: gap, reduceMotion: reduceMotion)
+                .transition(earTransition)
+        } else if state.visible, isFailed {
+            VStack(spacing: 0) {
+                if notch.exists { Color.clear.frame(height: band) }
+                banner
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 18)
+            }
+            .transition(AnyTransition(.blurReplace).combined(with: .opacity))
+        } else if notch.exists {
+            HStack(spacing: 0) {
+                leading
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 13)
+                Color.clear.frame(width: gap)
+                trailing
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 13)
+            }
+            .frame(height: band)
+            .animation(reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.32), value: contentKey)
+        } else {
+            // No camera to straddle: one centered group that hugs its content.
+            HStack(spacing: 8) {
+                leading
+                trailing
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: band)
+            .animation(reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.32), value: contentKey)
+        }
+    }
+
+    private var contentKey: String {
+        guard state.visible else { return "hidden" }
+        switch state.phase {
+        case .processing: return state.polishing ? "polish" : "transcribe"
+        default: return String(describing: state.phase)
+        }
+    }
+
+    private var processingLabel: String {
+        if state.polishing { return "Polishing" }
+        return "Transcribing"
+    }
+
+    private var earTransition: AnyTransition {
+        reduceMotion ? .opacity : AnyTransition(.blurReplace).combined(with: .scale(scale: 0.7))
+    }
+
+    private var leading: some View {
+        Group {
+            if state.visible {
+                switch state.phase {
+                case .arming:
+                    MicGlyph(level: 0, live: false)
+                case .recording:
+                    HStack(spacing: 7) {
+                        MicGlyph(level: CGFloat(state.levels.max() ?? 0), live: !reduceMotion)
+                        RecordingTimer(start: state.recordingStarted ?? Date())
+                    }
+                case .processing:
+                    ProcessingGlyph(polishing: state.polishing)
+                case .succeeded:
+                    SuccessBadge()
+                case .idle, .failed:
+                    EmptyView()
+                }
+            }
+        }
+        .id(contentKey)
+        .transition(earTransition)
+    }
+
+    private var trailing: some View {
+        Group {
+            if state.visible {
+                switch state.phase {
+                case .arming:
+                    LiveBars(levels: [0, 0, 0, 0], style: state.style, dimmed: true)
+                case .recording:
+                    LiveBars(levels: state.levels, style: state.style, dimmed: false)
+                case .processing:
+                    ShimmerText(text: processingLabel, animated: !reduceMotion)
+                case .succeeded:
+                    Text(state.successText)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                case .idle, .failed:
+                    EmptyView()
+                }
+            }
+        }
+        .id(contentKey)
+        .transition(earTransition)
+    }
+
+    private var banner: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.mic)
+            Text(state.message)
+        }
+        .font(.system(size: 12.5, weight: .semibold))
+        .foregroundStyle(.white)
+        .lineLimit(1)
+        .truncationMode(.middle)
+    }
+
+    private func pop() {
+        guard !reduceMotion else { return }
+        withAnimation(.spring(response: 0.18, dampingFraction: 0.5)) { bump = 1.07 }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(140))
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.6)) { bump = 1 }
+        }
+    }
+
+    private func wiggle() {
+        guard !reduceMotion else { return }
+        Task { @MainActor in
+            for offset in [8.0, -7.0, 5.0, -3.0, 0.0] {
+                withAnimation(.spring(response: 0.09, dampingFraction: 0.55)) { shake = offset }
+                try? await Task.sleep(for: .milliseconds(55))
+            }
+        }
+    }
+}
+
+/// Concave top shoulders so it reads as part of the bezel, not a floating pill.
+private struct IslandShape: Shape {
+    var shoulder: CGFloat
+    var radius: CGFloat
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(shoulder, radius) }
+        set { shoulder = newValue.first; radius = newValue.second }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let s = min(shoulder, rect.width / 4, rect.height / 2)
+        let r = max(0, min(radius, (rect.width - 2 * s) / 2, rect.height - s))
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + s, y: rect.minY + s),
+                          control: CGPoint(x: rect.minX + s, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX + s, y: rect.maxY - r))
+        path.addQuadCurve(to: CGPoint(x: rect.minX + s + r, y: rect.maxY),
+                          control: CGPoint(x: rect.minX + s, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - s - r, y: rect.maxY))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX - s, y: rect.maxY - r),
+                          control: CGPoint(x: rect.maxX - s, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - s, y: rect.minY + s))
+        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY),
+                          control: CGPoint(x: rect.maxX - s, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+// MARK: - Meeting
+
+/// Red dot, elapsed time and levels beside the camera; hovering drops Stop below.
+private struct MeetingIsland: View {
+    @ObservedObject var session: IslandMeetingSession
+    @ObservedObject var state: OverlayState
+    let notch: NotchGeometry
+    let band: CGFloat
+    let gap: CGFloat
+    let reduceMotion: Bool
+
+    private var finishing: Bool { session.phase == .finishing }
+    private var levels: [Float] {
+        let mic = session.micLevel, others = session.othersLevel
+        return [mic, max(mic, others), others, (mic + others) / 2]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ears.frame(height: notch.exists ? band : 32)
+            if state.hovering {
+                controls.transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? .easeOut(duration: 0.15) : .smooth(duration: 0.28), value: finishing)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(finishing ? "Saving meeting notes" : "Meeting recording")
+    }
+
+    @ViewBuilder
+    private var ears: some View {
+        if notch.exists {
+            HStack(spacing: 0) {
+                leading.frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 13)
+                Color.clear.frame(width: gap)
+                trailing.frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 13)
+            }
+        } else {
+            HStack(spacing: 8) {
+                leading
+                trailing
+            }.frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var leading: some View {
+        if finishing {
+            ProcessingGlyph(polishing: false)
+        } else {
+            HStack(spacing: 7) {
+                MeetingDot(live: !reduceMotion)
+                MeetingTimer(session: session)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        if finishing {
+            ShimmerText(text: "Saving", animated: !reduceMotion)
+        } else {
+            LiveBars(levels: levels, style: .meeting, dimmed: false)
+        }
+    }
+
+    private var controls: some View {
+        HStack(spacing: 8) {
+            Text(finishing ? "Saving your notes…" : "Taking notes")
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(Palette.secondary)
+            Spacer(minLength: 8)
+            Button {
+                state.stopMeeting()
+            } label: {
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 1.5).frame(width: 7, height: 7)
+                    Text("Stop")
+                }
+            }
+            .buttonStyle(StopButtonStyle())
+            .disabled(finishing)
+            .help("Stop the meeting")
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+    }
+}
+
+private struct MeetingDot: View {
+    let live: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !live)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            Circle()
+                .fill(OverlayStyle.meeting.colors[0])
+                .frame(width: 8, height: 8)
+                .opacity(live ? 0.55 + 0.45 * (0.5 + 0.5 * cos(t * 3)) : 1)
+        }
+        .frame(width: 21, height: 21)
+    }
+}
+
+/// Includes time recorded before a resume, like the meeting page.
+private struct MeetingTimer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject var session: IslandMeetingSession
+
+    var body: some View {
+        TimelineView(.periodic(from: session.startedAt, by: 1)) { timeline in
+            let elapsed = session.offset + (session.stoppedAt ?? timeline.date).timeIntervalSince(session.startedAt)
+            let seconds = max(0, Int(elapsed))
+            Text(seconds >= 3600
+                ? String(format: "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
+                : String(format: "%d:%02d", seconds / 60, seconds % 60))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Palette.secondary)
+                .contentTransition(.numericText(countsDown: false))
+                .animation(reduceMotion ? nil : .snappy, value: seconds)
+        }
+    }
+}
+
+private struct StopButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11)
+            .frame(height: 26)
+            .background(
+                Capsule().fill(OverlayStyle.meeting.colors[0])
+            )
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
+            .contentShape(Capsule())
+    }
+}
+
+// MARK: - Ear content
+
+/// Orange like the system mic indicator; breathes while arming, before it listens.
+private struct MicGlyph: View {
+    let level: CGFloat
+    let live: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            let cycle = CGFloat((t / 1.3).truncatingRemainder(dividingBy: 1))
+            let breath = 0.6 + 0.4 * (0.5 + 0.5 * sin(t * 5))
+            ZStack {
+                if live {
+                    Circle()
+                        .stroke(Palette.mic, lineWidth: 1.4)
+                        .scaleEffect(0.9 + cycle * (0.25 + 0.2 * level))
+                        .opacity(Double(0.75 * (1 - cycle)))
+                }
+                Circle()
+                    .fill(Palette.mic.opacity(0.2 + 0.25 * level))
+                    .scaleEffect(1 + 0.12 * level)
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(Palette.mic)
+            }
+            .opacity(reduceMotion || live ? 1 : breath)
+        }
+        .frame(width: 21, height: 21)
+        .animation(reduceMotion ? nil : .interpolatingSpring(stiffness: 300, damping: 22), value: level)
+    }
+}
+
+private struct RecordingTimer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let start: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: start, by: 1)) { timeline in
+            let seconds = max(0, Int(timeline.date.timeIntervalSince(start)))
+            Text("\(seconds / 60):\(String(format: "%02d", seconds % 60))")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Palette.secondary)
+                .contentTransition(.numericText(countsDown: false))
+                .animation(reduceMotion ? nil : .snappy, value: seconds)
+        }
+    }
+}
+
+private struct LiveBars: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let levels: [Float]
+    let style: OverlayStyle
+    let dimmed: Bool
+    private let profiles: [CGFloat] = [0.55, 0.85, 1, 0.8, 0.6]
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 2.5) {
+                ForEach(profiles.indices, id: \.self) { index in
+                    let level = dimmed ? 0 : self.level(at: index)
+                    let sway = reduceMotion ? 1 : 1 + 1.1 * CGFloat(sin(time * 3.2 + Double(index) * 1.2))
+                    Capsule()
+                        .fill(style.gradient)
+                        .frame(width: 3, height: height(level: level, profile: profiles[index], sway: sway))
+                        .animation(reduceMotion ? nil : .interpolatingSpring(stiffness: 420, damping: 26), value: level)
+                }
+            }
+            .opacity(dimmed ? (reduceMotion ? 0.45 : 0.35 + 0.2 * (0.5 + 0.5 * sin(time * 5))) : 1)
+        }
+        .frame(height: 18)
+    }
+
+    /// Five bars from four meter bands: the middle bar blends its neighbours.
+    private func level(at index: Int) -> CGFloat {
+        func band(_ i: Int) -> CGFloat { i < levels.count ? CGFloat(levels[i]) : 0 }
+        switch index {
+        case 0: return band(0)
+        case 1: return band(1)
+        case 2: return (band(1) + band(2)) / 2
+        case 3: return band(2)
+        default: return band(3)
+        }
+    }
+
+    private func height(level: CGFloat, profile: CGFloat, sway: CGFloat) -> CGFloat {
+        guard level > 0.015 else { return 3 + sway }
+        return min(18, 5 + 13 * pow(level, 0.7) * profile)
+    }
+}
+
+private struct ProcessingGlyph: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let polishing: Bool
+
+    var body: some View {
+        Group {
+            if polishing {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(OverlayStyle.dictation.gradient)
+                    .brightness(0.15)
+                    .symbolEffect(.breathe.plain.byLayer, options: .repeating, isActive: !reduceMotion)
+            } else {
+                Image(systemName: "waveform")
+                    .foregroundStyle(.white.opacity(0.9))
+                    .symbolEffect(.variableColor.iterative.dimInactiveLayers, options: .repeating, isActive: !reduceMotion)
+            }
+        }
+        .font(.system(size: 13, weight: .semibold))
+        .frame(width: 21, height: 21)
+    }
+}
+
+private struct ShimmerText: View {
+    let text: String
+    let animated: Bool
+
+    var body: some View {
+        let label = Text(text).font(.system(size: 12.5, weight: .semibold))
+        if animated {
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let phase = CGFloat((t / 1.4).truncatingRemainder(dividingBy: 1))
+                label
+                    .foregroundStyle(.white.opacity(0.42))
+                    .overlay {
+                        label
+                            .foregroundStyle(.white)
+                            .mask {
+                                GeometryReader { geometry in
+                                    let w = geometry.size.width
+                                    LinearGradient(colors: [.clear, .white, .clear], startPoint: .leading, endPoint: .trailing)
+                                        .frame(width: w * 0.7)
+                                        .offset(x: -w * 0.7 + phase * w * 1.7)
+                                }
+                            }
+                    }
+            }
+        } else {
+            label.foregroundStyle(.white.opacity(0.85))
+        }
+    }
+}
+
+private struct SuccessBadge: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var drawn = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Palette.success)
+                .scaleEffect(drawn ? 1 : 0.4)
+            CheckmarkShape()
+                .trim(from: 0, to: drawn ? 1 : 0)
+                .stroke(.white, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .frame(width: 9, height: 7)
+        }
+        .frame(width: 19, height: 19)
+        .onAppear {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.58)) { drawn = true }
+        }
+    }
+}
+
+private struct CheckmarkShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.36, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        return path
+    }
+}
+
+// C bridge: the existing Rust events are the only source of recording state.
+@_silgen_name("pressay_overlay_stop_meeting")
+private func stopNativeMeeting()
+
+@MainActor
+private final class IslandBridge {
+    static let shared = IslandBridge()
+    let controller = OverlayPanelController()
+    var lastStage = "idle"
+    var lastMessage = ""
+    var elapsed: Double = 0
+    var meeting: IslandMeetingSession?
+
+    func update(stage: String, message: String, levels: [Float]) {
+        controller.state.levels = levels
+        if let meeting {
+            meeting.micLevel = levels[0]
+            meeting.othersLevel = levels[2]
+            let displayed = meeting.offset + (meeting.stoppedAt ?? Date()).timeIntervalSince(meeting.startedAt)
+            if abs(displayed - elapsed) > 1.2 {
+                meeting.offset = elapsed; meeting.startedAt = Date()
+                if meeting.phase == .finishing { meeting.stoppedAt = meeting.startedAt }
+            }
+        }
+        if stage == lastStage && message == lastMessage { return }
+        lastStage = stage; lastMessage = message
+        if stage == "meeting" || stage == "meeting_finishing" {
+            if meeting == nil {
+                let session = IslandMeetingSession()
+                session.offset = elapsed
+                meeting = session
+                controller.showMeeting(session, stop: { stopNativeMeeting() })
+            }
+            controller.state.phase = .idle
+            meeting?.phase = stage == "meeting_finishing" ? .finishing : .recording
+            if stage == "meeting_finishing" { meeting?.stoppedAt = Date() }
+            return
+        }
+        if meeting != nil && ["idle", "error", "success", "cancelled"].contains(stage) {
+            let saved = stage == "success"
+            controller.endMeeting(saved: saved)
+            meeting = nil
+            if saved { return }
+        }
+        switch stage {
+        case "starting": controller.showArming()
+        case "recording": controller.showRecording()
+        case "processing": controller.showProcessing()
+        case "polishing":
+            if controller.state.phase != .processing { controller.showProcessing() }
+            controller.showPolishing()
+        case "success": controller.showSuccess()
+        case "error": controller.showError(message.isEmpty ? "Saved in History" : message)
+        default: controller.hide()
+        }
+    }
+    func shutdown() {
+        controller.shutdown(); meeting = nil; lastStage = "idle"; lastMessage = ""; elapsed = 0
+    }
+}
+private func islandOnMain(_ operation: @escaping @MainActor @Sendable () -> Void) {
+    if Thread.isMainThread { MainActor.assumeIsolated { operation() } }
+    else { DispatchQueue.main.async { operation() } }
+}
+@_cdecl("pressay_island_update")
+public func pressayIslandUpdate(_ stage: UnsafePointer<CChar>?, _ detail: UnsafePointer<CChar>?, _ levels: UnsafePointer<Float>?) {
+    let stage = stage.map { String(cString: $0) } ?? "idle"
+    let message = detail.map { String(cString: $0) } ?? ""
+    let values: [Float] = (0..<4).map { index in
+        let value = levels?[index] ?? 0
+        return value.isFinite ? max(0, min(1, value)) : 0
+    }
+    islandOnMain { IslandBridge.shared.update(stage: stage, message: message, levels: values) }
+}
+@_cdecl("pressay_island_elapsed")
+public func pressayIslandElapsed(_ seconds: Double) {
+    let elapsed = seconds.isFinite ? max(0, seconds) : 0
+    islandOnMain { IslandBridge.shared.elapsed = elapsed }
+}
+@_cdecl("pressay_island_shutdown")
+public func pressayIslandShutdown() {
+    islandOnMain { IslandBridge.shared.shutdown() }
+}
