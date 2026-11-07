@@ -19,8 +19,8 @@ and a one-second silent warm-up have succeeded. Native diagnostics go to stderr.
 | `megaASR` | Use the Swift MLX worker built from `Runtime/` | Apple Silicon macOS |
 
 Build the native runtime from the pinned commit
-`41738b58b305c08bdecf5379dccdc19a0f7c3b05` (the `REVISION` in
-`scripts/build-portable-runtime.py`). The vendored C API is **0.4.0**.
+`5700f127e38dd53c4735ea23ef743b4b538eacd4` (the `REVISION` in
+`scripts/build-portable-runtime.py`). The vendored C API is **0.4.1**.
 The adapter rejects a different `transcribe_version()` rather than loading it
 against incompatible structs. Ship every required ggml library beside
 `libtranscribe`/`transcribe.dll`. `LoadLibraryExW` restricts Windows dependency
@@ -47,5 +47,5 @@ patterns and bounds, truncation, Unicode, consecutive jobs, failed startup and
 reply bounds without downloading speech models. These protocol tests do not
 measure speech accuracy, GPU performance or clean-machine native integration.
 
-References: [upstream build documentation](https://github.com/handy-computer/transcribe.cpp/blob/41738b58b305c08bdecf5379dccdc19a0f7c3b05/README.md),
-[pinned CMake options](https://github.com/handy-computer/transcribe.cpp/blob/41738b58b305c08bdecf5379dccdc19a0f7c3b05/CMakeLists.txt).
+References: [upstream build documentation](https://github.com/handy-computer/transcribe.cpp/blob/5700f127e38dd53c4735ea23ef743b4b538eacd4/README.md),
+[pinned CMake options](https://github.com/handy-computer/transcribe.cpp/blob/5700f127e38dd53c4735ea23ef743b4b538eacd4/CMakeLists.txt).

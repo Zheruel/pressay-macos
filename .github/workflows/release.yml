@@ -56,12 +56,12 @@ jobs:
       PRESSAY_AZURE_CERTIFICATE_PROFILE: ${{ vars.PRESSAY_AZURE_CERTIFICATE_PROFILE }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - name: Check the tag matches the app version
@@ -151,14 +151,14 @@ jobs:
         run: python scripts/package-desktop-release.py windows-catalog --output .build/windows-signing-files.txt
       - name: Authenticate to Azure Artifact Signing
         if: runner.os == 'Windows' && env.PRESSAY_WINDOWS_UNSIGNED != '1'
-        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        uses: azure/login@053f7285eb20bf5469ef084617b0b24d3cec53fc # v3.1.0
         with:
           client-id: ${{ vars.PRESSAY_AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.PRESSAY_AZURE_TENANT_ID }}
           subscription-id: ${{ vars.PRESSAY_AZURE_SUBSCRIPTION_ID }}
       - name: Sign Windows workers and native libraries
         if: runner.os == 'Windows' && env.PRESSAY_WINDOWS_UNSIGNED != '1'
-        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        uses: azure/artifact-signing-action@208f8af4bf26cf2af8597424e3cb5582801523ba # v2.0.0
         with:
           endpoint: ${{ vars.PRESSAY_AZURE_SIGNING_ENDPOINT }}
           signing-account-name: ${{ vars.PRESSAY_AZURE_SIGNING_ACCOUNT }}
@@ -202,7 +202,7 @@ jobs:
           BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' target/release/bundle/macos/Pressay.app/Contents/Info.plist)"
           python scripts/sparkle-bridge.py .build/release --tag "$RELEASE_TAG" --build "$BUILD"
           (cd .build/release && shasum -a 256 Pressay-macos-arm64.zip > SHA256SUMS)
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}
           path: .build/release/*
@@ -224,10 +224,10 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: .build/release

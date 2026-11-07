@@ -41,7 +41,7 @@ Speech recognition stays local. Optional cleanup, notes and Ask Notes send selec
 | Linux Wayland | GlobalShortcuts press/release/cancel and RemoteDesktop keyboard consent; actual granted binding, revocation/session-loss recovery; explicit current-cursor insertion | Requires compatible compositor portals. No original-target identity is exposed. Current implementation uses portal keysyms, not EIS. Physical GNOME/KDE and keyboard-layout/IME acceptance remains open |
 | Windows ARM64 / Intel Mac | Not an announced release target | Dedicated native builds and backend validation required |
 
-The runtime base remains `41738b58b305c08bdecf5379dccdc19a0f7c3b05` plus the checked-in Sortformer patch. Portable CPU is the Windows/Linux baseline; CUDA/Vulkan acceleration is not claimed. Mac-only model metadata remains visible to migration without promising those models on other systems. Newer [portable Orukeet](https://github.com/handy-computer/transcribe.cpp/blob/v0.4.1/docs/models/orukeet.md) uses a different artifact/API; changing defaults requires its own corpus comparison.
+The runtime base is `5700f127e38dd53c4735ea23ef743b4b538eacd4` plus the checked-in Sortformer patch. Portable CPU is the Windows/Linux baseline; CUDA/Vulkan acceleration is not claimed. Mac-only model metadata remains visible to migration without promising those models on other systems. Newer [portable Orukeet](https://github.com/handy-computer/transcribe.cpp/blob/v0.4.1/docs/models/orukeet.md) uses a different artifact/API; changing defaults requires its own corpus comparison.
 
 ## Wayland and meeting semantics
 

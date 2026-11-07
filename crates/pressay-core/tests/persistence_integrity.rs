@@ -5,7 +5,6 @@ use pressay_core::{
     Error,
 };
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 fn model() -> Model {
@@ -16,7 +15,7 @@ fn model() -> Model {
         artifacts: vec![Artifact {
             path: "weights.bin".into(),
             bytes: 7,
-            sha256: format!("{:x}", Sha256::digest(b"weights")),
+            sha256: "9a129038d9a00aed0cf6a7ea059ca50a813449061ab87848cf1a13eafdf33b2c".into(),
             // A valid cached model must not need a network connection.
             url: "https://offline.invalid/weights".into(),
         }],

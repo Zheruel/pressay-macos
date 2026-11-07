@@ -229,7 +229,7 @@ fn record(
     let sample_rate = supported.sample_rate() as usize;
     let channels = supported.channels() as usize;
     validate_format(sample_rate, channels)?;
-    let config: cpal::StreamConfig = supported.clone().into();
+    let config: cpal::StreamConfig = supported.into();
     let (packets, receive_packets) = mpsc::sync_channel(QUEUE_PACKETS);
     let (errors, receive_errors) = mpsc::sync_channel(1);
     let failure = Arc::new(AtomicU8::new(0));
@@ -349,7 +349,7 @@ fn finish_capture(
     packets: Receiver<Packet>,
     mut pipeline: CapturePipeline,
     failure: &AtomicU8,
-    errors: &Receiver<cpal::StreamError>,
+    errors: &Receiver<cpal::Error>,
 ) -> Result<Vec<f32>, String> {
     drop(stream);
     check_failure(failure, errors)?;
@@ -375,15 +375,15 @@ fn input_stream<T: SizedSample>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
     packets: SyncSender<Packet>,
-    errors: SyncSender<cpal::StreamError>,
+    errors: SyncSender<cpal::Error>,
     failure: Arc<AtomicU8>,
-) -> Result<cpal::Stream, cpal::BuildStreamError>
+) -> Result<cpal::Stream, cpal::Error>
 where
     f32: FromSample<T>,
 {
     let channels = config.channels as usize;
     device.build_input_stream(
-        config,
+        *config,
         move |data: &[T], _: &cpal::InputCallbackInfo| {
             enqueue_audio(data, channels, &packets, &failure);
         },
@@ -435,7 +435,7 @@ fn enqueue_audio<T: Sample>(
     }
 }
 
-fn check_failure(failure: &AtomicU8, errors: &Receiver<cpal::StreamError>) -> Result<(), String> {
+fn check_failure(failure: &AtomicU8, errors: &Receiver<cpal::Error>) -> Result<(), String> {
     if let Ok(error) = errors.try_recv() {
         return Err(format!("Microphone disconnected or failed: {error}"));
     }

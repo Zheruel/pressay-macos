@@ -39,7 +39,7 @@ fn stream<T: SizedSample>(
     track: Track,
     origin: Instant,
     sender: RawSender,
-) -> Result<cpal::Stream, cpal::BuildStreamError>
+) -> Result<cpal::Stream, cpal::Error>
 where
     f32: FromSample<T>,
 {
@@ -47,7 +47,7 @@ where
     let rate = config.sample_rate as usize;
     let errors = sender.failure.clone();
     device.build_input_stream(
-        config,
+        *config,
         move |data: &[T], info: &cpal::InputCallbackInfo| {
             if !data.len().is_multiple_of(channels) {
                 sender
@@ -56,10 +56,7 @@ where
                 return;
             }
             let timestamp = info.timestamp();
-            let latency = timestamp
-                .callback
-                .duration_since(&timestamp.capture)
-                .unwrap_or_default();
+            let latency = timestamp.callback.duration_since(timestamp.capture);
             let start = origin.elapsed().saturating_sub(latency).as_secs_f64();
             for (index, block) in data.chunks(RAW_FRAMES * channels).enumerate() {
                 let mut samples = Vec::with_capacity(block.len() / channels);

@@ -32,7 +32,7 @@ async fn respond(
     connection: &Connection,
     header: &Header<'_>,
     options: &Results,
-    values: HashMap<&str, Value<'_>>,
+    values: HashMap<&str, Variant<'_>>,
 ) -> zbus::fdo::Result<OwnedObjectPath> {
     let sender = header
         .sender()
@@ -76,7 +76,7 @@ async fn session(
         connection,
         header,
         &options,
-        HashMap::from([("session_handle", Value::from(path.as_str()))]),
+        HashMap::from([("session_handle", Variant::from(path.as_str()))]),
     )
     .await
 }
@@ -108,18 +108,18 @@ impl Portal {
         let grants = vec![
             (
                 "dictation",
-                HashMap::from([("trigger_description", Value::from("Ctrl + Shift + Space"))]),
+                HashMap::from([("trigger_description", Variant::from("Ctrl + Shift + Space"))]),
             ),
             (
                 "cancel",
-                HashMap::from([("trigger_description", Value::from("Ctrl + Shift + Esc"))]),
+                HashMap::from([("trigger_description", Variant::from("Ctrl + Shift + Esc"))]),
             ),
         ];
         let handle = respond(
             connection,
             &header,
             &options,
-            HashMap::from([("shortcuts", Value::new(grants))]),
+            HashMap::from([("shortcuts", Variant::new(grants))]),
         )
         .await?;
         connection
@@ -185,7 +185,7 @@ impl Remote {
             connection,
             &header,
             &options,
-            HashMap::from([("devices", Value::from(1u32))]),
+            HashMap::from([("devices", Variant::from(1u32))]),
         )
         .await
     }
@@ -217,18 +217,13 @@ async fn portal_contract_early_responses_shortcuts_unicode_and_revocation() {
     let _bus = Bus(daemon);
     let portal = Portal::default();
     let server = zbus::connection::Builder::address(address.trim())
-        .unwrap()
         .name(DESTINATION)
-        .unwrap()
         .serve_at(DESKTOP, portal.clone())
-        .unwrap()
         .serve_at(DESKTOP, Remote(portal.clone()))
-        .unwrap()
         .build()
         .await
         .unwrap();
     let client = zbus::connection::Builder::address(address.trim())
-        .unwrap()
         .build()
         .await
         .unwrap();

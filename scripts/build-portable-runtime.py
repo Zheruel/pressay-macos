@@ -18,7 +18,7 @@ import subprocess
 import sys
 import tempfile
 
-REVISION = "41738b58b305c08bdecf5379dccdc19a0f7c3b05"
+REVISION = "5700f127e38dd53c4735ea23ef743b4b538eacd4"
 REPOSITORY = "https://github.com/handy-computer/transcribe.cpp.git"
 ROOT = Path(__file__).resolve().parent.parent
 PATCH = ROOT / "scripts/patches/transcribe-sortformer-windowed.patch"

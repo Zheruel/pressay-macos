@@ -9,6 +9,20 @@ edition = "2021"
 license = "MIT"
 rust-version = "1.90"
 
+# Exercise the glib iterator backport under the optimizations that exposed its UB.
+[profile.test.package.glib]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 strip = true
+
+# Tauri's GTK3 stack requires glib 0.18. The pinned backport contains only the
+# upstream VariantStrIter soundness fix (RUSTSEC-2024-0429); no compatible release
+# includes it. Keep its path-dependent crates on the same source/revision.
+[patch.crates-io]
+glib = { git = "https://github.com/jcfs/gtk-rs-core", rev = "ea720152f28e293ef4362ee844ee5cc499f32d2a" }
+glib-sys = { git = "https://github.com/jcfs/gtk-rs-core", rev = "ea720152f28e293ef4362ee844ee5cc499f32d2a" }
+gobject-sys = { git = "https://github.com/jcfs/gtk-rs-core", rev = "ea720152f28e293ef4362ee844ee5cc499f32d2a" }
+gio-sys = { git = "https://github.com/jcfs/gtk-rs-core", rev = "ea720152f28e293ef4362ee844ee5cc499f32d2a" }
+glib-macros = { git = "https://github.com/jcfs/gtk-rs-core", rev = "ea720152f28e293ef4362ee844ee5cc499f32d2a" }
