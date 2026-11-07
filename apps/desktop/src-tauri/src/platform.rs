@@ -15,7 +15,6 @@ pub struct Permissions {
 extern "C" {
     fn pressay_microphone_status() -> i32;
     fn pressay_accessibility_status() -> i32;
-    fn pressay_input_status() -> i32;
     fn pressay_input_devices(buffer: *mut std::ffi::c_char, capacity: usize) -> i32;
     fn pressay_open_permission(kind: i32);
     fn pressay_focused_process() -> u64;
@@ -58,8 +57,10 @@ pub fn permissions(shortcut_registered: bool, microphone_worked: bool) -> Permis
         let _ = microphone_worked;
         Permissions {
             microphone: permission(pressay_microphone_status()),
+            // The shortcut tap needs only Accessibility; it is registered
+            // once that is trusted, so registration is the evidence.
             shortcut: if shortcut_registered {
-                permission(pressay_input_status())
+                Permission::Granted
             } else {
                 Permission::Denied
             },
@@ -134,16 +135,16 @@ pub fn input_devices() -> Result<Vec<crate::audio::InputDevice>, String> {
 }
 pub fn request_permission(kind: &str) -> Result<(), String> {
     match kind {
-        "microphone" | "accessibility" | "shortcut" => {}
+        "microphone" | "accessibility" | "accessibility-reset" | "shortcut" => {}
         _ => return Err("Unknown permission".into()),
     }
     #[cfg(target_os = "macos")]
     unsafe {
-        pressay_open_permission(match kind {
-            "microphone" => 0,
-            "accessibility" => 1,
-            _ => 2,
-        });
+        if kind == "accessibility-reset" {
+            reset_accessibility_entries();
+        }
+        // The talk key needs only Accessibility, so "shortcut" asks for it too.
+        pressay_open_permission(if kind == "microphone" { 0 } else { 1 });
     }
     #[cfg(target_os = "linux")]
     if kind == "accessibility" && is_wayland() {
@@ -157,6 +158,46 @@ pub fn request_permission(kind: &str) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+/// Bundle identifiers of earlier Pressay builds whose Accessibility rows can
+/// sit in System Settings beside the current app and confuse which switch counts.
+#[cfg(target_os = "macos")]
+const LEGACY_BUNDLE_IDS: &[&str] = &["dev.localflow.preview"];
+/// "Still grey? Fix it": a row recorded for an earlier build of this app (another
+/// signature, or the Swift app with the same identifier) stays switched on but
+/// never applies to this binary. Clearing this app's and legacy builds' rows
+/// before prompting makes macOS list the current app, so the switch the person
+/// flips is the one `AXIsProcessTrusted` checks. Only run on request, and
+/// only while Accessibility is untrusted, so a working grant is never cleared.
+#[cfg(target_os = "macos")]
+fn reset_accessibility_entries() {
+    if unsafe { pressay_accessibility_status() } == 1 {
+        return;
+    }
+    let reset = |identifier: &str| {
+        let _ = std::process::Command::new("/usr/bin/tccutil")
+            .args(["reset", "Accessibility", identifier])
+            .output();
+    };
+    LEGACY_BUNDLE_IDS.iter().for_each(|id| reset(id));
+    // Development binaries outside an app bundle have no stable TCC identity.
+    let Some(identifier) = std::env::current_exe().ok().and_then(|exe| {
+        let bundle = exe
+            .ancestors()
+            .find(|p| p.extension().is_some_and(|e| e == "app"))?
+            .to_path_buf();
+        let output = std::process::Command::new("/usr/bin/defaults")
+            .arg("read")
+            .arg(bundle.join("Contents/Info"))
+            .arg("CFBundleIdentifier")
+            .output()
+            .ok()?;
+        let id = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        (output.status.success() && !id.is_empty()).then_some(id)
+    }) else {
+        return;
+    };
+    reset(&identifier);
 }
 /// A short-lived token for the focused field. Wayland deliberately returns a
 /// session generation instead: it cannot provide an original-focus guarantee.

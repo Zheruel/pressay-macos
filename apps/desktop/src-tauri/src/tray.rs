@@ -6,7 +6,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Listener, Manager, PhysicalPosition, PhysicalSize};
 
 const LABEL: &str = "tray";
-const WIDTH: f64 = 348.;
+const WIDTH: f64 = 280.;
 #[derive(Clone, Copy, Debug)]
 struct Anchor {
     work: [f64; 4],
@@ -154,6 +154,8 @@ fn fallback_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
     let item =
         |id: &str, label: &str, enabled| MenuItem::with_id(app, id, label, enabled, None::<&str>);
+    // Linux's system menu mirrors the panel: name, a status only when not
+    // ready, the last dictation, toggles, then app items.
     menu.append(&item("tray-brand", "Pressay", false)?)?;
     use pressay_core::onboarding::Permission;
     let ready = view.model_ready
@@ -164,26 +166,58 @@ fn fallback_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         ]
         .iter()
         .all(|p| *p == Permission::Granted);
-    menu.append(&item(
-        "tray-status",
-        if ready {
-            "Ready to dictate"
-        } else {
-            "Speech or permissions need attention"
-        },
-        false,
-    )?)?;
+    let status = match view.stage.as_str() {
+        "starting" | "recording" => Some("Listening…"),
+        "processing" | "polishing" => Some("Typing…"),
+        "preparing" | "loading" => Some("Preparing your speech model…"),
+        stage if stage.starts_with("meeting") => Some("Taking meeting notes…"),
+        _ if !ready => Some("Setup needed"),
+        _ => None,
+    };
+    if let Some(status) = status {
+        menu.append(&item("tray-status", status, false)?)?;
+    }
     if !view.settings["onboardingComplete"]
         .as_bool()
         .unwrap_or(false)
     {
-        menu.append(&item("tray-setup", "Continue setup", true)?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+        menu.append(&item("tray-setup", "Finish setup…", true)?)?;
     } else {
-        menu.append(&item(
-            "tray-key",
-            &format!("Hold to talk: {}", view.shortcut_label),
-            false,
-        )?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+        menu.append(&item("tray-recent-heading", "Last Dictation", false)?)?;
+        match view.history.first() {
+            None => menu.append(&item(
+                "tray-empty",
+                "Your last dictation appears here.",
+                false,
+            )?)?,
+            Some(record) => {
+                let text = record
+                    .correction
+                    .as_deref()
+                    .filter(|t| !t.is_empty())
+                    .unwrap_or(&record.text);
+                let mut label: String = text.chars().take(48).collect();
+                if text.chars().count() > 48 {
+                    label.push('…');
+                }
+                let copy = item(&format!("tray-copy:{}", record.id), "Copy", true)?;
+                let paste = item(
+                    &format!("tray-paste:{}", record.id),
+                    "Paste again",
+                    view.stage == "idle",
+                )?;
+                let delete = item(&format!("tray-delete:{}", record.id), "Delete", true)?;
+                menu.append(&Submenu::with_items(
+                    app,
+                    label,
+                    true,
+                    &[&copy, &paste, &delete],
+                )?)?;
+            }
+        }
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
         menu.append(&CheckMenuItem::with_id(
             app,
             "tray-ai",
@@ -192,32 +226,6 @@ fn fallback_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             view.settings["claudeCleanup"].as_bool().unwrap_or(false),
             None::<&str>,
         )?)?;
-        menu.append(&PredefinedMenuItem::separator(app)?)?;
-        if view.history.is_empty() {
-            menu.append(&item("tray-empty", "Your dictations appear here.", false)?)?;
-        }
-        for record in view.history.iter().take(2) {
-            let text = record
-                .correction
-                .as_deref()
-                .filter(|t| !t.is_empty())
-                .unwrap_or(&record.text);
-            let label: String = text.chars().take(64).collect();
-            let copy = item(&format!("tray-copy:{}", record.id), "Copy", true)?;
-            let paste = item(
-                &format!("tray-paste:{}", record.id),
-                "Paste again",
-                view.stage == "idle",
-            )?;
-            let delete = item(&format!("tray-delete:{}", record.id), "Delete", true)?;
-            menu.append(&Submenu::with_items(
-                app,
-                label,
-                true,
-                &[&copy, &paste, &delete],
-            )?)?;
-        }
-        menu.append(&PredefinedMenuItem::separator(app)?)?;
         let meeting_label = if view.stage == "meeting_starting" {
             "Cancel Notetaker setup"
         } else if view.stage.starts_with("meeting") {
@@ -230,10 +238,10 @@ fn fallback_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             meeting_label,
             ["idle", "meeting", "meeting_starting"].contains(&view.stage.as_str()),
         )?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
         menu.append(&item("tray-show", "Open Pressay", true)?)?;
         menu.append(&item("tray-settings", "Settings…", true)?)?;
     }
-    menu.append(&PredefinedMenuItem::separator(app)?)?;
     if let Some((message, available)) = app.state::<TrayState>().update.lock().unwrap().as_ref() {
         menu.append(&item("tray-update-notice", message, false)?)?;
         if *available {
@@ -245,6 +253,7 @@ fn fallback_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         }
     }
     menu.append(&item("tray-update", "Check for Updates…", true)?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&item("tray-quit", "Quit Pressay", true)?)?;
     Ok(menu)
 }
@@ -340,6 +349,10 @@ fn menu_action(app: &AppHandle, id: &str) {
         }
     });
 }
+#[cfg(target_os = "macos")]
+extern "C" {
+    fn pressay_apply_glass(ns_window: *mut std::ffi::c_void, radius: f64);
+}
 pub fn install(app: &tauri::App) -> tauri::Result<()> {
     app.manage(TrayState::default());
     // Linux StatusNotifier does not emit click coordinates. Keep its native
@@ -356,6 +369,9 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
             .visible_on_all_workspaces(true)
             .skip_taskbar(true)
             .shadow(true)
+            // The page paints no background: macOS's own glass shows through
+            // (see `pressay_apply_glass`), as native menu bar extras draw it.
+            .transparent(true)
             .focused(false)
             .visible(false)
             .accept_first_mouse(true)
@@ -363,6 +379,33 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
             .map_err(|error| eprintln!("Could not create tray panel: {error}"))
             .ok()
     };
+    #[cfg(target_os = "macos")]
+    if let Some(Ok(ns_window)) = panel.as_ref().map(|window| window.ns_window()) {
+        unsafe { pressay_apply_glass(ns_window, 12.) };
+    }
+    // Windows 11: the Acrylic material its own flyouts use, and rounded corners.
+    #[cfg(windows)]
+    if let Some(window) = &panel {
+        let _ = window.set_effects(
+            tauri::window::EffectsBuilder::new()
+                .effect(tauri::window::Effect::Acrylic)
+                .build(),
+        );
+        if let Ok(hwnd) = window.hwnd() {
+            use windows::Win32::Graphics::Dwm::{
+                DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+            };
+            let preference = DWMWCP_ROUND;
+            unsafe {
+                let _ = DwmSetWindowAttribute(
+                    windows::Win32::Foundation::HWND(hwnd.0 as _),
+                    DWMWA_WINDOW_CORNER_PREFERENCE,
+                    std::ptr::from_ref(&preference).cast(),
+                    std::mem::size_of_val(&preference) as u32,
+                );
+            }
+        }
+    }
     if let Some(window) = &panel {
         let handle = window.clone();
         window.on_window_event(move |event| match event {
@@ -448,7 +491,7 @@ mod tests {
             scale: 2.,
         };
         let (p, s) = placement(top, 650.);
-        assert_eq!(s, [696, 1300]);
+        assert_eq!(s, [(WIDTH * 2.) as u32, 1300]);
         assert!(p[0] >= 12 && p[0] + s[0] as i32 <= 2868);
         assert!(p[1] >= 62);
         let bottom = Anchor {

@@ -11,7 +11,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 pressay-core = { path = "../../../crates/pressay-core" }
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-global-shortcut = "2"
@@ -40,7 +40,7 @@ objc2-app-kit = { version = "0.3", features = ["NSRunningApplication", "NSWorksp
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6.3", features = ["windows-native"] }
-windows = { version = "0.62", features = ["Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_RemoteDesktop", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_Graphics_Gdi", "Win32_Media_Audio", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_System_Ole", "Win32_UI_Accessibility"] }
+windows = { version = "0.62", features = ["Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_RemoteDesktop", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_Graphics_Gdi", "Win32_Media_Audio", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_System_Ole", "Win32_UI_Accessibility", "Win32_Graphics_Dwm"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6.3", features = ["sync-secret-service", "crypto-rust"] }

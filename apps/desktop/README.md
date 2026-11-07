@@ -19,7 +19,7 @@ Installers land in `target/release/bundle`. The build stages the pinned native r
 
 The manual `Desktop preview installers` workflow builds macOS, Windows and Linux artifacts without publishing a release. Signing, notarization and the signed desktop update channel need explicit release configuration; see [release setup](../../docs/releases.md). A local preview build does not imply trusted signing or an active update feed.
 
-On macOS, rebuilding with an ad-hoc signature changes the app's identity for permissions. Set `APPLE_SIGNING_IDENTITY` to a stable certificate (for example the local "Pressay Local Signing" identity) to keep Accessibility and Input Monitoring grants across rebuilds. If System Settings shows access enabled but Pressay still reports it missing, remove the stale entry, add the current app again, then reopen Pressay.
+On macOS, rebuilding with an ad-hoc signature changes the app's identity for permissions. Set `APPLE_SIGNING_IDENTITY` to a stable certificate (for example the local "Pressay Local Signing" identity) to keep Microphone and Accessibility grants across rebuilds. The talk key needs only Accessibility, as in Hex; there is no Input Monitoring step. If System Settings shows Accessibility on but setup still asks for it, choose **Still grey? Fix it**: it clears stale Pressay entries (including the old Preview app) and asks again.
 
 For development on macOS/Linux, use the staged workers explicitly so meeting analysis and Mac MLX resources resolve beside the selected ASR worker:
 
