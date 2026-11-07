@@ -1121,8 +1121,7 @@ pub fn launch(
                             reply.send(Err("Finish dictation before importing settings".into()));
                         continue;
                     }
-                    let onboarding = state.view.lock().unwrap().settings
-                        ["onboardingComplete"]
+                    let onboarding = state.view.lock().unwrap().settings["onboardingComplete"]
                         .as_bool()
                         .unwrap_or(false);
                     let mut result = serde_json::from_str::<storage::Snapshot>(&source)
@@ -1131,8 +1130,7 @@ pub fn launch(
                             // Completing setup in the Swift app cannot attest to this
                             // newly installed app's permissions or insertion.
                             if let Some(settings) = snapshot.settings.as_object_mut() {
-                                settings
-                                    .insert("onboardingComplete".into(), json!(onboarding));
+                                settings.insert("onboardingComplete".into(), json!(onboarding));
                             }
                             store.import(&snapshot).map_err(|e| e.to_string())
                         })
