@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod app_metadata;
 mod audio;
+mod credentials;
 mod dictation;
 mod engine;
 mod feedback;
