@@ -11,6 +11,7 @@
   --highlight: rgb(0 0 0 / 0.08);
   --chip: rgb(0 0 0 / 0.06);
   --chip-line: rgb(0 0 0 / 0.1);
+  --highlight-strong: rgb(0 0 0 / 0.13);
   --green: #34c759;
   --red: #ff3b30;
   --orange: #ff9500;
@@ -26,6 +27,7 @@
     --highlight: rgb(255 255 255 / 0.12);
     --chip: rgb(255 255 255 / 0.08);
     --chip-line: rgb(255 255 255 / 0.12);
+    --highlight-strong: rgb(255 255 255 / 0.18);
     --green: #30d158;
     --red: #ff453a;
     --orange: #ff9f0a;
@@ -161,6 +163,11 @@ kbd {
   gap: 10px;
   padding: 6px 8px 7px;
   border-radius: 8px;
+  background: var(--highlight);
+}
+.recent:hover,
+.recent:focus-visible {
+  background: var(--highlight-strong) !important;
 }
 .app-icon {
   width: 32px;
@@ -216,12 +223,7 @@ kbd {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  color: var(--tertiary);
-  opacity: 0;
-}
-.recent:hover .recent-copy,
-.recent:focus-visible .recent-copy {
-  opacity: 1;
+  color: var(--secondary);
 }
 .recent-copy svg {
   width: 14px;
