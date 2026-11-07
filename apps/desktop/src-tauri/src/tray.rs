@@ -6,7 +6,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Listener, Manager, PhysicalPosition, PhysicalSize};
 
 const LABEL: &str = "tray";
-const WIDTH: f64 = 348.;
+const WIDTH: f64 = 280.;
 #[derive(Clone, Copy, Debug)]
 struct Anchor {
     work: [f64; 4],

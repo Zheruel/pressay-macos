@@ -48,7 +48,8 @@ function showRecordMenu(event, record) {
   const menu = $("record-menu");
   menu.hidden = false;
   const row = event.currentTarget;
-  row.append(menu);
+  // Beside the row, not inside it: the row is itself a button.
+  $("recent").append(menu);
   menu.classList.toggle(
     "above",
     row.getBoundingClientRect().bottom + menu.offsetHeight > innerHeight - 8,
@@ -65,17 +66,29 @@ function render() {
     permissions.microphone === "granted" &&
     permissions.shortcut === "granted" &&
     permissions.insertion === "granted";
-  $("ready-dot").classList.toggle("ready", s.model_ready && allowed);
-  $("ready-dot").setAttribute(
-    "aria-label",
-    s.model_ready && allowed ? "Ready to dictate" : "Setup needs attention",
-  );
+  const ready = s.model_ready && allowed;
+  const live = ["starting", "recording"].includes(s.stage);
+  const meetingLive = s.stage.startsWith("meeting");
+  $("ready-dot").classList.toggle("ready", ready && !live && !meetingLive);
+  $("ready-dot").classList.toggle("live", live || meetingLive);
+  $("status-title").textContent = live
+    ? "Listening…"
+    : ["processing", "polishing"].includes(s.stage)
+      ? "Typing…"
+      : meetingLive
+        ? "Taking notes"
+        : ["preparing", "loading"].includes(s.stage)
+          ? "Preparing speech model…"
+          : ready
+            ? "Ready"
+            : "Setup needed";
+  $("status-hint").hidden = !ready || meetingLive;
   $("setup").hidden = s.settings.onboardingComplete === true;
   $("ready-content").hidden = !$("setup").hidden;
-  $("attention").hidden = s.model_ready && allowed;
+  $("attention").hidden = ready || ["preparing", "loading"].includes(s.stage);
   $("attention").textContent = allowed
-    ? "⚠ Speech model needs attention"
-    : "⚠ A permission needs attention";
+    ? "Speech model needs attention…"
+    : "Allow access…";
   $("attention").onclick = () =>
     call("show_workspace", { page: allowed ? "general" : "onboarding" }).catch(
       () => {},
@@ -93,43 +106,38 @@ function render() {
       : meeting
         ? "Stop Notetaker"
         : "Start Notetaker";
-  $("meeting-icon").textContent = meeting ? "■" : "＋";
   $("meeting").disabled = !["idle", "meeting", "meeting_starting"].includes(
     s.stage,
   );
-  const records = s.history.slice(0, 2);
+  const records = s.history.slice(0, 1);
   const key = JSON.stringify([records, [...copied], [...metadata]]);
   if (key === recentKey) return;
   recentKey = key;
   closeMenu();
   $("recent").replaceChildren();
   if (!records.length)
-    $("recent").append(node("p", "Your dictations appear here.", "empty"));
+    $("recent").append(node("p", "Your last dictation appears here.", "empty"));
   for (const record of records) {
-    const row = node("div", undefined, "recent-row");
-    row.tabIndex = 0;
+    const row = node("button", undefined, "row recent");
+    row.title = "Copy";
     row.setAttribute(
       "aria-label",
-      "Recent dictation. Press Shift+F10 for actions.",
+      "Copy last dictation. Press Shift+F10 for more actions.",
     );
+    row.onclick = () => copy(record).catch(() => {});
     row.oncontextmenu = (e) => showRecordMenu(e, record);
     row.onkeydown = (e) => {
       if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))
         showRecordMenu(e, record);
     };
-    const body = node("div", undefined, "recent-copy");
-    body.append(node("p", text(record)));
+    row.append(node("p", text(record)));
     const info = metadata.get(record.target),
-      line = node("div", undefined, "recent-metadata");
+      line = node("span", undefined, "recent-meta");
     if (info?.icon) {
       const img = node("img");
       img.src = info.icon;
       img.alt = "";
       line.append(img);
-    } else {
-      const icon = node("span", "▧", "app-placeholder");
-      icon.setAttribute("aria-hidden", "true");
-      line.append(icon);
     }
     const time = new Date(record.created_at * 1000).toLocaleTimeString(
       undefined,
@@ -140,18 +148,10 @@ function render() {
         "span",
         copied.has(record.id)
           ? "Copied"
-          : [info?.name, time].filter(Boolean).join(" · "),
+          : [info?.name, time].filter(Boolean).join(", "),
       ),
     );
-    body.append(line);
-    const button = node("button", undefined, "copy");
-    button.title = "Copy dictation";
-    button.setAttribute("aria-label", "Copy dictation");
-    button.innerHTML = copied.has(record.id)
-      ? "✓"
-      : '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="6" y="6" width="10" height="11" rx="2"/><path d="M12 6V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2"/></svg>';
-    button.onclick = () => copy(record).catch(() => {});
-    row.append(body, button);
+    row.append(line);
     $("recent").append(row);
   }
   const missing = [
@@ -219,7 +219,7 @@ $("check-update").onclick = async () => {
   if (updateBusy) return;
   updateBusy = true;
   $("check-update").disabled = true;
-  $("check-update").textContent = "Checking for updates…";
+  $("check-update").textContent = "Checking for Updates…";
   try {
     const update = await call("check_update");
     $("update-message").textContent = update.message;
