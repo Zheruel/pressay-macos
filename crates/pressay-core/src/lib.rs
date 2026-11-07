@@ -38,7 +38,6 @@ pub mod segmenter;
 
 pub mod analysis;
 
-// Share the crypto backend already required by JWT verification and TLS.
 pub(crate) fn sha256(bytes: &[u8]) -> [u8; 32] {
     let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, bytes);
     digest

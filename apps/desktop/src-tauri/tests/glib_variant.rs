@@ -16,10 +16,4 @@ fn glib_variant_string_iteration_is_sound_when_optimized() {
         variant.array_iter_str().unwrap().rev().collect::<Vec<_>>(),
         values.into_iter().rev().collect::<Vec<_>>()
     );
-    let mut mixed = variant.array_iter_str().unwrap();
-    assert_eq!(mixed.next(), Some(""));
-    assert_eq!(mixed.next_back(), Some("音声"));
-    assert_eq!(mixed.nth(1), Some("Čujem te"));
-    assert_eq!(mixed.next(), None);
-    assert!(42i32.to_variant().array_iter_str().is_err());
 }

@@ -1,8 +1,5 @@
 name: Release
 
-# Pushing a vX.Y.Z tag that matches the app version builds Pressay for macOS, Windows
-# and Linux, signs every update, and publishes one GitHub release. Macs still on the
-# retired Swift app update into this release through its Sparkle feed.
 on:
   push:
     tags: ["v*"]

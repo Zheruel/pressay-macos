@@ -1,4 +1,3 @@
-//! Use each platform store directly so a transient startup failure is retryable.
 use keyring_core::{api::CredentialStoreApi, Entry, Result};
 
 pub(crate) fn entry(service: &str, user: &str) -> Result<Entry> {

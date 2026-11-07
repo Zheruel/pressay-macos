@@ -3454,7 +3454,7 @@ dependencies = [
 
 [[package]]
 name = "pressay-core"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -3480,7 +3480,7 @@ dependencies = [
 
 [[package]]
 name = "pressay-desktop"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "apple-native-keyring-store",
  "arboard",

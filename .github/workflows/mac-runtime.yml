@@ -1,8 +1,6 @@
 name: Mac runtime
 
-# The Swift/MLX speech worker takes 8+ minutes to compile cold, so this runs only
-# when something it covers changes. Only main saves the build cache; pull
-# requests restore main's copy, so the 10 GB cache budget isn't spent per PR.
+# PRs restore main's cache; only main saves it to avoid per-PR cache churn.
 on:
   push:
     branches: [main]
@@ -44,7 +42,6 @@ jobs:
           xcodebuild -version
           echo "xcode=$(xcodebuild -version | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
 
-      # Key compiled dependencies by toolchain to avoid mixing compiler versions.
       - name: Restore build cache
         id: cache
         uses: actions/cache/restore@v6
@@ -54,7 +51,6 @@ jobs:
           restore-keys: |
             runtime-swiftbuild-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
 
-      # The app bundles this Swift/MLX worker for Orukeet and Mega-ASR on Mac.
       - name: Build the Swift speech worker
         run: |
           if ! xcrun metal --version >/dev/null 2>&1; then

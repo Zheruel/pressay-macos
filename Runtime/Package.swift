@@ -1,7 +1,6 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-// Isolate MLX/ggml symbols from the app's legacy CTranscribe framework.
 let package = Package(
     name: "PressayASRRuntime",
     platforms: [.macOS(.v26)],
