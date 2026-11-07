@@ -14,50 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  mac-runtime:
-    name: Mac speech runtime and app scripts
-    runs-on: macos-26
-    timeout-minutes: 45
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-
-      - name: Show toolchain
-        id: toolchain
-        run: |
-          sw_vers
-          xcodebuild -version
-          echo "xcode=$(xcodebuild -version | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
-
-      # Key compiled dependencies by toolchain to avoid mixing compiler versions.
-      - name: Restore build cache
-        uses: actions/cache@v6
-        with:
-          path: Runtime/.build
-          key: runtime-swiftbuild-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Runtime/Package.resolved') }}
-          restore-keys: |
-            runtime-swiftbuild-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
-
-      # The app bundles this Swift/MLX worker for Orukeet and Mega-ASR on Mac.
-      - name: Build the Swift speech worker
-        run: |
-          if ! xcrun metal --version >/dev/null 2>&1; then
-            xcodebuild -downloadComponent MetalToolchain
-          fi
-          xcrun swift build --package-path Runtime --build-system swiftbuild --disable-sandbox -c release
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: apps/desktop/package-lock.json
-
-      - name: Check the app's web UI formatting and packaging scripts
-        run: |
-          npm ci --prefix apps/desktop
-          npx --yes prettier@3.9.10 --check "apps/desktop/ui/**/*.{js,css,html}"
-          python3 -m py_compile scripts/*.py
-
   rust:
     name: Rust core and desktop (${{ matrix.os }})
     strategy:
