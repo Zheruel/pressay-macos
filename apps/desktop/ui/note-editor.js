@@ -17,7 +17,10 @@
       if (!part) continue;
       let node;
       if (part.startsWith("**") && part.endsWith("**") && part.length > 4)
-        (node = document.createElement("strong")).textContent = part.slice(2, -2);
+        (node = document.createElement("strong")).textContent = part.slice(
+          2,
+          -2,
+        );
       else if (part.startsWith("`") && part.endsWith("`") && part.length > 2)
         (node = document.createElement("code")).textContent = part.slice(1, -1);
       else if (
@@ -25,8 +28,11 @@
         ((part.startsWith("*") && part.endsWith("*")) ||
           (part.startsWith("_") && part.endsWith("_")))
       )
-        ((node = document.createElement("em")).textContent = part.slice(1, -1)),
-          (node.dataset.md = part[0]);
+        (((node = document.createElement("em")).textContent = part.slice(
+          1,
+          -1,
+        )),
+          (node.dataset.md = part[0]));
       else node = document.createTextNode(part);
       target.append(node);
     }
@@ -70,13 +76,21 @@
         continue;
       }
       if (code) {
-        code.append(document.createTextNode((code.dataset.lines++ > 0 ? "\n" : "") + line));
+        code.append(
+          document.createTextNode(
+            (code.dataset.lines++ > 0 ? "\n" : "") + line,
+          ),
+        );
         continue;
       }
       const indent = line.match(/^\s*/u)[0];
       let match;
       if ((match = line.match(TASK))) {
-        if (!list || list.tagName !== "UL" || !list.classList.contains("tasks")) {
+        if (
+          !list ||
+          list.tagName !== "UL" ||
+          !list.classList.contains("tasks")
+        ) {
           list = document.createElement("ul");
           list.className = "tasks";
           root.append(list);
@@ -138,8 +152,7 @@
         else if (["EM", "I"].includes(child.tagName)) {
           const mark = child.dataset.md || "*";
           out += `${mark}${text}${mark}`;
-        }
-        else if (child.tagName === "CODE") out += `\`${text}\``;
+        } else if (child.tagName === "CODE") out += `\`${text}\``;
         else out += text;
       }
     }
@@ -157,21 +170,30 @@
       if (node.nodeType !== Node.ELEMENT_NODE) continue;
       const tag = node.tagName;
       if (/^H[1-6]$/u.test(tag)) {
-        const text = inlineMd(node).trim().replace(/\s*\n\s*/gu, " ");
-        if (text) push(`${"#".repeat(Math.min(4, Number(tag[1])))} ${text}`, true);
+        const text = inlineMd(node)
+          .trim()
+          .replace(/\s*\n\s*/gu, " ");
+        if (text)
+          push(`${"#".repeat(Math.min(4, Number(tag[1])))} ${text}`, true);
       } else if (tag === "UL" || tag === "OL") {
         const lines = [];
         let n = tag === "OL" ? node.start || 1 : 1;
         for (const li of node.children) {
-          const text = inlineMd(li).trim().replace(/\s*\n\s*/gu, " ");
+          const text = inlineMd(li)
+            .trim()
+            .replace(/\s*\n\s*/gu, " ");
           const indent = li.dataset.indent || "";
           const box = li.querySelector(":scope > input[type=checkbox]");
-          if (box) lines.push(`${indent}- [${box.checked ? "x" : " "}] ${text}`);
-          else if (text) lines.push(`${indent}${tag === "OL" ? `${n++}.` : "-"} ${text}`);
+          if (box)
+            lines.push(`${indent}- [${box.checked ? "x" : " "}] ${text}`);
+          else if (text)
+            lines.push(`${indent}${tag === "OL" ? `${n++}.` : "-"} ${text}`);
         }
         if (lines.length) push(lines.join("\n"));
       } else if (tag === "PRE")
-        push("```" + (node.dataset.lang || "") + "\n" + node.textContent + "\n```");
+        push(
+          "```" + (node.dataset.lang || "") + "\n" + node.textContent + "\n```",
+        );
       else if (tag === "BLOCKQUOTE") {
         const text = inlineMd(node).trim();
         if (text) push(`> ${text}`);
@@ -214,7 +236,9 @@
     const text = block.textContent.replace(/ /gu, " ");
     const replace = (element) => {
       block.replaceWith(element);
-      caretToEnd(element.querySelector("span") || element.lastElementChild || element);
+      caretToEnd(
+        element.querySelector("span") || element.lastElementChild || element,
+      );
       return true;
     };
     if (block.tagName === "LI") {
@@ -267,7 +291,8 @@
   // Read-only Markdown rendering for chat answers, using the same rules.
   window.renderNoteMarkdown = function (source, root) {
     toDom(source, root);
-    for (const box of root.querySelectorAll("input[type=checkbox]")) box.disabled = true;
+    for (const box of root.querySelectorAll("input[type=checkbox]"))
+      box.disabled = true;
   };
 
   window.createNoteEditor = function ({
@@ -288,10 +313,14 @@
     root.dataset.placeholder = placeholder;
     toDom(value, root);
     if (readOnly)
-      for (const box of root.querySelectorAll("input[type=checkbox]")) box.disabled = true;
+      for (const box of root.querySelectorAll("input[type=checkbox]"))
+        box.disabled = true;
     let last = toMarkdown(root);
     const empty = () =>
-      root.classList.toggle("is-empty", !root.textContent.trim() && !root.querySelector("input"));
+      root.classList.toggle(
+        "is-empty",
+        !root.textContent.trim() && !root.querySelector("input"),
+      );
     empty();
     const changed = () => {
       empty();
@@ -306,7 +335,8 @@
     });
     root.addEventListener("blur", () => onFocusChange?.(false));
     root.addEventListener("input", (event) => {
-      if (event.inputType === "insertText" && event.data === " ") applyShortcut(root);
+      if (event.inputType === "insertText" && event.data === " ")
+        applyShortcut(root);
       // A list item that loses its text and checkbox becomes a paragraph again.
       for (const li of root.querySelectorAll("ul.tasks > li")) {
         if (!li.querySelector("input")) li.prepend(checkbox(false));
@@ -369,15 +399,23 @@
       let block = currentBlock(root);
       if (block?.tagName === "LI") block = block.parentNode;
       let below = 0;
-      for (let next = block?.nextSibling; next; next = next.nextSibling) below++;
+      for (let next = block?.nextSibling; next; next = next.nextSibling)
+        below++;
       toDom(toMarkdown(root), root);
       const target = root.childNodes[root.childNodes.length - 1 - below];
-      if (target) caretToEnd(target.tagName === "UL" || target.tagName === "OL" ? target.lastChild : target);
+      if (target)
+        caretToEnd(
+          target.tagName === "UL" || target.tagName === "OL"
+            ? target.lastChild
+            : target,
+        );
       changed();
     });
     root.addEventListener("change", (event) => {
       if (event.target.matches("input[type=checkbox]")) {
-        event.target.closest("li")?.classList.toggle("done", event.target.checked);
+        event.target
+          .closest("li")
+          ?.classList.toggle("done", event.target.checked);
         changed();
       }
     });
@@ -392,7 +430,8 @@
       },
       setReadOnly(flag) {
         root.contentEditable = flag ? "false" : "true";
-        for (const box of root.querySelectorAll("input[type=checkbox]")) box.disabled = flag;
+        for (const box of root.querySelectorAll("input[type=checkbox]"))
+          box.disabled = flag;
       },
     };
   };

@@ -493,9 +493,7 @@ function renderStats(history) {
     streak++;
     cursor.setDate(cursor.getDate() - 1);
   }
-  $("streak").replaceChildren(
-    ...unit(streak, streak === 1 ? "day" : "days"),
-  );
+  $("streak").replaceChildren(...unit(streak, streak === 1 ? "day" : "days"));
 }
 let weekChartKey = "";
 function renderWeekChart(history) {
@@ -598,10 +596,7 @@ let historyLimit = HISTORY_PAGE,
   // the background status refresh can't apply a half-typed query early.
   appliedHistoryQuery = "";
 function foldText(text) {
-  return text
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLocaleLowerCase();
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase();
 }
 function searchTokens(query) {
   return foldText(query).split(/\s+/u).filter(Boolean);
@@ -635,7 +630,7 @@ function highlightInto(container, text, tokens) {
   // Match on folded text (so "cafe" finds "café"), then mark the original.
   let folded = "";
   const start = [];
-  for (let i = 0; i < text.length; ) {
+  for (let i = 0; i < text.length;) {
     const char = String.fromCodePoint(text.codePointAt(i));
     const piece = foldText(char);
     for (let k = 0; k < piece.length; k++) start.push(i);
@@ -654,7 +649,8 @@ function highlightInto(container, text, tokens) {
     const from = start[match.index],
       to = start[match.index + match[0].length];
     if (from < last) continue;
-    if (from > last) nodes.push(document.createTextNode(text.slice(last, from)));
+    if (from > last)
+      nodes.push(document.createTextNode(text.slice(last, from)));
     nodes.push(element("mark", text.slice(from, to)));
     last = to;
   }
@@ -758,7 +754,9 @@ function renderHistory(s) {
     const icon = element("div", undefined, "history-app-icon");
     icon.setAttribute("aria-hidden", "true");
     if (appName)
-      icon.append(element("span", appName.trim()[0].toLocaleUpperCase(), "app-initial"));
+      icon.append(
+        element("span", appName.trim()[0].toLocaleUpperCase(), "app-initial"),
+      );
     else icon.append(historyIcon("app"));
     const appIcon =
       typeof appMetadata === "undefined" ? null : appMetadata[r.target]?.icon;
@@ -1079,7 +1077,10 @@ function renderNotes(s) {
       s.settings.notesUseAI !== false &&
       (!accountChecked || notesProviderAvailable()),
   });
-  if (!accountChecked && !document.querySelector('[data-panel="meetings"]').hidden)
+  if (
+    !accountChecked &&
+    !document.querySelector('[data-panel="meetings"]').hidden
+  )
     refreshAccount();
   if (recording) {
     $("meeting-title").textContent = n?.title || "Preparing meeting";
@@ -1131,9 +1132,7 @@ function renderNotes(s) {
         element("h2", query ? "No matching meetings" : "No meetings yet"),
         element(
           "p",
-          query
-            ? "Try another search."
-            : "Your meetings will appear here.",
+          query ? "Try another search." : "Your meetings will appear here.",
         ),
       );
       $("meetings").append(empty);
@@ -1606,7 +1605,8 @@ async function flushNoteSave() {
 function finishNoteEditing() {
   flushNoteSave().finally(() => {
     const active = document.activeElement;
-    if (!active?.closest?.(".note-editor-doc, .note-title")) noteEditing = false;
+    if (!active?.closest?.(".note-editor-doc, .note-title"))
+      noteEditing = false;
   });
 }
 function notesProviderAvailable() {

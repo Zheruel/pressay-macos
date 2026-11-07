@@ -509,7 +509,9 @@ kbd,
   border-radius: 5px;
   background: var(--raised-strong);
   color: var(--muted);
-  font: 500 11px -apple-system, sans-serif;
+  font:
+    500 11px -apple-system,
+    sans-serif;
   box-shadow: inset 0 -1px 0 #00000059;
 }
 .home .history {
@@ -823,7 +825,10 @@ main > .notes-page {
   flex: 1;
 }
 #meeting-clock {
-  font-family: ui-rounded, -apple-system, sans-serif;
+  font-family:
+    ui-rounded,
+    -apple-system,
+    sans-serif;
   font-variant-numeric: tabular-nums;
 }
 .notes-page #stop-meeting {
@@ -1516,14 +1521,22 @@ main > .notes-page {
   padding: 1px 5px;
   border-radius: 5px;
   background: var(--raised);
-  font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    12.5px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
 }
 .note-editor-doc pre {
   margin: 0 0 10px;
   padding: 12px 14px;
   border-radius: 10px;
   background: var(--raised);
-  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    12.5px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
   white-space: pre-wrap;
 }
 .note-editor-doc[contenteditable="false"] {
@@ -1641,20 +1654,28 @@ main > .notes-page {
   display: flex;
   animation: ask-open 0.18s ease-out;
 }
-#ask .ask-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 10px 8px 16px;
+/* The conversation's controls float in its top corner; no title bar. */
+#ask .ask-panel {
+  position: relative;
 }
-#ask .ask-head-mark {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--violet-2) 20%, transparent);
-  color: var(--violet-2);
+#ask .ask-head {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
+}
+#ask[data-empty="true"] .ask-head {
+  display: none;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 #ask .ask-head h2 {
   flex: 1;
@@ -1675,7 +1696,7 @@ main > .notes-page {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px 20px 18px;
+  padding: 44px 20px 18px;
   scroll-behavior: smooth;
 }
 #ask .ask-msg + .ask-msg {
@@ -1864,42 +1885,31 @@ main > .notes-page {
 #ask .ask-stopped p {
   color: var(--muted);
 }
-#ask .ask-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  padding: 18px 0 4px;
-}
-#ask .ask-empty-mark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  margin-bottom: 12px;
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--violet-2) 18%, transparent);
-  color: var(--violet-2);
-}
-#ask .ask-empty-mark svg {
-  width: 18px;
-  height: 18px;
-}
-#ask .ask-empty h3 {
-  margin: 0 0 4px;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
-}
-#ask .ask-empty p {
-  margin: 0 0 16px;
-  max-width: 460px;
-  font-size: 13px;
-  line-height: 1.5;
+#ask[data-empty="true"] .ask-thread {
+  padding: 6px;
 }
 #ask .ask-suggestions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+}
+#ask .ask-suggestion {
+  justify-content: flex-start;
+  height: 32px;
+  min-height: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+}
+#ask .ask-suggestion:hover:not(:disabled),
+#ask .ask-suggestion:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+  outline: 0;
 }
 #ask .ask-chip {
   height: 30px;
@@ -1934,14 +1944,14 @@ main > .notes-page {
   padding: 0 9px 0 11px;
   border: 0;
   border-radius: 9px;
-  background: color-mix(in srgb, var(--violet-2) 16%, transparent);
-  color: var(--violet-2);
+  background: var(--hover);
+  color: var(--muted);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
 }
 #ask .ask-scope:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--violet-2) 26%, transparent);
+  color: var(--text);
 }
 #ask .ask-scope:disabled {
   opacity: 1;
@@ -2017,7 +2027,10 @@ main > .notes-page {
   resize: none;
   background: transparent;
   color: var(--text);
-  font: 14px/18px -apple-system, BlinkMacSystemFont, sans-serif;
+  font:
+    14px/18px -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
 }
 #ask .ask-bar textarea:focus-visible {
   outline: 0;
@@ -2068,7 +2081,9 @@ main > .notes-page {
     transform 0.15s;
 }
 #ask .ask-send:disabled {
-  opacity: 0.3;
+  opacity: 1;
+  background: var(--hover);
+  color: var(--faint);
 }
 #ask .ask-send:not(:disabled):hover {
   transform: scale(1.06);

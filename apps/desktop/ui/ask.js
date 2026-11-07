@@ -11,8 +11,6 @@
     if (className) node.className = className;
     return node;
   };
-  const SPARK =
-    '<svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="m10 3 1.7 4.6L16.5 9l-4.8 1.6L10 15.5l-1.7-4.9L3.5 9l4.8-1.4L10 3Z" fill="currentColor"/></svg>';
   const COPY =
     '<svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="9.5" height="10" rx="2"/><path d="M13 7V5a2 2 0 0 0-2-2H5.5a2 2 0 0 0-2 2v6.5a2 2 0 0 0 2 2H7"/></svg>';
 
@@ -54,7 +52,9 @@
 
   function renderBar() {
     const meeting = scope === "this" && note;
-    $("ask-scope-label").textContent = meeting ? "This meeting" : "All meetings";
+    $("ask-scope-label").textContent = meeting
+      ? "This meeting"
+      : "All meetings";
     $("ask-scope").disabled = !note;
     $("ask-scope").title = note
       ? "Choose what to ask about"
@@ -72,7 +72,7 @@
       : thread().length
         ? "Ask a follow-up…"
         : meeting
-          ? `Ask about ${note.title || "this meeting"}…`
+          ? "Ask about this meeting…"
           : "Ask about all your meetings…";
     $("ask-setup").hidden = available;
     $("ask-send").hidden = !!waiting || !available;
@@ -199,7 +199,9 @@
     if (note && scope === "this") {
       const keep = el("button", undefined, "ask-action");
       keep.type = "button";
-      keep.append(el("span", item.kept ? "Added to My notes" : "Add to My notes"));
+      keep.append(
+        el("span", item.kept ? "Added to My notes" : "Add to My notes"),
+      );
       keep.disabled = !!item.kept;
       keep.onclick = async () => {
         const id = note.id;
@@ -211,7 +213,10 @@
           const existing = (target.myNotes || "").trim();
           const addition = plainAnswer(item.answer).trim();
           const myNotes = existing ? `${existing}\n\n${addition}` : addition;
-          await window.__TAURI__.core.invoke("edit_note", { id, patch: { myNotes } });
+          await window.__TAURI__.core.invoke("edit_note", {
+            id,
+            patch: { myNotes },
+          });
           target.myNotes = myNotes;
           noteVersion = "";
           renderNotes(current.view);
@@ -230,37 +235,25 @@
     return nodes;
   }
 
+  // Before the first question: a few plain starting points, nothing more.
   function emptyState() {
-    const box = el("div", undefined, "ask-empty");
     const meeting = scope === "this" && note;
-    const mark = el("span", undefined, "ask-empty-mark");
-    mark.innerHTML = SPARK;
-    box.append(
-      mark,
-      el(
-        "h3",
-        meeting ? `Ask about ${note.title || "this meeting"}` : "Ask across all your meetings",
-      ),
-      el(
-        "p",
-        meeting
-          ? "Answers come from this meeting’s notes and transcript."
-          : "Pressay finds the meetings that matter, then answers and shows where each point came from.",
-      ),
-    );
     const prompts = meeting
-      ? ["What did we decide?", "What do I need to do?", "Draft a follow-up email"]
-      : ["What do I owe people?", "Recap this week", "What’s still unresolved?"];
+      ? [
+          "What did we decide?",
+          "What are my action items?",
+          "Draft a follow-up email",
+        ]
+      : ["What do I owe people?", "Recap this week", "What’s still open?"];
     const list = el("div", undefined, "ask-suggestions");
     for (const prompt of prompts) {
-      const chip = el("button", prompt, "ask-chip");
-      chip.type = "button";
-      chip.disabled = !available || !!busy;
-      chip.onclick = () => send(prompt);
-      list.append(chip);
+      const row = el("button", prompt, "ask-suggestion");
+      row.type = "button";
+      row.disabled = !available || !!busy;
+      row.onclick = () => send(prompt);
+      list.append(row);
     }
-    box.append(list);
-    return box;
+    return list;
   }
 
   function renderThread(force = false) {
@@ -276,12 +269,14 @@
     renderedKey = signature;
     const container = $("ask-thread");
     const nearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      80;
     container.replaceChildren(
       ...(items.length
         ? items.flatMap((item, i) => messageNodes(item, i, items))
         : [emptyState()]),
     );
+    $("ask").dataset.empty = String(!items.length);
     $("ask-title").textContent =
       scope === "this" && note ? note.title || "This meeting" : "All meetings";
     if (force || nearBottom) container.scrollTop = container.scrollHeight;
@@ -315,7 +310,8 @@
       item.answer = reply.text;
       item.sources = reply.sources || [];
     } catch (error) {
-      item.stopped = busy?.epoch === mine.epoch && String(error) === "Cancelled";
+      item.stopped =
+        busy?.epoch === mine.epoch && String(error) === "Cancelled";
       item.error = item.stopped ? "Stopped." : String(error);
     } finally {
       item.pending = false;
@@ -400,7 +396,8 @@
     setup,
     // Called on every Notetaker render with the current state.
     sync({ meeting, recording, hasNotes, canAsk }) {
-      const changed = note?.id !== meeting?.id || note?.title !== meeting?.title;
+      const changed =
+        note?.id !== meeting?.id || note?.title !== meeting?.title;
       note = meeting || null;
       available = canAsk;
       $("ask").hidden = recording || !hasNotes;

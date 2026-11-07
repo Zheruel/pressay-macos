@@ -97,7 +97,8 @@ let heroStatusTimer;
 function flashHeroStatus(text, ms = 2400) {
   clearTimeout(heroStatusTimer);
   $("hero-status").textContent = text || "";
-  if (ms) heroStatusTimer = setTimeout(() => ($("hero-status").textContent = ""), ms);
+  if (ms)
+    heroStatusTimer = setTimeout(() => ($("hero-status").textContent = ""), ms);
 }
 let dictionaryRows = [],
   dictionarySaved = null,
@@ -155,7 +156,9 @@ let editingWord = null;
 function drawDictionary() {
   const chips = $("dictionary-rows");
   chips.replaceChildren();
-  const rows = dictionaryRows.filter((row) => row.word.trim() || row === editingWord);
+  const rows = dictionaryRows.filter(
+    (row) => row.word.trim() || row === editingWord,
+  );
   $("dictionary-empty").hidden = rows.length !== 0;
   for (const row of rows) {
     const chip = element("button", undefined, "word-chip");
@@ -164,7 +167,9 @@ function drawDictionary() {
       element("b", row.word || "New word"),
       element(
         "span",
-        row.aliases.trim() ? `sounds like ${row.aliases.trim()}` : "spelled as written",
+        row.aliases.trim()
+          ? `sounds like ${row.aliases.trim()}`
+          : "spelled as written",
       ),
     );
     chip.classList.toggle("editing", row === editingWord);
@@ -373,7 +378,8 @@ function renderToast(s) {
       : s.error || s.shortcut_error || "";
   // A warning saved on the newest dictation is already shown on the hero.
   const onRecord =
-    latest && dictationWarning(latest) &&
+    latest &&
+    dictationWarning(latest) &&
     message.startsWith(dictationWarning(latest));
   if (!message || onRecord) {
     if (!message) toastShown = "";
@@ -398,12 +404,36 @@ $("error").onclick = () => ($("error").hidden = true);
 function keyParts(label = "") {
   const mac = current?.platform === "macos";
   const symbols = mac
-    ? { option: "⌥", alt: "⌥", command: "⌘", cmd: "⌘", shift: "⇧", control: "⌃", ctrl: "⌃", fn: "fn", space: "␣" }
-    : { option: "Alt", alt: "Alt", control: "Ctrl", ctrl: "Ctrl", shift: "Shift", space: "Space", command: "Win", super: "Win" };
-  const parts = label.split("+").map((part) => part.trim()).filter(Boolean);
+    ? {
+        option: "⌥",
+        alt: "⌥",
+        command: "⌘",
+        cmd: "⌘",
+        shift: "⇧",
+        control: "⌃",
+        ctrl: "⌃",
+        fn: "fn",
+        space: "␣",
+      }
+    : {
+        option: "Alt",
+        alt: "Alt",
+        control: "Ctrl",
+        ctrl: "Ctrl",
+        shift: "Shift",
+        space: "Space",
+        command: "Win",
+        super: "Win",
+      };
+  const parts = label
+    .split("+")
+    .map((part) => part.trim())
+    .filter(Boolean);
   if (parts.length > 1)
     return {
-      glyph: parts.map((part) => symbols[part.toLowerCase()] || part).join(mac ? "" : "+"),
+      glyph: parts
+        .map((part) => symbols[part.toLowerCase()] || part)
+        .join(mac ? "" : "+"),
       name: "",
     };
   const word = (parts[0] || "").replace(/^(Left|Right)\s+/u, "");
@@ -417,7 +447,9 @@ window.__TAURI__.event.listen("pressay-levels", ({ payload }) => {
   const values = Array.isArray(payload)
     ? payload
     : payload?.audio_levels || payload?.levels || [];
-  heroLevels = values.map((value) => Math.max(0, Math.min(1, Number(value) || 0)));
+  heroLevels = values.map((value) =>
+    Math.max(0, Math.min(1, Number(value) || 0)),
+  );
 });
 function drawHeroWave() {
   const bars = $("hero-wave").children;
@@ -428,7 +460,8 @@ function drawHeroWave() {
       : 0;
     const idle = 0.12 + 0.08 * Math.sin(time * 3 + i * 0.7);
     const shape = 0.55 + 0.45 * Math.sin((i / (bars.length - 1)) * Math.PI);
-    bars[i].style.height = `${Math.round(6 + 58 * Math.max(idle, level) * shape)}px`;
+    bars[i].style.height =
+      `${Math.round(6 + 58 * Math.max(idle, level) * shape)}px`;
   }
 }
 setInterval(() => {
@@ -450,15 +483,24 @@ function renderHero(s, data, ready) {
     : `Hold ${data.shortcut || "your talk key"} to talk`;
   $("hero-wave").hidden = !listening;
   const record = s.history[0];
-  let label, text, quiet = false;
+  let label,
+    text,
+    quiet = false;
   if (listening) {
     label = "Listening";
     const seconds = Math.floor((Date.now() - recordingSince) / 1000);
     text = "";
-    setHeroMeta(null, `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`, "Your words appear where your cursor is when you let go.");
+    setHeroMeta(
+      null,
+      `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`,
+      "Your words appear where your cursor is when you let go.",
+    );
   } else if (["processing", "polishing"].includes(s.stage)) {
     label = s.stage === "polishing" ? "Cleaning up" : "Transcribing";
-    text = s.stage === "polishing" ? "Polishing your words…" : "Turning your speech into text…";
+    text =
+      s.stage === "polishing"
+        ? "Polishing your words…"
+        : "Turning your speech into text…";
     quiet = true;
     setHeroMeta(null, "", "");
   } else if (["preparing", "loading"].includes(s.stage)) {
@@ -467,7 +509,11 @@ function renderHero(s, data, ready) {
       ? `Downloading your speech model, ${Math.round((s.progress.downloaded / s.progress.total) * 100)}%`
       : "Loading your speech model…";
     quiet = true;
-    setHeroMeta(null, "", "This happens once. It runs on your device after that.");
+    setHeroMeta(
+      null,
+      "",
+      "This happens once. It runs on your device after that.",
+    );
   } else if (!ready) {
     label = "Almost ready";
     text = "Pressay needs a couple of permissions before you can dictate.";
@@ -491,7 +537,8 @@ function renderHero(s, data, ready) {
   $("hero-actions").hidden = !showActions;
   const warning = showActions ? dictationWarning(record) : "";
   $("hero-note").hidden = !warning;
-  if (warning) $("hero-note").replaceChildren(...warningNote(warning).childNodes);
+  if (warning)
+    $("hero-note").replaceChildren(...warningNote(warning).childNodes);
   if (!ready && !busyStage(s.stage)) {
     if (!$("hero-setup")) {
       const setup = element("button", "Finish setup", "primary");
@@ -506,7 +553,14 @@ function busyStage(stage) {
   return stage !== "idle";
 }
 function setHeroMeta(record, timer, text) {
-  const key = JSON.stringify([record?.id, record?.target, timer, text, Math.floor(Date.now() / 60000), appMetadata[record?.target]?.icon?.length]);
+  const key = JSON.stringify([
+    record?.id,
+    record?.target,
+    timer,
+    text,
+    Math.floor(Date.now() / 60000),
+    appMetadata[record?.target]?.icon?.length,
+  ]);
   if (key === heroKey) return;
   heroKey = key;
   const meta = $("hero-meta");
@@ -521,12 +575,21 @@ function setHeroMeta(record, timer, text) {
     }
     const name = historyAppName(record);
     if (name) meta.append(element("span", name));
-    const age = Math.max(0, Math.round((Date.now() / 1000 - record.created_at) / 60));
+    const age = Math.max(
+      0,
+      Math.round((Date.now() / 1000 - record.created_at) / 60),
+    );
     meta.append(
       element(
         "span",
-        new Intl.RelativeTimeFormat(navigator.language, { numeric: "auto" }).format(
-          age < 60 ? -age : age < 1440 ? -Math.round(age / 60) : -Math.round(age / 1440),
+        new Intl.RelativeTimeFormat(navigator.language, {
+          numeric: "auto",
+        }).format(
+          age < 60
+            ? -age
+            : age < 1440
+              ? -Math.round(age / 60)
+              : -Math.round(age / 1440),
           age < 60 ? "minute" : age < 1440 ? "hour" : "day",
         ),
         "faint",
