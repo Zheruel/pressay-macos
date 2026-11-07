@@ -139,6 +139,7 @@ pub fn request_permission(kind: &str) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     unsafe {
+        reset_stale_grant(kind);
         pressay_open_permission(match kind {
             "microphone" => 0,
             "accessibility" => 1,
@@ -157,6 +158,44 @@ pub fn request_permission(kind: &str) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+/// A grant recorded for an earlier build (another signature or the Swift app
+/// with the same bundle identifier) stays switched on in System Settings but
+/// never applies to this binary. Clearing this app's entry before prompting
+/// makes macOS list the current app, so the switch the user flips is the one
+/// `AXIsProcessTrusted`/`CGPreflightListenEventAccess` check.
+#[cfg(target_os = "macos")]
+fn reset_stale_grant(kind: &str) {
+    let service = match kind {
+        "accessibility" if unsafe { pressay_accessibility_status() } != 1 => "Accessibility",
+        "shortcut" if unsafe { pressay_input_status() } != 1 => "ListenEvent",
+        _ => return,
+    };
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    // Development binaries outside an app bundle have no stable TCC identity.
+    let Some(bundle) = exe
+        .ancestors()
+        .find(|p| p.extension().is_some_and(|e| e == "app"))
+    else {
+        return;
+    };
+    let Ok(output) = std::process::Command::new("/usr/bin/defaults")
+        .arg("read")
+        .arg(bundle.join("Contents/Info"))
+        .arg("CFBundleIdentifier")
+        .output()
+    else {
+        return;
+    };
+    let identifier = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if !output.status.success() || identifier.is_empty() {
+        return;
+    }
+    let _ = std::process::Command::new("/usr/bin/tccutil")
+        .args(["reset", service, &identifier])
+        .status();
 }
 /// A short-lived token for the focused field. Wayland deliberately returns a
 /// session generation instead: it cannot provide an original-focus guarantee.

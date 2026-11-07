@@ -98,17 +98,6 @@
   border-radius: 11px;
   box-shadow: inset 0 0 0 1px var(--line);
 }
-#onboarding section.setup-welcome {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-#onboarding .setup-explanation {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-}
 #onboarding svg:not(.setup-symbols) {
   width: 23px;
   height: 23px;
@@ -126,43 +115,18 @@
   line-height: 16px;
   letter-spacing: 0;
 }
-#onboarding .setup-explanation p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 15px;
-}
-#onboarding .setup-permission-card,
 #onboarding .setup-model-card {
   padding: 22px;
 }
-#onboarding .setup-permission-heading,
 #onboarding .setup-model-heading {
   display: flex;
   align-items: center;
   gap: 12px;
 }
-#onboarding .setup-permission-heading {
-  justify-content: space-between;
-  margin-bottom: 18px;
-}
-#onboarding .setup-permission-heading svg {
-  width: 28px;
-  height: 28px;
-}
-#onboarding #setup-permission-status {
-  color: var(--warning);
-  font-size: 12px;
-}
-#onboarding #setup-permission-status.allowed,
+#onboarding .setup-permission-state.allowed,
 #onboarding .setup-success,
 #onboarding #setup-model-ready {
   color: var(--success);
-}
-#onboarding #setup-permission-instructions {
-  margin: 0 0 18px;
-  font-size: 13px;
-  line-height: 1.6;
 }
 #onboarding button {
   width: auto;
@@ -199,9 +163,6 @@
   font-size: 12px;
   line-height: 1.5;
   margin: 0;
-}
-#onboarding #platform-note {
-  margin: 20px 0 12px;
 }
 #onboarding .setup-recovery {
   font-size: 11px;
@@ -316,9 +277,6 @@
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
-#onboarding .setup-microphone-note {
-  margin-top: 20px;
-}
 #onboarding .setup-practice-prompt {
   font-size: 13px;
   font-weight: 500;
@@ -402,47 +360,12 @@
 #onboarding #setup-title:focus {
   outline: none;
 }
-#onboarding #setup-permission-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 10px;
-  font-weight: 500;
-  padding: 4px 9px;
-  border-radius: 20px;
-  background: #faf1df;
-}
-#onboarding #setup-permission-status::before {
-  content: "●";
-  font-size: 7px;
-}
-#onboarding #setup-permission-status.allowed {
-  background: #eaf5ef;
-}
-#onboarding #setup-permission-status.allowed::before {
-  content: "✓";
-  font-size: 9px;
-}
 #onboarding #setup-practice-evidence.setup-success {
   font-size: 13px;
   font-weight: 500;
 }
-@media (prefers-color-scheme: dark) {
-  #onboarding #setup-permission-status {
-    background: #393227;
-  }
-  #onboarding #setup-permission-status.allowed {
-    background: #293c34;
-  }
-}
 #onboarding .setup-model-card + .setup-setting,
 #onboarding .setup-setting + #setup-shortcut-status + .setup-setting {
-  margin-top: 20px;
-}
-#onboarding #platform-note {
-  margin-bottom: 20px;
-}
-#onboarding #setup-permission-recovery {
   margin-top: 20px;
 }
 
@@ -508,4 +431,91 @@ body.onboarding-window #onboarding .setup-native {
 }
 body.onboarding-window #onboarding h1 {
   font-size: 31px;
+}
+
+/* Welcome: one quiet privacy line. */
+#onboarding section.setup-welcome {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+#onboarding section.setup-welcome svg {
+  width: 18px;
+  height: 18px;
+}
+#onboarding section.setup-welcome p {
+  margin: 0;
+}
+
+/* Permissions: one compact checklist, a row per macOS permission. */
+#onboarding .setup-permission-list {
+  display: flex;
+  flex-direction: column;
+}
+#onboarding .setup-permission-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 62px;
+  padding: 12px 16px;
+}
+#onboarding .setup-permission-row + .setup-permission-row {
+  border-top: 1px solid var(--line);
+}
+#onboarding .setup-permission-row > div {
+  flex: 1;
+  min-width: 0;
+}
+#onboarding .setup-permission-row h2 {
+  margin: 0 0 2px;
+}
+#onboarding .setup-permission-detail {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+#onboarding .setup-permission-row svg {
+  width: 20px;
+  height: 20px;
+}
+#onboarding .setup-permission-state {
+  color: var(--muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+#onboarding .setup-permission-state.allowed {
+  font-size: 16px;
+  font-weight: 600;
+}
+#onboarding .setup-permission-state:empty {
+  display: none;
+}
+#onboarding .setup-permission-row .setup-permission-allow {
+  min-width: 64px;
+  flex-shrink: 0;
+}
+#onboarding #platform-note {
+  margin: 14px 0 0;
+}
+#onboarding #setup-permission-recovery {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 14px;
+}
+#onboarding #setup-permission-recovery[hidden],
+#onboarding #platform-note[hidden] {
+  display: none;
+}
+#onboarding #setup-permission-recovery button {
+  min-height: 0;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--accent);
+}
+#onboarding #setup-practice-evidence:empty {
+  display: none;
 }

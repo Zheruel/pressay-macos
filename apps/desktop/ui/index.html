@@ -781,11 +781,6 @@
               <rect x="2" y="5" width="20" height="14" rx="2" />
               <path d="M6 9h1m4 0h1m4 0h1M6 12h1m4 0h1m4 0h1M7 16h10" />
             </symbol>
-            <symbol id="setup-chat" viewBox="0 0 24 24">
-              <path
-                d="M20 16a3 3 0 0 1-3 3H9l-5 3v-5a3 3 0 0 1-2-3V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3Z M7 11l3 3 6-6"
-              />
-            </symbol>
             <symbol id="setup-mic" viewBox="0 0 24 24">
               <rect x="9" y="2" width="6" height="13" rx="3" />
               <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
@@ -812,60 +807,58 @@
         </header>
         <h1 id="setup-title" tabindex="-1">Your voice. Your words.</h1>
         <p id="setup-description">
-          Hold a key, say what’s on your mind, and release. Pressay types it
-          where you’re working.
+          Hold a key, speak, release. Pressay types it at your cursor.
         </p>
         <div class="setup-scroll">
-          <section data-setup="0" class="setup-welcome setup-group">
-            <div class="setup-explanation">
-              <svg aria-hidden="true"><use href="#setup-shield" /></svg>
-              <div>
-                <h2>Private by default</h2>
-                <p id="setup-private-copy">
-                  Your speech is transcribed on your Mac. No account is
-                  required.
-                </p>
-              </div>
-            </div>
-            <div class="setup-explanation">
-              <svg aria-hidden="true"><use href="#setup-keyboard" /></svg>
-              <div>
-                <h2>Works where you write</h2>
-                <p id="setup-permissions-copy">
-                  Three macOS permissions let Pressay hear you, notice your talk
-                  key, and type at your cursor.
-                </p>
-              </div>
-            </div>
-            <div class="setup-explanation">
-              <svg aria-hidden="true"><use href="#setup-chat" /></svg>
-              <div>
-                <h2>Try it before you finish</h2>
-                <p>
-                  We’ll prepare your model and check a real dictation together.
-                </p>
-              </div>
-            </div>
+          <section data-setup="0" class="setup-welcome">
+            <svg aria-hidden="true"><use href="#setup-shield" /></svg>
+            <p id="setup-private-copy">
+              Transcribed on your Mac. No account needed.
+            </p>
           </section>
-          <section data-setup="permissions" hidden>
-            <div class="setup-group setup-permission-card">
-              <div class="setup-permission-heading">
-                <svg aria-hidden="true">
-                  <use id="setup-permission-icon" href="#setup-mic" /></svg
-                ><span id="setup-permission-status" role="status"
-                  >Not allowed yet</span
-                >
+          <section data-setup="1" hidden>
+            <div class="setup-group setup-permission-list">
+              <div class="setup-permission-row" data-permission="0">
+                <svg aria-hidden="true"><use href="#setup-mic" /></svg>
+                <div>
+                  <h2 class="setup-permission-title">Microphone</h2>
+                  <p class="setup-permission-detail">
+                    Hears you while you hold the key
+                  </p>
+                </div>
+                <span class="setup-permission-state" role="status"></span>
+                <button class="primary setup-permission-allow">Allow</button>
               </div>
-              <p id="setup-permission-instructions"></p>
-              <button class="primary" id="setup-allow">Allow microphone</button>
+              <div class="setup-permission-row" data-permission="1">
+                <svg aria-hidden="true"><use href="#setup-access" /></svg>
+                <div>
+                  <h2 class="setup-permission-title">Accessibility</h2>
+                  <p class="setup-permission-detail">
+                    Types text at your cursor
+                  </p>
+                </div>
+                <span class="setup-permission-state" role="status"></span>
+                <button class="primary setup-permission-allow">Allow</button>
+              </div>
+              <div class="setup-permission-row" data-permission="2">
+                <svg aria-hidden="true"><use href="#setup-keyboard" /></svg>
+                <div>
+                  <h2 class="setup-permission-title">Input Monitoring</h2>
+                  <p class="setup-permission-detail">
+                    Notices your talk key in any app
+                  </p>
+                </div>
+                <span class="setup-permission-state" role="status"></span>
+                <button class="primary setup-permission-allow">Allow</button>
+              </div>
             </div>
             <p class="setup-note" id="platform-note"></p>
-            <button class="quiet" id="setup-permission-recover">
-              Already allowed, but still not working?
-            </button>
-            <p class="setup-recovery" id="setup-permission-recovery"></p>
+            <p class="setup-recovery" id="setup-permission-recovery" hidden>
+              Switched on but not detected?
+              <button class="quiet" id="setup-restart">Reopen Pressay</button>
+            </p>
           </section>
-          <section data-setup="4" hidden>
+          <section data-setup="2" hidden>
             <div class="setup-group setup-model-card">
               <div class="setup-model-heading">
                 <svg aria-hidden="true"><use href="#setup-wave" /></svg
@@ -919,12 +912,8 @@
                   aria-label="Open at login" /><span aria-hidden="true"></span
               ></label>
             </div>
-            <p class="setup-note setup-microphone-note">
-              For dictation, the microphone opens when you hold your talk key. A
-              ready model does not mean the microphone is listening.
-            </p>
           </section>
-          <section data-setup="5" hidden>
+          <section data-setup="3" hidden>
             <p class="setup-practice-prompt">
               Try saying “My words, exactly where I need them.”
             </p>
@@ -942,10 +931,7 @@
                 <use id="setup-practice-mic" href="#setup-mic-off" /></svg
               ><span id="practice-status" role="status">Microphone is off</span>
             </p>
-            <p id="setup-practice-evidence" class="setup-note">
-              Use your talk key for this check. Typing or pasting a sample
-              sentence won’t complete it.
-            </p>
+            <p id="setup-practice-evidence" class="setup-note"></p>
             <button class="quiet" id="setup-practice-retry">
               Try another dictation
             </button>
@@ -954,8 +940,7 @@
         </div>
         <footer class="setup-footer">
           <button id="setup-back" hidden>Back</button><span></span
-          ><button class="primary" id="setup-welcome-next">
-            Set up Pressay</button
+          ><button class="primary" id="setup-welcome-next">Get started</button
           ><button class="primary" id="permissions-next" hidden>Continue</button
           ><button class="primary" id="model-next" hidden disabled>
             Continue</button
@@ -964,8 +949,7 @@
           </button>
         </footer>
         <div class="setup-progress" aria-hidden="true">
-          <i data-step="1"></i><i data-step="2"></i><i data-step="3"></i
-          ><i data-step="4"></i><i data-step="5"></i>
+          <i data-step="1"></i><i data-step="2"></i><i data-step="3"></i>
         </div>
       </div>
     </dialog>

@@ -77,6 +77,15 @@ fn cancel(state: State<'_, Arc<Shared>>) {
 fn request_permission(kind: String) -> Result<(), String> {
     platform::request_permission(&kind)
 }
+/// macOS applies some privacy changes (notably Input Monitoring) only to a new
+/// process, so setup offers a relaunch when a switched-on grant is not seen.
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle, state: State<'_, Arc<Shared>>) -> Result<(), String> {
+    if state.view.lock().unwrap().stage != "idle" {
+        return Err("Finish the current operation first".into());
+    }
+    app.restart()
+}
 #[tauri::command]
 async fn input_devices() -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(audio::list_inputs)
@@ -270,6 +279,7 @@ fn main() {
             prepare_model,
             cancel,
             request_permission,
+            restart_app,
             input_devices,
             app_metadata::history_app_metadata,
             input_device_selection,

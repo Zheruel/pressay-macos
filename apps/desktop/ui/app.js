@@ -89,6 +89,9 @@ let setupPracticeEpoch = 0,
   setupPreparationRequested = null,
   setupOperationError = "";
 const setupPermissionKinds = ["microphone", "accessibility", "shortcut"];
+const SETUP_PERMISSIONS = 1,
+  SETUP_MODEL = 2,
+  SETUP_PRACTICE = 3;
 function setupFailure(error) {
   setupOperationError = String(error);
   $("setup-error").textContent = setupOperationError;
@@ -99,21 +102,17 @@ function setupPermissionAllowed(index, p = current?.permissions) {
     ? microphoneCanPractice(p)
     : p[index === 1 ? "insertion" : "shortcut"] === "granted";
 }
-function firstMissingSetupPermission() {
-  const index = setupPermissionKinds.findIndex(
-    (_, index) => !setupPermissionAllowed(index),
+function permissionsReady() {
+  return setupPermissionKinds.every((_, index) =>
+    setupPermissionAllowed(index),
   );
-  return index < 0 ? 4 : index + 1;
 }
 async function setStep(value) {
   if (setupShortcutActive) await stopSetupShortcut();
-  step = Math.max(0, Math.min(5, value));
+  step = Math.max(0, Math.min(SETUP_PRACTICE, value));
   const epoch = ++setupPracticeEpoch;
   document.querySelectorAll("[data-setup]").forEach((panel) => {
-    panel.hidden =
-      panel.dataset.setup === "permissions"
-        ? !(step >= 1 && step <= 3)
-        : Number(panel.dataset.setup) !== step;
+    panel.hidden = Number(panel.dataset.setup) !== step;
   });
   document
     .querySelectorAll("[data-step]")
@@ -122,13 +121,13 @@ async function setStep(value) {
     );
   $("setup-back").hidden = step === 0;
   $("setup-welcome-next").hidden = step !== 0;
-  $("permissions-next").hidden = step < 1 || step > 3;
-  $("model-next").hidden = step !== 4;
-  $("finish-setup").hidden = step !== 5;
+  $("permissions-next").hidden = step !== SETUP_PERMISSIONS;
+  $("model-next").hidden = step !== SETUP_MODEL;
+  $("finish-setup").hidden = step !== SETUP_PRACTICE;
   setupOperationError = "";
   $("setup-error").textContent = "";
   $("onboarding").querySelector(".setup-scroll").scrollTop = 0;
-  if (step === 5) {
+  if (step === SETUP_PRACTICE) {
     setupPracticeReady = false;
     setupPracticeAttempt = false;
     $("practice").value = "";
@@ -136,7 +135,11 @@ async function setStep(value) {
     renderSetup();
     try {
       await call("begin_practice");
-      if (step === 5 && epoch === setupPracticeEpoch && dialog.open) {
+      if (
+        step === SETUP_PRACTICE &&
+        epoch === setupPracticeEpoch &&
+        dialog.open
+      ) {
         setupPracticeReady = true;
         $("practice").disabled = false;
         $("practice").focus();
@@ -146,10 +149,10 @@ async function setStep(value) {
     }
   }
   renderSetup();
-  if (step !== 5 && dialog.open)
+  if (step !== SETUP_PRACTICE && dialog.open)
     $("setup-title").focus({ preventScroll: true });
   if (
-    step === 4 &&
+    step === SETUP_MODEL &&
     !selectedModelReady() &&
     current?.view.stage === "idle" &&
     setupPreparationRequested !== $("setup-model").value
@@ -229,17 +232,22 @@ dialog.addEventListener("keydown", (event) => {
   }
 });
 $("setup-back").onclick = () => setStep(step - 1);
-$("setup-welcome-next").onclick = () => setStep(firstMissingSetupPermission());
+$("setup-welcome-next").onclick = () =>
+  setStep(permissionsReady() ? SETUP_MODEL : SETUP_PERMISSIONS);
 $("permissions-next").onclick = () => {
-  if (setupPermissionAllowed(step - 1)) setStep(step + 1);
+  if (permissionsReady()) setStep(SETUP_MODEL);
 };
 $("model-next").onclick = () => {
-  if (selectedModelReady() && firstMissingSetupPermission() === 4) setStep(5);
+  if (selectedModelReady() && permissionsReady()) setStep(SETUP_PRACTICE);
 };
-$("setup-practice-retry").onclick = () => setStep(5);
-async function requestSetupPermission() {
-  const kind = setupPermissionKinds[step - 1];
+$("setup-practice-retry").onclick = () => setStep(SETUP_PRACTICE);
+// Each Allow asks once, then opens the matching System Settings pane. The
+// 1 s status poll picks up the change; macOS sends no callback.
+const setupPermissionsRequested = new Set();
+async function requestSetupPermission(index) {
+  const kind = setupPermissionKinds[index];
   if (!kind) return;
+  setupPermissionsRequested.add(index);
   try {
     if (kind === "accessibility" && current.permissions.wayland)
       await call("save_settings", { patch: { waylandCurrentCursor: true } });
@@ -252,8 +260,11 @@ async function requestSetupPermission() {
     setupFailure(error);
   }
 }
-$("setup-allow").onclick = requestSetupPermission;
-$("setup-permission-recover").onclick = requestSetupPermission;
+document.querySelectorAll(".setup-permission-row").forEach((row) => {
+  row.querySelector("button").onclick = () =>
+    requestSetupPermission(Number(row.dataset.permission));
+});
+$("setup-restart").onclick = () => call("restart_app").catch(setupFailure);
 $("setup-login").onchange = async () => {
   const enabled = $("setup-login").checked;
   try {
@@ -527,7 +538,7 @@ function practiceReady() {
     p?.recognized_text.trim() &&
     $("practice").value.trim() === p.recognized_text.trim() &&
     selectedModelReady() &&
-    firstMissingSetupPermission() === 4
+    permissionsReady()
   );
 }
 $("practice").addEventListener("input", renderSetup);
@@ -575,118 +586,81 @@ function renderSetup() {
   const mac = current.platform === "macos";
   const p = current.permissions;
   const s = current.view;
-  const permission = step >= 1 && step <= 3;
-  const permissionTitles = [
-    "Microphone",
-    mac ? "Accessibility" : p.wayland ? "Keyboard control" : "Text insertion",
-    mac ? "Input Monitoring" : "Global shortcut",
-  ];
-  const permissionDetails = [
-    "Hears your voice during dictation and meetings.",
-    "Types the finished text at your cursor.",
-    "Notices your talk key in any app.",
-  ];
   if (
-    step === 5 &&
+    step === SETUP_PRACTICE &&
     setupPracticeReady &&
     ["starting", "recording"].includes(s.stage)
   )
     setupPracticeAttempt = true;
   const complete = practiceReady();
   $("setup-step-label").textContent =
-    step === 0 ? "WELCOME TO PRESSAY" : `STEP ${step} OF 5`;
-  $("setup-title").textContent = permission
-    ? permissionTitles[step - 1]
-    : step === 0
+    step === 0 ? "WELCOME TO PRESSAY" : `STEP ${step} OF 3`;
+  $("setup-title").textContent =
+    step === 0
       ? "Your voice. Your words."
-      : step === 4
-        ? "Prepare your speech model"
-        : complete
-          ? "You’re ready to dictate"
-          : "Give it a try";
-  $("setup-description").textContent = permission
-    ? permissionDetails[step - 1]
-    : step === 0
-      ? "Hold a key, say what’s on your mind, and release. Pressay types it where you’re working."
-      : step === 4
-        ? `Speech recognition runs on your ${mac ? "Mac" : "device"}. The model downloads once, then works offline.`
-        : complete
-          ? "Your microphone, speech model and text insertion worked together. You can now dictate in other apps."
-          : `Click the field below. Hold ${current.shortcut}, speak after the sound, then release to type.`;
+      : step === SETUP_PERMISSIONS
+        ? "Allow access"
+        : step === SETUP_MODEL
+          ? "Speech model"
+          : complete
+            ? "You’re ready"
+            : "Give it a try";
+  $("setup-description").textContent =
+    step === 0
+      ? "Hold a key, speak, release. Pressay types it at your cursor."
+      : step === SETUP_PERMISSIONS
+        ? "Pressay needs these to hear you and type for you."
+        : step === SETUP_MODEL
+          ? "Downloads once, then runs offline."
+          : complete
+            ? "Dictate anywhere with your talk key."
+            : `Hold ${current.shortcut}, speak, then release.`;
   $("setup-private-copy").textContent =
-    `Your speech is transcribed on your ${mac ? "Mac" : "device"}. No account is required.`;
-  $("setup-permissions-copy").textContent = mac
-    ? "Three macOS permissions let Pressay hear you, notice your talk key, and type at your cursor."
-    : "We’ll check microphone access, your talk key, and text insertion at your cursor.";
+    `Transcribed on your ${mac ? "Mac" : "device"}. No account needed.`;
   $("setup-login-detail").textContent = mac
     ? "Ready every time you open your Mac."
     : "Ready every time you sign in.";
-  if (permission) {
-    const index = step - 1;
+  const titles = [
+    "Microphone",
+    mac ? "Accessibility" : p.wayland ? "Keyboard control" : "Text insertion",
+    mac ? "Input Monitoring" : "Global shortcut",
+  ];
+  const details = [
+    "Hears you while you hold the key",
+    "Types text at your cursor",
+    "Notices your talk key in any app",
+  ];
+  let stuck = false;
+  document.querySelectorAll(".setup-permission-row").forEach((row) => {
+    const index = Number(row.dataset.permission);
     const value =
       p[index === 1 ? "insertion" : index === 2 ? "shortcut" : "microphone"];
+    const allowed = setupPermissionAllowed(index);
     const cursorChoice = index === 1 && p.wayland && value !== "granted";
-    $("setup-permission-icon").setAttribute(
-      "href",
-      ["#setup-mic", "#setup-access", "#setup-keyboard"][index],
-    );
-    $("setup-permission-status").textContent =
-      value === "granted"
-        ? "Allowed"
-        : index === 0 && !mac && value === "unknown"
-          ? "Checked during practice"
-          : value === "unavailable" && !cursorChoice
-            ? "Unavailable"
-            : "Not allowed yet";
-    $("setup-permission-status").classList.toggle(
-      "allowed",
-      value === "granted",
-    );
-    const macInstructions = [
-      "Choose Allow in the macOS prompt. If you previously denied access, turn on Pressay in the Microphone list.",
-      "Turn on Pressay in the Accessibility list. If it is missing, drag the app from the floating guide into the list, then turn it on.",
-      "Turn on Pressay in the Input Monitoring list. macOS may ask you to quit and reopen Pressay after changing this permission.",
-    ];
-    const portableInstructions = [
-      "Your microphone opens only when you hold your talk key. We’ll verify real audio during practice; allow microphone access if your desktop asks.",
-      p.wayland
-        ? "You can explicitly enable keyboard control and approve your desktop’s consent prompt. This inserts at the current cursor; Wayland cannot verify the original app or field. Keep your intended field focused until insertion finishes."
-        : "Pressay types into the field you chose. If the application changes before insertion, your words stay in History for you to copy.",
-      p.wayland
-        ? "Approve the global shortcut in your desktop’s consent prompt. If your desktop does not provide GlobalShortcuts, this check remains unavailable."
-        : "Your talk key works while another app is active. If another app uses the same shortcut, choose a different one in General settings.",
-    ];
-    $("setup-permission-instructions").textContent = (
-      mac ? macInstructions : portableInstructions
-    )[index];
-    $("setup-allow").hidden =
-      value === "granted" || (index === 0 && !mac && value === "unknown");
-    $("setup-allow").disabled = value === "unavailable" && !cursorChoice;
-    $("setup-allow").textContent = cursorChoice
-      ? "Enable cursor insertion"
-      : mac
-        ? index === 0
-          ? "Allow microphone"
-          : "Open System Settings"
-        : "Review access";
-    $("platform-note").textContent =
-      !mac && p.explanation
-        ? p.explanation
-        : mac
-          ? "This page updates automatically when access changes. You can revoke access at any time in System Settings."
-          : index === 0
-            ? "A permission indicator alone does not prove recording works. Your first real dictation completes that check."
-            : "This page updates automatically when access changes.";
-    $("setup-permission-recover").hidden = !mac;
-    $("setup-permission-recovery").textContent = mac
-      ? index === 0
-        ? "Microphone access must be requested by the app; dragging an app into this list does not grant access. If your microphone is managed, contact your administrator."
-        : "If an old entry no longer works after an update, remove it, add the current Pressay app, turn it on, then reopen Pressay."
-      : index === 0
-        ? "Check your selected microphone and your desktop’s privacy settings if audio does not arrive."
-        : "If access was revoked, approve it again before continuing. You can close setup and keep your saved dictations in History.";
-    $("permissions-next").disabled = !setupPermissionAllowed(index);
-  }
+    const deferred = index === 0 && !mac && value === "unknown";
+    const unavailable = value === "unavailable" && !cursorChoice;
+    row.querySelector(".setup-permission-title").textContent = titles[index];
+    row.querySelector(".setup-permission-detail").textContent = details[index];
+    const state = row.querySelector(".setup-permission-state");
+    state.textContent = allowed
+      ? "✓"
+      : deferred
+        ? "Checked when you try it"
+        : unavailable
+          ? "Unavailable"
+          : "";
+    state.setAttribute("aria-label", allowed ? "Allowed" : state.textContent);
+    state.classList.toggle("allowed", allowed);
+    const button = row.querySelector("button");
+    button.hidden = allowed || deferred || unavailable;
+    button.textContent = cursorChoice ? "Enable" : "Allow";
+    if (!allowed && mac && index > 0 && setupPermissionsRequested.has(index))
+      stuck = true;
+  });
+  $("platform-note").textContent = !mac && p.explanation ? p.explanation : "";
+  $("platform-note").hidden = !$("platform-note").textContent;
+  $("setup-permission-recovery").hidden = !stuck;
+  $("permissions-next").disabled = !permissionsReady();
   $("setup-shortcut").textContent = setupShortcutActive
     ? "Press a key…"
     : current.shortcut;
@@ -703,23 +677,23 @@ function renderSetup() {
     : s.stage === "loading"
       ? "Loading and warming the model…"
       : s.stage === "preparing"
-        ? "Preparing your speech model…"
-        : "Prepare the model to continue.";
+        ? "Downloading…"
+        : "Not downloaded yet";
   $("setup-prepare").hidden =
     selectedModelReady() || ["preparing", "loading"].includes(s.stage);
   $("model-next").disabled =
     !selectedModelReady() ||
-    firstMissingSetupPermission() !== 4 ||
+    !permissionsReady() ||
     setupShortcutActive ||
     setupShortcutSaving;
   $("finish-setup").disabled = !complete;
   $("practice-status").textContent = s.stage.startsWith("meeting")
-    ? "Stop the Notetaker before practicing dictation"
+    ? "Stop the Notetaker first"
     : s.stage === "recording"
-      ? "Microphone is receiving audio"
+      ? "Listening…"
       : s.stage === "starting"
-        ? "Waiting for microphone audio…"
-        : "Microphone is off";
+        ? "Opening microphone…"
+        : "Microphone off";
   $("setup-practice-mic").setAttribute(
     "href",
     s.stage === "recording" ? "#setup-mic" : "#setup-mic-off",
@@ -728,12 +702,11 @@ function renderSetup() {
     "is-live",
     s.stage === "recording",
   );
-  $("setup-practice-evidence").textContent = complete
-    ? "✓ Speech captured, transcribed and inserted"
-    : "Use your talk key for this check. Typing or pasting a sample sentence won’t complete it.";
+  $("setup-practice-evidence").textContent = complete ? "✓ It works" : "";
   $("setup-practice-evidence").classList.toggle("setup-success", complete);
   $("setup-error").textContent =
-    setupOperationError || (step >= 4 ? s.error || s.shortcut_error || "" : "");
+    setupOperationError ||
+    (step >= SETUP_MODEL ? s.error || s.shortcut_error || "" : "");
 }
 function renderSetupWindow(data) {
   const s = data.view;
@@ -759,9 +732,10 @@ function renderSetupWindow(data) {
         ? "Loading and warming the model…"
         : "Checking existing model files…";
   }
-  if (dialog.open && step >= 4 && firstMissingSetupPermission() !== 4)
-    setStep(firstMissingSetupPermission());
-  else if (dialog.open && step === 5 && !selectedModelReady()) setStep(4);
+  if (dialog.open && step >= SETUP_MODEL && !permissionsReady())
+    setStep(SETUP_PERMISSIONS);
+  else if (dialog.open && step === SETUP_PRACTICE && !selectedModelReady())
+    setStep(SETUP_MODEL);
   renderSetup();
 }
 function render(data) {
@@ -857,9 +831,10 @@ function render(data) {
   renderRecent(s.history, data.shortcut);
   syncDictionary(s.settings.vocabulary || "");
   renderPermissions(data.permissions);
-  if (dialog.open && step >= 4 && firstMissingSetupPermission() !== 4)
-    setStep(firstMissingSetupPermission());
-  else if (dialog.open && step === 5 && !selectedModelReady()) setStep(4);
+  if (dialog.open && step >= SETUP_MODEL && !permissionsReady())
+    setStep(SETUP_PERMISSIONS);
+  else if (dialog.open && step === SETUP_PRACTICE && !selectedModelReady())
+    setStep(SETUP_MODEL);
   renderSetup();
   if (!initialized) {
     initialized = true;
