@@ -1278,6 +1278,23 @@ function renderNotes(s) {
     '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 10h6.6L14 6"/></svg>';
   remove.setAttribute("aria-label", "Delete meeting");
   remove.title = "Delete meeting";
+  // Rewriting sits with the note's other actions, not under its text.
+  if (
+    n.kind === "meeting" &&
+    n.body &&
+    !writing &&
+    s.settings.notesUseAI !== false &&
+    notesProviderAvailable()
+  ) {
+    const again = button("", () => writeUp(n), "note-head-button");
+    again.innerHTML =
+      '<svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="m10 3 1.7 4.6L16.5 9l-4.8 1.6L10 15.5l-1.7-4.9L3.5 9l4.8-1.4L10 3Z" fill="currentColor"/></svg>';
+    again.append(element("span", "Write up again"));
+    again.title = n.edited
+      ? "Replaces your edits with a fresh write-up"
+      : "Write a fresh summary from the transcript";
+    actions.append(again);
+  }
   actions.append(copy, exportButton, remove);
   const title = element("h1", n.title || "Untitled", "note-title");
   title.contentEditable = "plaintext-only";
@@ -1381,19 +1398,6 @@ function renderNotes(s) {
           button("Cancel", () => call("cancel_note_job", { id: n.id })),
         );
         body.prepend(row);
-      } else if (
-        n.kind === "meeting" &&
-        s.settings.notesUseAI !== false &&
-        notesProviderAvailable()
-      ) {
-        const again = button("", () => writeUp(n), "note-rewrite");
-        again.innerHTML =
-          '<svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="m10 3 1.7 4.6L16.5 9l-4.8 1.6L10 15.5l-1.7-4.9L3.5 9l4.8-1.4L10 3Z" fill="currentColor"/></svg>';
-        again.append(element("span", "Write up again"));
-        again.title = n.edited
-          ? "Replaces your edits with a fresh write-up"
-          : "Write a fresh summary from the transcript";
-        body.append(again);
       }
     } else {
       const building = s.active_note === n.id;
