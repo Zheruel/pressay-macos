@@ -34,17 +34,94 @@
     --danger: #ff6961;
   }
 }
-/* Outside WebKit (Windows/Linux) the system-color keywords don't resolve. */
+/* Windows 11: the window supplies Acrylic and rounded corners; the page
+   follows Fluent's flyout menus (Segoe UI Variable, 32 px rows, 4 px corners). */
+html[data-platform="windows"] {
+  --label: rgb(0 0 0 / 0.9);
+  --secondary: rgb(0 0 0 / 0.62);
+  --tertiary: rgb(0 0 0 / 0.42);
+  --separator: rgb(0 0 0 / 0.08);
+  --accent: #005fb8;
+  --highlight: rgb(0 0 0 / 0.04);
+  --highlight-strong: rgb(0 0 0 / 0.07);
+  --chip: rgb(0 0 0 / 0.05);
+  --chip-line: rgb(0 0 0 / 0.45);
+  font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  html[data-platform="windows"] {
+    --label: #fff;
+    --secondary: rgb(255 255 255 / 0.77);
+    --tertiary: rgb(255 255 255 / 0.5);
+    --separator: rgb(255 255 255 / 0.08);
+    --accent: #60cdff;
+    --highlight: rgb(255 255 255 / 0.06);
+    --highlight-strong: rgb(255 255 255 / 0.09);
+    --chip: rgb(255 255 255 / 0.06);
+    --chip-line: rgb(255 255 255 / 0.6);
+  }
+}
+html[data-platform="windows"] #tray-panel {
+  padding: 4px;
+}
+html[data-platform="windows"] .status {
+  padding: 8px 12px;
+}
+html[data-platform="windows"] .status strong {
+  font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  font-weight: 600;
+}
+html[data-platform="windows"] .section {
+  padding: 6px 12px 2px;
+  font-size: 12px;
+}
+html[data-platform="windows"] .row {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 4px;
+}
+html[data-platform="windows"] .recent {
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+html[data-platform="windows"] hr {
+  margin: 4px 0;
+}
+html[data-platform="windows"] .toggle input {
+  width: 40px;
+  height: 20px;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--chip-line);
+}
+html[data-platform="windows"] .toggle input::before {
+  top: 5px;
+  left: 5px;
+  width: 10px;
+  height: 10px;
+  background: var(--secondary);
+  box-shadow: none;
+}
+html[data-platform="windows"] .toggle input:checked {
+  background: var(--accent);
+  box-shadow: none;
+}
+html[data-platform="windows"] .toggle input:checked::before {
+  left: 25px;
+  background: #fff;
+}
+/* Anywhere else without WebKit's system colors (the Linux fallback). */
 @supports not (color: -apple-system-label) {
-  :root {
+  html:not([data-platform="windows"]) {
     --label: CanvasText;
     --secondary: GrayText;
     --tertiary: GrayText;
     --separator: rgb(128 128 128 / 0.3);
     --accent: AccentColor;
   }
-  html,
-  body {
+  html:not([data-platform="windows"]),
+  html:not([data-platform="windows"]) body {
     background: Canvas !important;
   }
 }

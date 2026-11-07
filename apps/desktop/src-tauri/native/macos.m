@@ -352,7 +352,16 @@ void pressay_apply_glass(void *nsWindow, double radius) {
         [frame addSubview:backdrop positioned:NSWindowBelow relativeTo:content];
         window.opaque = NO;
         window.backgroundColor = NSColor.clearColor;
+        // Clip the whole frame to the glass's corners, so no square backing
+        // shows at the edges, and recompute the shadow from that shape.
+        for (NSView *view in @[frame, content]) {
+            view.wantsLayer = YES;
+            view.layer.cornerRadius = radius;
+            view.layer.cornerCurve = @"continuous";
+            view.layer.masksToBounds = YES;
+        }
         window.hasShadow = YES;
+        [window invalidateShadow];
     });
 }
 void pressay_overlay(const char *stage, const char *detail, const float *levels) {

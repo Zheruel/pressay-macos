@@ -62,6 +62,7 @@ function render() {
   if (!state) return;
   const s = state.view,
     permissions = state.permissions;
+  document.documentElement.dataset.platform = state.platform;
   const allowed =
     permissions.microphone === "granted" &&
     permissions.shortcut === "granted" &&
