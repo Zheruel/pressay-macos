@@ -1,87 +1,50 @@
 # Releases and updates
 
-Pressay uses GitHub Releases for downloads and Sparkle for signed, user-initiated installation. Automatic checks are on by default; automatic installation and system profiling are off. The update notice stays inside the app. An installation request waits for dictation, processing, and meeting recording to finish.
-
-After updating, the main window reopens if it was visible before restarting. An update requested from the menu bar keeps the app in the background if its main window was closed.
-
-## Signing key
-
-`Config/Info.plist` contains the public `SUPublicEDKey`. The matching private key belongs in the repository’s `SPARKLE_PRIVATE_KEY` Actions secret. It is separate from Apple code signing and requires no paid account. Never commit or print it.
-
-For the initial setup, use the `generate_keys` tool from the pinned Sparkle release:
-
-```bash
-generate_keys --account dev.localflow.app
-```
-
-The tool stores the private key in the login keychain and prints the public key. Set the printed public key in `Config/Info.plist` before distributing the first updatable app. Export the private key to a temporary file with `generate_keys --account dev.localflow.app -x <file>`, then pass that file on stdin to `gh secret set SPARKLE_PRIVATE_KEY --repo Zheruel/pressay-macos`. Remove the temporary file and keep a secure backup of the key. Keep the same key for subsequent releases; replacing it without a supported key rotation strands existing installs.
-
-## App signing certificate
-
-The existing public release path uses the stable, self-signed **Pressay Release Signing** certificate. It remains available without Apple membership and is explicitly labeled unnotarized in release notes. Set it up with `scripts/create-release-signing-certificate.sh`; it stores the certificate in `RELEASE_SIGNING_CERTIFICATE` and its password in `RELEASE_SIGNING_PASSWORD`. Keep the certificate backed up: replacing the identity may require users to approve permissions again.
-
-For trusted public releases, configure a **Developer ID Application** certificate and notarization, then set the repository variable `PRESSAY_NOTARIZE` to `1`. This mode requires hardened runtime, notarization, and stapled tickets; it cannot silently fall back to self-signing. Leave the variable unset or `0` until credentials are ready. Local builds also remain available: `scripts/build-app.sh` uses an available identity or ad-hoc signing, and `scripts/package-dmg.sh` notarizes only when explicitly requested.
-
-Export the Developer ID certificate and its private key from Keychain Access as a password-protected `.p12`. Store its base64 contents in `RELEASE_SIGNING_CERTIFICATE` and its password in `RELEASE_SIGNING_PASSWORD`. Use the same Apple developer team and `dev.localflow.app` bundle identifier for future releases. Keep the certificate and Sparkle key backed up securely.
-
-Moving from self-signing to Developer ID changes the signing identity: existing users may need to approve permissions again. Keeping the bundle identifier alone does not preserve TCC permissions. The self-signed certificate is accepted only when notarization is disabled.
-
-## Notarization credentials
-
-Configure these Actions secrets from an App Store Connect API key authorized for notarization:
-
-| Secret | Contents |
-| --- | --- |
-| `APPLE_NOTARY_KEY` | The `.p8` private key text |
-| `APPLE_NOTARY_KEY_ID` | The API key identifier |
-| `APPLE_NOTARY_ISSUER` | The API issuer identifier |
-
-With `PRESSAY_NOTARIZE=1`, the workflow imports credentials into a temporary keychain, removes the temporary `.p8` file immediately, and deletes the keychain even when a release fails. Packaging submits and staples the app first, then creates and notarizes the DMG. Sparkle packages the already stapled app. Rejected or timed-out submissions, missing tickets, invalid nested signatures, and failed Gatekeeper assessments stop publication.
-
-For a local notarized build, save credentials interactively with `notarytool`, then provide only the profile name:
-
-```bash
-xcrun notarytool store-credentials pressay
-SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
-  PRESSAY_NOTARIZE=1 PRESSAY_NOTARY_PROFILE=pressay ./scripts/package-dmg.sh
-```
-
-Set `PRESSAY_NOTARY_KEYCHAIN` as well if the profile is in a non-default keychain. The scripts never disable Gatekeeper or change user permission grants.
-
-## Installer artwork and layout
-
-The installer opens a 660 × 400 pt content area with 128 pt app and Applications icons at `(170, 178)` and `(490, 178)`. `packaging/macos/dmg/render-background.m` draws original Pressay artwork into a TIFF containing 1× and 2× representations. Finder draws the real, draggable icons over it; the illustration is not a substitute for installing the app.
-
-Packaging requires Python 3 and creates an isolated `.build/dmg-tools` environment with pinned `dmgbuild`, `ds_store`, and `mac_alias` versions. It does not require Finder automation, browser rendering, or a signed-in graphical session. Every generated DMG is mounted read-only to check the Applications link, background, saved icon positions, and nested app signature, then detached. Repackage an existing app for layout checks with `PRESSAY_SKIP_BUILD=1 ./scripts/package-dmg.sh`.
+Pressay ships from one workflow, [`release.yml`](../.github/workflows/release.yml). Pushing a `vX.Y.Z` tag builds macOS, Windows and Linux, signs every update, and publishes one GitHub release marked latest.
 
 ## Publish
 
-1. Update `CFBundleShortVersionString` and increase `CFBundleVersion` in `Config/Info.plist`.
-2. Merge the tested change, then push a matching `vX.Y.Z` tag.
-3. The workflow builds and signs the app, packages and verifies the DMG, then packages the ZIP and uses Sparkle’s `generate_appcast` to sign the archive and generate its feed. Missing Sparkle or release-certificate secrets fail publication. When `PRESSAY_NOTARIZE=1`, it also notarizes, staples, and assesses both app and DMG; missing Developer ID/notarization credentials or a rejected submission fail publication.
-4. GitHub publishes `Pressay-macos-arm64.zip`, `SHA256SUMS`, `appcast.xml`, and the versioned DMG. The app’s fixed `releases/latest/download/appcast.xml` URL resolves to the latest release; the feed’s download URL pins its exact release tag.
+1. Set the same version in `apps/desktop/src-tauri/tauri.conf.json`, the workspace `Cargo.toml` and `apps/desktop/package.json`. Packaging fails if they differ.
+2. Merge the tested change, then push the matching tag, for example `v2.0.0`. A tag that doesn't match `tauri.conf.json` fails the build.
+3. The workflow builds on three runners:
+   - macOS arm64: the app, the DMG, the updater archive, and the ZIP for the 1.x migration feed.
+   - Windows x64: the NSIS installer.
+   - Linux x64: the AppImage and the `.deb`.
 
-Each feed contains the current stable release. No server, Pages deployment, alternate channel, or delta update storage is needed. Do not edit or replace an archive after signing it. Publishing another release requires a higher build number.
+   Each runner runs the tests, OS-signs where configured, then signs the updater artifacts.
+4. A final job verifies every signature, writes `desktop-latest.json` and `DESKTOP-SHA256SUMS`, creates the GitHub release, then replaces `desktop-latest.json` on the permanent `desktop-updates` release.
 
-## Verify before distributing
+Release assets:
 
-Install a release on a clean supported Mac or VM, then update to a release with a higher build number. Check the visible notice, download progress, restart, retained settings/notes/models, and failure recovery. Start dictation or a meeting before requesting an update and confirm that it waits. Repeat with a recording started while the download is running.
+| File | Purpose |
+| --- | --- |
+| `Pressay-<version>-macos-arm64.dmg` | Mac manual install |
+| `Pressay-<version>-macos-arm64.app.tar.gz` + `.sig` | Mac in-app update |
+| `Pressay-<version>-windows-x86_64-setup.exe` + `.sig` | Windows install and update |
+| `Pressay-<version>-linux-x86_64.AppImage` + `.sig` | Linux install and update |
+| `Pressay-<version>-linux-x86_64.deb` + `.sig` | Debian/Ubuntu install and update |
+| `Pressay-macos-arm64.zip`, `appcast.xml`, `SHA256SUMS` | `scripts/install.sh` and the update path for Pressay 1.x |
+| `DESKTOP-SHA256SUMS` | Checksums for the files above |
 
-Test both Terminal and quarantined browser downloads, including first launch while offline after download. Notarized public artifacts carry stapled tickets; local ad-hoc or self-signed builds do not. Test microphone, Accessibility, Input Monitoring, and System Audio Recording after updating, including deny/revoke/regrant. Check settings, notes, vocabulary, and model preservation, and document any identity-transition reapproval. Clean-machine and update tests still require a real supported Mac; automated signature and layout checks do not prove permission continuity.
+Do not edit or replace an archive after it is signed. Each release needs a higher version.
 
-## Cross-platform desktop releases
+## In-app updates
 
-The Rust/Tauri app has its own **Signed desktop release** workflow (`desktop-release.yml`). It does not replace the stable Swift workflow or its self-signed release option. Local installers still build with `python3 scripts/build-desktop.py`; no updater, Apple, or Microsoft credentials are required for development builds.
+The app checks `https://github.com/Zheruel/pressay-macos/releases/download/desktop-updates/desktop-latest.json` when you choose **Check for updates** under **Settings › General › App updates**. The `desktop-updates` release is created once with `--latest=false` and only its feed is replaced; installer URLs point at the versioned release. Package-specific targets keep `.deb` users on `.deb` updates.
 
-The optional release workflow builds macOS 26+ Apple Silicon, Windows x64, and Ubuntu 24.04+ x64. Its default is **build and upload Actions artifacts only**. `publish: true` attaches the verified desktop assets to the explicitly selected **existing published versioned GitHub release**, without overwriting native Swift assets. Download and inspect the artifacts before publishing. The public signing path fails closed if a credential, trusted signature, notarization ticket, platform artifact, or updater key is missing.
+Pressay refuses to install while a dictation, recording or model preparation is running, including one started during the download.
 
-On macOS, `python3 scripts/build-desktop.py` builds the app first, signs its nested code and resource seal with an ad-hoc identity, verifies the complete bundle, then creates the branded DMG. Set `APPLE_SIGNING_IDENTITY` explicitly to use Developer ID; notarization remains opt-in through `PRESSAY_NOTARIZE=1` and `PRESSAY_NOTARY_PROFILE`. The local installer is integrity-checked but is not a trusted public release.
+### Updater signing key
 
-The desktop bundle is `dev.localflow.app` / **Pressay** and installs in place of the Swift app; its data store and update channel stay separate. Cargo workspace, Tauri config, and desktop package versions must agree. The GitHub destination tag can differ from the desktop version, allowing both applications to share a release without misrepresenting either version.
+Tauri update signatures are separate from Apple and Windows code signing. The workflow needs:
 
-### Desktop updater signing
+| Name | Kind | Contents |
+| --- | --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | Secret | Private key file contents |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Secret | Its password |
+| `PRESSAY_UPDATE_PUBLIC_KEY` | Variable | Public `.pub` contents, compiled into the app |
 
-Tauri update signatures are separate from Sparkle, Developer ID and Authenticode. Generate and back up a dedicated Tauri key using the pinned CLI:
+To create a key with the pinned CLI:
 
 ```sh
 cd apps/desktop
@@ -89,36 +52,64 @@ npm ci
 npx tauri signer generate --write-keys /secure/path/pressay-desktop.key
 ```
 
-Store the private file's contents in `TAURI_SIGNING_PRIVATE_KEY`, its password in `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and the public `.pub` contents in the repository variable `PRESSAY_UPDATE_PUBLIC_KEY`. Do not commit either private keys or passwords. The public value is compiled into the desktop binary and included in its release configuration. Replacing this key without a migration prevents existing installations from accepting future updates.
+Keep a secure backup of the key and never commit it. Replacing it without a migration stops existing installs from accepting updates.
 
-The workflow signs a temporary probe before building and verifies it against the configured public key. Final artifacts are signed **after** OS signing and Mac stapling. Each `.sig` includes the app version in its signed trusted comment; release builds require that version to match the feed. A separate job verifies both Minisign signatures with libsodium/PyNaCl, rejects mismatched versions or missing platforms, and creates `desktop-latest.json` and `DESKTOP-SHA256SUMS`.
+Before building, the workflow signs a probe and checks it against the public key. Final artifacts are signed after OS signing. Each `.sig` carries the app version in its trusted comment, and the app requires it to match the feed. The publish job verifies every signature with libsodium and fails if a platform is missing.
 
-The feed serves a notarized Mac `.app.tar.gz`, signed Windows NSIS installer, and signed Linux AppImage and Debian package. Package-specific target entries keep Debian users on Debian updates. The branded Mac DMG also receives a detached signature for manual verification.
+## Updating Pressay 1.x (Swift app)
 
-The permanent desktop endpoint is `https://github.com/Zheruel/pressay-macos/releases/download/desktop-updates/desktop-latest.json`. The publish job creates that feed release with `--latest=false` only if it is missing, then replaces only its verified feed. Installer URLs remain on the selected immutable versioned release. Native Swift releases keep their existing “latest” behavior and cannot remove the desktop feed. Publishing a desktop update never changes which release GitHub marks latest.
+Macs on Pressay 1.x update through Sparkle from `releases/latest/download/appcast.xml`. The macOS runner downloads the pinned Sparkle release, uses only its `generate_appcast` tool to sign `Pressay-macos-arm64.zip` with the 1.x key, and verifies the feed before publishing ([`scripts/sparkle-bridge.py`](../scripts/sparkle-bridge.py)). This needs the `SPARKLE_PRIVATE_KEY` secret. Sparkle is not bundled in the app.
 
-### Public macOS desktop signing
+Sparkle orders updates by `CFBundleVersion`. Packaging sets it to `major × 10000 + minor × 100 + patch` (20000 for 2.0.0), above the last 1.x build (26).
 
-Configure these additional secrets; this does not change the stable workflow's signing certificate:
+The app keeps the `dev.localflow.app` bundle identifier and the same signing certificate, so macOS permissions carry over. On first launch it imports the 1.x dictation history, meeting notes and settings, read-only. API keys and original audio stay explicit imports in **Settings › General**. Rollback is reinstalling 1.14.2, whose data is untouched.
 
-| Secret | Value |
+## Mac signing
+
+Releases are signed with the self-signed **Pressay Release Signing** certificate, the same one 1.x used. Create it with `scripts/create-release-signing-certificate.sh`; it stores the certificate in `RELEASE_SIGNING_CERTIFICATE` and its password in `RELEASE_SIGNING_PASSWORD`. Keep a secure backup: a new identity makes users approve permissions again. These builds are not notarized, and the release notes say so.
+
+### Notarization
+
+To notarize, sign with a **Developer ID Application** certificate (exported as a password-protected `.p12`, base64 in `RELEASE_SIGNING_CERTIFICATE`, password in `RELEASE_SIGNING_PASSWORD`) and set the repository variable `PRESSAY_NOTARIZE` to `1`. Add these secrets from an App Store Connect API key:
+
+| Secret | Contents |
 | --- | --- |
-| `DESKTOP_APPLE_CERTIFICATE` | Base64 Developer ID Application `.p12`, including its private key |
-| `DESKTOP_APPLE_CERTIFICATE_PASSWORD` | Password for that `.p12` |
-| `APPLE_NOTARY_KEY` | App Store Connect API `.p8` contents |
-| `APPLE_NOTARY_KEY_ID` | API key ID |
-| `APPLE_NOTARY_ISSUER` | API issuer ID |
+| `APPLE_NOTARY_KEY` | The `.p8` private key text |
+| `APPLE_NOTARY_KEY_ID` | The API key identifier |
+| `APPLE_NOTARY_ISSUER` | The API issuer identifier |
 
-A temporary keychain is removed even if a build fails. Packaging signs every nested Mach-O worker/library before sealing the app, uses hardened runtime, notarizes and staples the app, builds the existing original 1×/2× Pressay DMG artwork with the actual bundle name, and notarizes/staples that DMG. The updater archive is created from the already-stapled app. Developer ID builds do not disable library validation; native libraries use the same signing identity. Native dictation, analysis, Swift MLX and meeting workers are included.
+With `PRESSAY_NOTARIZE=1`, the workflow requires Developer ID and never falls back to self-signing. It notarizes and staples the app, then the DMG; the updater archive and ZIP are made from the stapled app. Moving from self-signing to Developer ID changes the signing identity, so existing users approve permissions once more.
 
-Desktop builds set the native CMake deployment target to the app’s declared macOS minimum. Before staging and public signing, `scripts/verify-macos-deployment.py` checks every Mach-O load command and rejects a helper or library requiring a newer OS. A newer SDK alone is allowed; running the installer on the oldest supported macOS remains a release acceptance check.
+Credentials go into a temporary keychain that is deleted even when the build fails. Packaging signs every nested worker and library with hardened runtime. `scripts/verify-macos-deployment.py` rejects any binary that needs a newer macOS than the app's minimum (26.0).
 
-The DMG helper also accepts `PRESSAY_DMG_APP`, `PRESSAY_DMG_VERSION`, and `PRESSAY_DMG_OUTPUT` with `PRESSAY_SKIP_BUILD=1`. Its mounted-image verifier checks the signed bundle, actual Applications symlink, both artwork resolutions and saved Finder icon positions.
+For a local notarized DMG, store `notarytool` credentials and pass the profile name:
 
-### Public Windows desktop signing
+```bash
+xcrun notarytool store-credentials pressay
+APPLE_SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' \
+  PRESSAY_NOTARIZE=1 PRESSAY_NOTARY_PROFILE=pressay python3 scripts/build-desktop.py
+```
 
-The workflow uses Microsoft's [Artifact Signing action](https://github.com/Azure/artifact-signing-action) with OIDC. This requires an external Azure subscription, completed identity validation, a **public-trust** certificate profile, and an application/federated identity granted the **Artifact Signing Certificate Profile Signer** role. Configure the federation for this repository and the workflow's intended branch/ref. No signing private key is exported to GitHub.
+Set `PRESSAY_NOTARY_KEYCHAIN` too if the profile is in a non-default keychain.
 
-Set these repository variables: `PRESSAY_AZURE_CLIENT_ID`, `PRESSAY_AZURE_TENANT_ID`, `PRESSAY_AZURE_SUBSCRIPTION_ID`, `PRESSAY_AZURE_SIGNING_ENDPOINT`, `PRESSAY_AZURE_SIGNING_ACCOUNT`, and `PRESSAY_AZURE_CERTIFICATE_PROFILE`. The endpoint must match the signing account's region. The pinned official action installs ArtifactSigning PowerShell module 0.1.8 and signs the native workers/libraries; Tauri's signing hook signs its main executable, NSIS uninstaller and installer with the same service. Packaging rejects untrusted or untimestamped signatures before generating updater signatures. A valid signature does not guarantee that Windows SmartScreen has already established reputation for a new application.
+### DMG artwork
 
-Reference contracts: [Tauri updater](https://v2.tauri.app/plugin/updater/), [Mac signing](https://v2.tauri.app/distribute/sign/macos/), [Windows signing](https://v2.tauri.app/distribute/sign/windows/). These release credentials were not exercised during local development; the release workflow must be run and the downloaded installers tested on each desktop before calling the distribution path production-verified.
+The DMG opens a 660 × 400 pt window with 128 pt app and Applications icons at `(170, 178)` and `(490, 178)`. `packaging/macos/dmg/render-background.m` draws the background at 1× and 2×. `scripts/package-dmg.sh` builds it with pinned `dmgbuild` tools in `.build/dmg-tools`, then mounts the image read-only to check the Applications link, background, icon positions and app signature. It needs no Finder automation or signed-in session.
+
+## Windows signing
+
+Without configuration, Windows installers are unsigned and SmartScreen may warn. To sign them, the workflow uses Microsoft's [Artifact Signing action](https://github.com/Azure/artifact-signing-action) with OIDC. This needs an Azure subscription, completed identity validation, a **public-trust** certificate profile, and an application with a federated identity for this repository that has the **Artifact Signing Certificate Profile Signer** role. No private key is exported to GitHub.
+
+Set these repository variables: `PRESSAY_AZURE_CLIENT_ID`, `PRESSAY_AZURE_TENANT_ID`, `PRESSAY_AZURE_SUBSCRIPTION_ID`, `PRESSAY_AZURE_SIGNING_ENDPOINT`, `PRESSAY_AZURE_SIGNING_ACCOUNT` and `PRESSAY_AZURE_CERTIFICATE_PROFILE`. The endpoint must match the signing account's region. Signing turns on when `PRESSAY_AZURE_SIGNING_ACCOUNT` is set. The action signs the workers and libraries; Tauri's signing hook signs the main executable, uninstaller and installer. Packaging rejects untrusted or untimestamped signatures. A valid signature does not mean SmartScreen already trusts a new app.
+
+## Local builds
+
+`make app` (or `python3 scripts/build-desktop.py`) builds installers into `target/release/bundle` with no updater, Apple or Microsoft credentials. On a Mac it signs ad hoc unless `APPLE_SIGNING_IDENTITY` is set. The manual **Desktop preview installers** workflow builds all three platforms without publishing.
+
+## Verify before distributing
+
+Install each platform's release on a clean machine or VM, then update to a higher version. Check that **Check for updates** finds it, the restart, kept settings, notes and models, and recovery from a failed download. Start a dictation or meeting before installing an update and confirm Pressay refuses until it ends.
+
+On a Mac, also update from Pressay 1.14.2 through Sparkle: check that Microphone, Accessibility and System Audio Recording carry over, and that history, notes and settings are imported. Test both the install script and a quarantined browser download, including first launch offline. Automated signature and layout checks do not prove permission continuity.
+
+References: [Tauri updater](https://v2.tauri.app/plugin/updater/), [Mac signing](https://v2.tauri.app/distribute/sign/macos/), [Windows signing](https://v2.tauri.app/distribute/sign/windows/).

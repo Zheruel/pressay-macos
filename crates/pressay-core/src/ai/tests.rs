@@ -58,59 +58,14 @@ fn shipping_policy_models_and_prompts_are_preserved() {
         source(),
         "Keep the API stable and do not change the database."
     ));
-    // These exact resources are shared with the shipping Swift implementation.
-    fn swift_literal(source: &str, marker: &str) -> String {
-        let tail = source
-            .split_once(marker)
-            .unwrap()
-            .1
-            .split_once("\"\"\"")
-            .unwrap()
-            .1;
-        let body = tail.split_once("\"\"\"").unwrap().0;
-        let lines: Vec<_> = body.trim_matches('\n').lines().collect();
-        let indent = lines
-            .iter()
-            .filter(|s| !s.trim().is_empty())
-            .map(|s| s.len() - s.trim_start().len())
-            .min()
-            .unwrap();
-        lines
-            .iter()
-            .map(|s| if s.len() >= indent { &s[indent..] } else { "" })
-            .collect::<Vec<_>>()
-            .join("\n")
-            .trim()
-            .to_owned()
-    }
-    assert_eq!(
+    for prompt in [
         prompts::CLEANUP,
-        swift_literal(
-            include_str!("../../../../Sources/PressayCore/ClaudeCleanup.swift"),
-            "static let template"
-        )
-    );
-    assert_eq!(
         prompts::MEETING,
-        swift_literal(
-            include_str!("../../../../Sources/PressayCore/Notes.swift"),
-            "static let prompt"
-        )
-    );
-    assert_eq!(
         prompts::USER_NOTES,
-        swift_literal(
-            include_str!("../../../../Sources/PressayCore/Notes.swift"),
-            "static let userNotesGuidance"
-        )
-    );
-    assert_eq!(
         prompts::ASK,
-        swift_literal(
-            include_str!("../../../../Sources/PressayCore/NotesAI.swift"),
-            "public static let system"
-        )
-    );
+    ] {
+        assert!(!prompt.trim().is_empty());
+    }
 }
 #[tokio::test]
 async fn cleanup_sends_raw_text_exact_model_and_never_audio() {

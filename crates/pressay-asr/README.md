@@ -16,11 +16,11 @@ and a one-second silent warm-up have succeeded. Native diagnostics go to stderr.
 | --- | --- | --- |
 | `moss`, `parakeetUltra`, `qwen3ASR17`, `qwen3ASR06`, `funASRMLTNano`, `whisperTurboGGML`, `voxtralMini` | `transcribe/libtranscribe.dylib`, `transcribe/transcribe.dll`, or `transcribe/libtranscribe.so` | macOS, Windows, Linux |
 | `orukeet` | `orukeet/lib/libnemo_speech_asr_c.dylib` | Apple Silicon macOS |
-| `megaASR` | Use the existing Swift worker | Apple Silicon macOS |
+| `megaASR` | Use the Swift MLX worker built from `Runtime/` | Apple Silicon macOS |
 
-Build the native runtime from the same commit used by
-`scripts/build-asr-runtime.sh`, `41738b58b305c08bdecf5379dccdc19a0f7c3b05`. The
-vendored C API is **0.4.0**, independently of the older Swift package dependency.
+Build the native runtime from the pinned commit
+`41738b58b305c08bdecf5379dccdc19a0f7c3b05` (the `REVISION` in
+`scripts/build-portable-runtime.py`). The vendored C API is **0.4.0**.
 The adapter rejects a different `transcribe_version()` rather than loading it
 against incompatible structs. Ship every required ggml library beside
 `libtranscribe`/`transcribe.dll`. `LoadLibraryExW` restricts Windows dependency
@@ -37,7 +37,8 @@ optimized Mac Orukeet/MLX implementations are portable.
 
 `python3 scripts/build-portable-runtime.py` builds that CPU configuration and
 stages it under `apps/desktop/src-tauri/runtime/transcribe`. On Apple Silicon,
-pass `--metal` to keep GPU acceleration. The script fetches the exact source
+pass `--metal` to keep GPU acceleration; `scripts/build-desktop.py` does this
+on Macs. The script fetches the exact source
 commit, stages required libraries and licenses, and preserves the previous
 runtime if staging fails. Quit development workers before replacing a runtime.
 

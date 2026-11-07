@@ -98,7 +98,7 @@ def main():
         settings = json.loads((NATIVE / "tauri.conf.json").read_text())
         app = ROOT / "target/release/bundle/macos" / (settings["productName"] + ".app")
         run(sys.executable, ROOT / "scripts/sign-desktop-macos.py", app)
-        dmg = ROOT / "target/release/bundle/dmg" / f"Pressay-Desktop-{settings['version']}-macos-{platform.machine()}.dmg"
+        dmg = ROOT / "target/release/bundle/dmg" / f"Pressay-{settings['version']}-macos-{platform.machine()}.dmg"
         environment = os.environ | {"PRESSAY_SKIP_BUILD": "1", "PRESSAY_DMG_APP": str(app),
             "PRESSAY_DMG_VERSION": settings["version"], "PRESSAY_DMG_OUTPUT": str(dmg)}
         if os.environ.get("APPLE_SIGNING_IDENTITY"):

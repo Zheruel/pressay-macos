@@ -1,5 +1,8 @@
 # Cross-platform migration validation
 
+> [!NOTE]
+> This record was written while the Swift app and the desktop app shipped side by side. As of 2.0.0 the desktop app is the only Pressay app and the Swift app's source has been removed. "Native app", "Swift app" and "Preview" below refer to that earlier setup; the Input Monitoring grant mentioned below is no longer requested.
+
 Recorded 2026-11-06 for the isolated preview and native Mac onboarding changes. The feature surface now includes notes, AI/account integration, live meetings, speaker analysis, Wayland portals and the existing Mac Mega-ASR worker. This record distinguishes implemented code, component evidence and physical acceptance that remains open; it is not a claim that issue #31 has completed all release QA.
 
 ## Automated and integration checks
@@ -111,4 +114,4 @@ Signing/updater tests use ephemeral keys or disposable ad-hoc app copies. Missin
 
 Full physical-device validation remains open on macOS, Windows and Linux: clean install/upgrade/uninstall, microphone and remote audio, denied/revoked/regranted permissions, hold/release → recognition → actual insertion, secure/custom editors, focus/overlay behavior, IMEs, screen readers, Bluetooth route changes, long meetings, lock/sleep and rollback. Mock provider/account tests do not replace real supported browser consent and provider sessions. Call detection is heuristic; task/reminder export needs target-application acceptance.
 
-The [architecture decision](architecture/001-shared-rust-core.md) describes the implemented surface and platform constraints. The Rust app now uses the `dev.localflow.app` identity with its own store; the native Swift app's data remains available for rollback while these gates are verified.
+The [architecture decision](architecture/001-shared-rust-core.md) describes the implemented surface and platform constraints. The app uses the `dev.localflow.app` identity with its own store. On first launch it imports the Swift app's history, notes and settings read-only, so that data remains available for rollback to 1.14.2.

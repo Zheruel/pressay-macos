@@ -2,6 +2,28 @@
 
 All notable changes to Pressay are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-11-07
+
+### Changed
+
+- Pressay is now one app for macOS, Windows and Linux. On a Mac it replaces the previous app and updates to it automatically; your permissions carry over.
+- A new window design. Tabs in the title bar for Home, Notetaker and Dictionary, and Settings (⌘, or the cog) in its own sheet with Dictation, AI Cleanup, Notetaker and General tabs.
+- Home shows your last dictation, the week's stats and every dictation, searchable with ⌘F.
+- In Notetaker, edit a note in place as Markdown; it saves as you type. Write up again replaces the note with a fresh write-up.
+- Ask (⌘J) cites its sources: each point links to the meeting it came from, with numbered references.
+- Setup needs only Microphone and Accessibility.
+- Updates install from Settings › General › App updates.
+
+### Added
+
+- Windows (10 and 11, x64) and Linux (x64, AppImage and .deb) installers.
+- On first launch, your dictation history, meeting notes and settings from the previous Mac app are imported automatically. The original files are not changed, so you can reinstall 1.14.2 to go back. Import API keys and original recordings from Settings › General.
+
+### Removed
+
+- The previous Swift-based Mac app.
+- The Input Monitoring permission. The talk key works with Accessibility alone.
+
 ## [1.14.2] - 2026-11-03
 
 ### Fixed

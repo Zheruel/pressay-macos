@@ -6,6 +6,9 @@
 	<string>Pressay captures the other side of a meeting only while you record it. Audio is transcribed on this device.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Pressay uses your microphone while you dictate or record a meeting. Speech is recognized on this device.</string>
+	<!-- The retired Swift app's Sparkle key. Sparkle checks that an update keeps it. -->
+	<key>SUPublicEDKey</key>
+	<string>dRS1x+MqR+iIG7NAi+tLCOUerzo0eJbw6BUt0bs7xm0=</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Pressay adds the action items you choose to your Reminders list.</string>
 </dict>

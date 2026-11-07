@@ -2,41 +2,29 @@
 
 Pressay source code is MIT-licensed. The following components and downloaded assets keep their own licenses.
 
-## Sparkle
-
-- Project: [sparkle-project/Sparkle](https://github.com/sparkle-project/Sparkle)
-- Use: signed update checking, download, installation, and relaunch
-- Version: `2.10.1`
-- License: MIT, with bundled third-party notices in [`Config/Sparkle-LICENSE.txt`](Config/Sparkle-LICENSE.txt)
-
-The app bundles the complete notice under `Contents/Resources/licenses/Sparkle.txt`.
-
-## transcribe.cpp and Swift bindings
+## transcribe.cpp
 
 - Project: [handy-computer/transcribe.cpp](https://github.com/handy-computer/transcribe.cpp)
-- Use: native ggml/Metal speech runtime and vendored Swift wrapper
+- Use: native ggml speech runtime (Metal on Mac, CPU on Windows and Linux)
 - License: MIT
-- Local license copy: [`Sources/TranscribeCpp/LICENSE`](Sources/TranscribeCpp/LICENSE)
+- Local license copy: [`Runtime/Sources/CNativeASR/vendor/TRANSCRIBE_LICENSE`](Runtime/Sources/CNativeASR/vendor/TRANSCRIBE_LICENSE)
 
-The packaged application downloads the prebuilt `CTranscribe` XCFramework declared in `Package.swift`.
+`scripts/build-portable-runtime.py` builds transcribe.cpp at commit `41738b58b305c08bdecf5379dccdc19a0f7c3b05`, applies the checked-in patch in `scripts/patches/`, and copies the transcribe.cpp and ggml license files into the bundled runtime.
 
-The local worker additionally builds transcribe.cpp at commit `41738b58b305c08bdecf5379dccdc19a0f7c3b05`
-with its matching vendored C header. This pinned development runtime is separate from the legacy framework.
+## Sparkle
 
-## Bundled local speech worker
+- Project: [sparkle-project/Sparkle](https://github.com/sparkle-project/Sparkle), `2.10.1`, MIT
+
+Sparkle is not bundled in the app. The release workflow runs its `generate_appcast` tool so that Pressay 1.x installs can update to the current release.
+
+## Mac speech worker
 
 - [Oruk-AI/orukeet](https://github.com/Oruk-AI/orukeet), optimized Metal runtime `0.1.1`: wraps NVIDIA NeMo-Speech.cpp (Apache-2.0), ggml (MIT) and SentencePiece (Apache-2.0). The build verifies the release archive SHA-256 and includes its license directory in the app.
 - [Blaizzy/mlx-audio-swift](https://github.com/Blaizzy/mlx-audio-swift), commit `19f2296420c875b4f782825c5f5fcb554ed87e38`: MIT. Swift Qwen backbone and audio processing used by Mega-ASR.
 - [Blaizzy/mlx-audio](https://github.com/Blaizzy/mlx-audio), `0.6.1`: MIT. Mega-ASR router and reversible LoRA application ported in `Runtime/Sources/PressayASRWorker/MegaASR.swift`.
 - [ml-explore/mlx-swift](https://github.com/ml-explore/mlx-swift) and MLX: MIT. Hugging Face Swift tokenizers and Hub packages: Apache-2.0. Their resolved versions are pinned in `Runtime/Package.resolved`.
 
-The app bundles dependency license files under `Contents/Resources/ASRRuntime/licenses` and the Orukeet runtime's own `share/licenses`. Executable runtimes ship inside the signed app; the running app downloads only model data.
-
-## FluidAudio
-
-- Project: [FluidInference/FluidAudio](https://github.com/FluidInference/FluidAudio)
-- Use: on-device speaker diarization (LS-EEND) and voice activity detection (Silero) for meetings
-- License: Apache-2.0
+Executable runtimes ship inside the signed app; the running app downloads only model data.
 
 ## Speech model weights
 
@@ -50,8 +38,8 @@ The five recommended model sources are [Orukeet](https://huggingface.co/oruk/oru
 Model-card licenses and attribution requirements apply independently of Pressay's code license.
 
 - [Whisper Large V3 Turbo](https://huggingface.co/openai/whisper-large-v3-turbo): base model released under the MIT License. Consult the downloaded GGUF repository's model card for conversion-specific notices.
-- [Silero VAD Core ML](https://huggingface.co/FluidInference/silero-vad-coreml): MIT. Downloaded on the first meeting.
-- [LS-EEND Core ML (AMI)](https://huggingface.co/FluidInference/ls-eend-coreml): MIT. Downloaded on the first meeting that records the call's audio.
+- [Silero VAD v6.2 GGUF](https://huggingface.co/handy-computer/silero-vad-v6.2-gguf): MIT. Finds speech in meetings; downloaded on the first meeting.
+- [Streaming Sortformer 4spk v2.1 GGUF](https://huggingface.co/handy-computer/diar_streaming_sortformer_4spk-v2.1-gguf): NVIDIA speaker diarization model, converted for transcribe.cpp. Tells speakers apart in meetings. Consult the model card for its license.
 - [NVIDIA Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3): CC BY 4.0. Copyright and attribution remain with NVIDIA and the model authors. Consult the model card before redistribution.
 
 The model-card terms are authoritative and may change independently of Pressay.
@@ -60,21 +48,12 @@ The model-card terms are authoritative and may change independently of Pressay.
 
 The `Config/Sounds/*.wav` earcons are synthesized by Pressay's own `scripts/generate-earcons.py` and contain no third-party audio. Earlier releases derived the begin/release cues from CC0 recordings by AbdrTar on Freesound ([Recording Start](https://freesound.org/people/AbdrTar/sounds/519985/), [Recording End](https://freesound.org/people/AbdrTar/sounds/519986/)); thanks for those.
 
-## Apple frameworks
+## Platform frameworks
 
-Pressay uses system frameworks including SwiftUI, AppKit, AVFoundation, Accessibility, SwiftData, ServiceManagement, and Foundation Models. Their use is governed by the applicable Apple SDK and platform terms; these frameworks are not redistributed by this repository.
+On macOS, Pressay uses system frameworks including AppKit, AVFoundation, Core Audio, Accessibility and EventKit. Windows and Linux builds use the system WebView (WebView2, WebKitGTK). These are governed by their platform terms and are not redistributed by this repository.
 
-## Cross-platform preview
+## Rust and Tauri dependencies
 
-The experimental desktop shell uses Tauri 2 and its global-shortcut/single-instance
-plugins (MIT/Apache-2.0), CPAL (Apache-2.0), Rubato (MIT), Enigo (MIT), and Arboard
-(MIT/Apache-2.0). The Rust core uses Tokio, Reqwest, Rusqlite/SQLite, Serde, Regex,
-SHA-2, Tempfile and UUID under their respective upstream licenses. Exact versions
-and sources are recorded in `Cargo.lock`; these dependencies remain independent
-of the shipping Swift UI.
+The app uses Tauri 2 and its plugins (MIT/Apache-2.0), CPAL (Apache-2.0), Rubato (MIT), Enigo (MIT) and Arboard (MIT/Apache-2.0). The Rust core uses Tokio, Reqwest, Rusqlite/SQLite, Serde, Regex, SHA-2, Tempfile and UUID under their upstream licenses. Exact versions and sources are recorded in `Cargo.lock` and `apps/desktop/package-lock.json`.
 
-The portable worker reuses the existing pinned transcribe.cpp C API and runtime,
-not a model implementation rewritten in Rust. The portable runtime builder copies
-the transcribe.cpp and ggml license files into each bundled runtime directory.
-Optimized Orukeet on Mac retains the upstream runtime archive and its notices.
-Model weights are downloaded separately and retain their existing licenses.
+Model weights are downloaded separately and keep their own licenses.

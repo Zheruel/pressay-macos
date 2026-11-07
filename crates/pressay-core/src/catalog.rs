@@ -110,35 +110,9 @@ pub fn find(id: &str) -> crate::Result<&'static Model> {
 mod tests {
     use super::*;
     #[test]
-    fn all_shipping_models_and_language_choices_are_preserved() {
-        let swift = include_str!("../../../Sources/PressayCore/Domain.swift");
-        let coverage = swift
-            .split("public var languageCodes: [String] {")
-            .nth(1)
-            .unwrap()
-            .split("public var defaultLanguage")
-            .next()
-            .unwrap();
-        let mut expected: Vec<_> = coverage
-            .lines()
-            .filter_map(|line| {
-                line.trim()
-                    .strip_prefix("case .")
-                    .and_then(|line| line.split(':').next())
-            })
-            .collect();
-        expected.sort();
-        let mut actual: Vec<_> = models().iter().map(|model| model.id.as_str()).collect();
-        actual.sort();
-        assert_eq!(actual, expected);
+    fn every_model_has_languages_and_falls_back_to_automatic() {
+        assert!(models().len() >= 9);
         for model in models() {
-            let prefix = format!("case .{}: ", model.id);
-            let language_json = coverage
-                .lines()
-                .find_map(|line| line.trim().strip_prefix(&prefix))
-                .unwrap();
-            let languages: Vec<String> = serde_json::from_str(language_json).unwrap();
-            assert_eq!(model.language_codes(), languages, "{}", model.id);
             assert_eq!(model.effective_language("invalid"), "auto");
             assert_eq!(model.effective_language("auto"), "auto");
             assert_eq!(

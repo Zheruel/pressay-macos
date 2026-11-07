@@ -1,30 +1,28 @@
-.PHONY: build test icon app dmg run install clean
+.PHONY: build test app run install clean
 
-DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
-CLANG_MODULE_CACHE_PATH ?= $(CURDIR)/.build/ModuleCache
-export DEVELOPER_DIR
-export CLANG_MODULE_CACHE_PATH
+# Build the speech runtime, workers and installers (target/release/bundle).
+app:
+	python3 scripts/build-desktop.py
 
 build:
-	swift build
+	cargo build --workspace
 
 test:
-	xcrun swift test --disable-sandbox
+	cargo test --workspace --locked
 
-icon:
-	./scripts/generate-icon.sh
+run:
+	python3 scripts/build-desktop.py --no-bundle
+	npm --prefix apps/desktop ci
+	PRESSAY_RUNTIME_DIR="$(CURDIR)/apps/desktop/src-tauri/runtime" \
+	PRESSAY_WORKER_PATH="$(CURDIR)/apps/desktop/src-tauri/binaries/pressay-asr-worker" \
+	npm --prefix apps/desktop run dev
 
-app:
-	./scripts/build-app.sh
-
-dmg:
-	./scripts/package-dmg.sh
-
-run: app
-	open .build/Pressay.app
-
+# Mac: build, then replace /Applications/Pressay.app.
 install: app
-	./scripts/install-app.sh
+	pkill -x pressay-desktop || true
+	rm -rf /Applications/Pressay.app
+	ditto target/release/bundle/macos/Pressay.app /Applications/Pressay.app
+	open /Applications/Pressay.app
 
 clean:
-	swift package clean
+	cargo clean

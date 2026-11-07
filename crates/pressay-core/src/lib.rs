@@ -6,6 +6,7 @@ pub mod audio;
 pub mod catalog;
 pub mod dictation;
 pub mod download;
+pub mod legacy_mac;
 pub mod onboarding;
 pub mod storage;
 pub mod text;
