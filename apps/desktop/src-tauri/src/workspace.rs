@@ -25,8 +25,8 @@ use tauri::{AppHandle, Manager, State};
 use tokio_util::sync::CancellationToken;
 struct NativeSecrets;
 impl NativeSecrets {
-    fn entry(key: &str) -> Result<keyring::Entry, String> {
-        keyring::Entry::new("dev.localflow.pressay", key)
+    fn entry(key: &str) -> Result<keyring_core::Entry, String> {
+        crate::credentials::entry("dev.localflow.pressay", key)
             .map_err(|_| "Credential store unavailable".into())
     }
 }
@@ -34,7 +34,7 @@ impl SecretStore for NativeSecrets {
     fn get(&self, key: &str) -> Result<Option<Secret>, String> {
         match Self::entry(key)?.get_password() {
             Ok(s) => Ok(Some(Secret::new(s))),
-            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(keyring_core::Error::NoEntry) => Ok(None),
             Err(_) => Err("Credential store unavailable".into()),
         }
     }
@@ -45,7 +45,7 @@ impl SecretStore for NativeSecrets {
     }
     fn delete(&self, key: &str) -> Result<(), String> {
         match Self::entry(key)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Ok(()) | Err(keyring_core::Error::NoEntry) => Ok(()),
             Err(_) => Err("Credential store unavailable".into()),
         }
     }
@@ -60,11 +60,11 @@ impl SecretStore for LegacyMacSecrets {
         if !["claude-api-key", "openai-api-key"].contains(&key) {
             return Err("Unsupported legacy credential".into());
         }
-        let entry = keyring::Entry::new("dev.localflow.app", key)
+        let entry = crate::credentials::entry("dev.localflow.app", key)
             .map_err(|_| "Existing Mac credential store unavailable".to_string())?;
         match entry.get_password() {
             Ok(value) => Ok(Some(Secret::new(value))),
-            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(keyring_core::Error::NoEntry) => Ok(None),
             Err(_) => Err("Existing Mac credential store unavailable".into()),
         }
     }

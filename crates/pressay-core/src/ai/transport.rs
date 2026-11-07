@@ -3,7 +3,6 @@ use crate::accounts::Secret;
 use futures_util::{SinkExt, StreamExt};
 use reqwest::{Client, Url};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::time::Duration;
 use tokio::{net::TcpStream, sync::Mutex, time::Instant};
 use tokio_tungstenite::{
@@ -96,7 +95,7 @@ impl HttpAi {
                     _ => AiError::Transport,
                 })?;
         Ok(CachedSocket {
-            credential: Sha256::digest(credential.expose().as_bytes()).into(),
+            credential: crate::sha256(credential.expose().as_bytes()),
             socket,
         })
     }
@@ -110,9 +109,10 @@ impl HttpAi {
         };
         let mut cached = slot.take();
         let work = async {
-            if cached.as_ref().is_none_or(|c| {
-                c.credential != <[u8; 32]>::from(Sha256::digest(credential.expose().as_bytes()))
-            }) {
+            if cached
+                .as_ref()
+                .is_none_or(|c| c.credential != crate::sha256(credential.expose().as_bytes()))
+            {
                 cached = Some(self.connect(credential).await?);
             }
             let socket = &mut cached.as_mut().unwrap().socket;
@@ -191,8 +191,7 @@ impl HttpAi {
                 let mut cached = slot.take();
                 let work = async {
                     if cached.as_ref().is_none_or(|c| {
-                        c.credential
-                            != <[u8; 32]>::from(Sha256::digest(credential.expose().as_bytes()))
+                        c.credential != crate::sha256(credential.expose().as_bytes())
                     }) {
                         cached = Some(self.connect(credential).await?);
                     }

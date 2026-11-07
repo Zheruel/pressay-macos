@@ -3,7 +3,6 @@
 use super::AiError;
 use serde::Serialize;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::{
     path::PathBuf,
     process::Stdio,
@@ -39,8 +38,8 @@ impl AuthStatus {
             .iter()
             .filter_map(|k| json[*k].as_str())
             .collect();
-        let identity = (!parts.is_empty())
-            .then(|| format!("{:x}", Sha256::digest(parts.join("\n").as_bytes())));
+        let identity =
+            (!parts.is_empty()).then(|| crate::hex(&crate::sha256(parts.join("\n").as_bytes())));
         Ok(Self {
             available: true,
             logged_in,

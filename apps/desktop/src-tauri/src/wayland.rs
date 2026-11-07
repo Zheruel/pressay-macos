@@ -15,21 +15,18 @@ use std::{
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
-use zbus::{
-    zvariant::{DynamicType, OwnedObjectPath, OwnedValue, Value},
-    Connection, Proxy,
-};
+use zbus::{Connection, DynamicType, OwnedObjectPath, OwnedVariant, Proxy, Variant};
 const DESTINATION: &str = "org.freedesktop.portal.Desktop";
 const DESKTOP: &str = "/org/freedesktop/portal/desktop";
 const SHORTCUTS: &str = "org.freedesktop.portal.GlobalShortcuts";
 const REMOTE: &str = "org.freedesktop.portal.RemoteDesktop";
-type Results = HashMap<String, OwnedValue>;
-type Options<'a> = HashMap<&'a str, Value<'a>>;
+type Results = HashMap<String, OwnedVariant>;
+type Options<'a> = HashMap<&'a str, Variant<'a>>;
 fn token() -> String {
     format!("pressay_{}", uuid::Uuid::new_v4().simple())
 }
 fn options(token: &str) -> Options<'_> {
-    HashMap::from([("handle_token", Value::from(token))])
+    HashMap::from([("handle_token", Variant::from(token))])
 }
 async fn proxy(
     connection: &Connection,
@@ -131,7 +128,10 @@ async fn create_session(
     let handle = token();
     let session_token = token();
     let mut args = options(&handle);
-    args.insert("session_handle_token", Value::from(session_token.as_str()));
+    args.insert(
+        "session_handle_token",
+        Variant::from(session_token.as_str()),
+    );
     let values = request(
         connection,
         portal,
@@ -316,8 +316,8 @@ async fn run_shortcuts_on(
         let mut owner = portal.receive_owner_changed().await.map_err(|e| e.to_string())?;
         let preferred = portal_trigger(accelerator)?;
         let shortcuts = vec![
-            ("dictation", HashMap::from([("description", Value::from("Hold to dictate with Pressay")), ("preferred_trigger", Value::from(preferred.as_str()))])),
-            ("cancel", HashMap::from([("description", Value::from("Cancel Pressay dictation")), ("preferred_trigger", Value::from("CTRL+SHIFT+Escape"))])),
+            ("dictation", HashMap::from([("description", Variant::from("Hold to dictate with Pressay")), ("preferred_trigger", Variant::from(preferred.as_str()))])),
+            ("cancel", HashMap::from([("description", Variant::from("Cancel Pressay dictation")), ("preferred_trigger", Variant::from("CTRL+SHIFT+Escape"))])),
         ];
         let handle = token();
         let grants = request(&connection, &portal, "BindShortcuts", &(&session, shortcuts, "", options(&handle)), &handle, cancel).await?;
@@ -528,16 +528,16 @@ async fn prepare_keyboard_on(
     let result = async {
         let handle = token();
         let mut selection = options(&handle);
-        selection.insert("types", Value::from(1u32)); // Only keyboard. No screen, pointer or microphone.
+        selection.insert("types", Variant::from(1u32)); // Only keyboard. No screen, pointer or microphone.
         let version: u32 = portal
             .get_property("version")
             .await
             .map_err(|e| e.to_string())?;
         let restore = read_restore_token();
         if version >= 2 {
-            selection.insert("persist_mode", Value::from(2u32));
+            selection.insert("persist_mode", Variant::from(2u32));
             if let Some(restore) = &restore {
-                selection.insert("restore_token", Value::from(restore.as_str()));
+                selection.insert("restore_token", Variant::from(restore.as_str()));
             }
         }
         request(

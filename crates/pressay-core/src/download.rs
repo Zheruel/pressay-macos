@@ -2,8 +2,8 @@ use crate::{
     catalog::{Artifact, Model},
     Error, Result,
 };
+use aws_lc_rs::digest::{Context, SHA256};
 use futures_util::StreamExt;
-use sha2::{Digest, Sha256};
 use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -36,7 +36,7 @@ fn verified_cancellable(
     if file.metadata()?.len() != artifact.bytes {
         return Ok(false);
     }
-    let mut hash = Sha256::new();
+    let mut hash = Context::new(&SHA256);
     let mut buffer = vec![0; 1024 * 1024];
     loop {
         if cancel.is_cancelled() {
@@ -48,7 +48,7 @@ fn verified_cancellable(
         }
         hash.update(&buffer[..n]);
     }
-    Ok(format!("{:x}", hash.finalize()) == artifact.sha256)
+    Ok(crate::hex(hash.finish().as_ref()) == artifact.sha256)
 }
 
 fn validate_manifest(model: &Model) -> Result<()> {
@@ -132,7 +132,7 @@ pub async fn prepare(
             };
             let mut stream = response.bytes_stream();
             let mut written = 0_u64;
-            let mut hash = Sha256::new();
+            let mut hash = Context::new(&SHA256);
             loop {
                 let chunk = tokio::select! {
                     _ = cancel.cancelled() => return Err(Error::Cancelled),
@@ -157,7 +157,7 @@ pub async fn prepare(
                     stage: "downloading",
                 });
             }
-            if written != artifact.bytes || format!("{:x}", hash.finalize()) != artifact.sha256 {
+            if written != artifact.bytes || crate::hex(hash.finish().as_ref()) != artifact.sha256 {
                 return Err(Error::Message(
                     "Model integrity check failed; retry the download".into(),
                 ));

@@ -2,11 +2,9 @@ use super::{Secret, SecretStore};
 use crate::ai::AiError;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
-use rand::{rngs::OsRng, RngCore};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     sync::{
@@ -587,6 +585,7 @@ impl ChatGptAccount {
         validation.set_issuer(&[ISSUER]);
         validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
         validation.leeway = 60;
+        validation.validate_nbf = true;
         let claims = decode::<Value>(token, &key, &validation)
             .map_err(|_| AiError::InvalidCredential)?
             .claims;
@@ -650,7 +649,7 @@ impl Attempt {
     fn new(redirect: String, client: Option<String>) -> Self {
         fn random(n: usize) -> Secret {
             let mut bytes = Zeroizing::new(vec![0; n]);
-            OsRng.fill_bytes(&mut bytes);
+            getrandom::fill(&mut bytes).expect("OS randomness unavailable");
             Secret::new(URL_SAFE_NO_PAD.encode(&bytes))
         }
         Self {
@@ -663,7 +662,7 @@ impl Attempt {
     }
     fn authorize(&self, endpoint: &Url, host: &str, previous: Option<&Credentials>) -> Url {
         let mut url = endpoint.clone();
-        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(self.verifier.expose().as_bytes()));
+        let challenge = URL_SAFE_NO_PAD.encode(crate::sha256(self.verifier.expose().as_bytes()));
         {
             let mut q = url.query_pairs_mut();
             q.extend_pairs([

@@ -1,6 +1,9 @@
 //! Bounded two-track native meeting capture. Audio is emitted continuously and never
 //! accumulated for the duration of a meeting. Track timestamps share one monotonic clock.
-use rubato::{FftFixedIn, Resampler};
+use rubato::{
+    audioadapter_buffers::direct::InterleavedSlice, Fft, FixedSync, Indexing, Resampler,
+    WindowFunction,
+};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender};
@@ -421,7 +424,7 @@ impl Pipeline {
 
 /// Stateful anti-aliased conversion. Memory depends on FFT/chunk size, never meeting length.
 pub(crate) struct StreamingResampler {
-    converter: Option<FftFixedIn<f32>>,
+    converter: Option<Fft<f32>>,
     input: Vec<f32>,
     source_rate: usize,
     source_frames: u64,
@@ -439,8 +442,16 @@ impl StreamingResampler {
             }
             let unit = 2 * rate / a;
             Some(
-                FftFixedIn::new(rate, SAMPLE_RATE, 1_024usize.div_ceil(unit) * unit, 1, 1)
-                    .map_err(|error| error.to_string())?,
+                Fft::new_custom(
+                    rate,
+                    SAMPLE_RATE,
+                    1_024usize.div_ceil(unit) * unit,
+                    1,
+                    1,
+                    WindowFunction::BlackmanHarris2,
+                    FixedSync::Input,
+                )
+                .map_err(|error| error.to_string())?,
             )
         };
         let delay_remaining = converter.as_ref().map_or(0, Resampler::output_delay);
@@ -464,10 +475,10 @@ impl StreamingResampler {
         let mut consumed = 0;
         while self.input.len() - consumed >= converter.input_frames_next() {
             let count = converter.input_frames_next();
-            let block = converter
-                .process(&[&self.input[consumed..consumed + count]], None)
+            let input = InterleavedSlice::new(&self.input[consumed..consumed + count], 1, count)
                 .map_err(|e| e.to_string())?;
-            output.extend_from_slice(&block[0]);
+            let block = converter.process(&input, None).map_err(|e| e.to_string())?;
+            output.extend(block.take_data());
             consumed += count;
         }
         self.input.drain(..consumed);
@@ -485,16 +496,19 @@ impl StreamingResampler {
         };
         let mut output = vec![];
         if !self.input.is_empty() {
-            let block = converter
-                .process_partial(Some(&[self.input.as_slice()]), None)
+            let input = InterleavedSlice::new(&self.input, 1, self.input.len())
                 .map_err(|e| e.to_string())?;
-            output.extend_from_slice(&block[0]);
+            let block = converter
+                .process(&input, Some(&Indexing::new().partial_len(self.input.len())))
+                .map_err(|e| e.to_string())?;
+            output.extend(block.take_data());
         }
         while output.len() < remaining + self.delay_remaining {
+            let input = InterleavedSlice::new(&[], 1, 0).map_err(|e| e.to_string())?;
             let block = converter
-                .process_partial::<&[f32]>(None, None)
+                .process(&input, Some(&Indexing::new().partial_len(0)))
                 .map_err(|e| e.to_string())?;
-            output.extend_from_slice(&block[0]);
+            output.extend(block.take_data());
         }
         output.copy_within(self.delay_remaining..self.delay_remaining + remaining, 0);
         output.truncate(remaining);

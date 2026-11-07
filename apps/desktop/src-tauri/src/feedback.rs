@@ -4,7 +4,9 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     FromSample, SampleFormat, SizedSample,
 };
-use rubato::{FftFixedIn, Resampler};
+use rubato::{
+    audioadapter_buffers::direct::InterleavedSlice, Fft, FixedSync, Resampler, WindowFunction,
+};
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -124,7 +126,7 @@ fn open_output(failed: Arc<AtomicBool>) -> Result<cpal::Stream, String> {
         .default_output_device()
         .ok_or("No audio output")?;
     let supported = device.default_output_config().map_err(|e| e.to_string())?;
-    let mut config: cpal::StreamConfig = supported.clone().into();
+    let mut config: cpal::StreamConfig = supported.into();
     if config.channels == 0
         || config.channels > 32
         || !(8_000..=192_000).contains(&config.sample_rate)
@@ -185,19 +187,16 @@ fn build_output<T: SizedSample + FromSample<f32>>(
     ready: Arc<AtomicBool>,
     latency: Arc<AtomicU64>,
     failed: Arc<AtomicBool>,
-) -> Result<cpal::Stream, cpal::BuildStreamError> {
+) -> Result<cpal::Stream, cpal::Error> {
     let channels = config.channels as usize;
     let mut active: Option<Playback> = None;
     let mut offset = 0;
     let invalid = ready.clone();
     device.build_output_stream(
-        config,
+        *config,
         move |data: &mut [T], info: &cpal::OutputCallbackInfo| {
             let timestamp = info.timestamp();
-            let delay = timestamp
-                .playback
-                .duration_since(&timestamp.callback)
-                .unwrap_or_default();
+            let delay = timestamp.playback.duration_since(timestamp.callback);
             latency.store(
                 delay.as_micros().min(u64::MAX as u128) as u64,
                 Ordering::Release,
@@ -280,32 +279,30 @@ fn convert_asset(bytes: &[u8], rate: usize) -> Result<Vec<[f32; 2]>, String> {
     if rate == 48_000 {
         return Ok(source);
     }
-    let mut converter =
-        FftFixedIn::<f32>::new(48_000, rate, 1024, 2, 2).map_err(|e| e.to_string())?;
-    let delay = converter.output_delay();
+    let mut converter = Fft::<f32>::new_custom(
+        48_000,
+        rate,
+        1024,
+        2,
+        2,
+        WindowFunction::BlackmanHarris2,
+        FixedSync::Input,
+    )
+    .map_err(|e| e.to_string())?;
     let wanted = source.len() * rate / 48_000;
-    let mut result = Vec::new();
-    let mut offset = 0;
-    while result.len() < wanted + delay {
-        let count = converter.input_frames_next().min(source.len() - offset);
-        let left: Vec<_> = source[offset..offset + count]
-            .iter()
-            .map(|v| v[0])
-            .collect();
-        let right: Vec<_> = source[offset..offset + count]
-            .iter()
-            .map(|v| v[1])
-            .collect();
-        let output = if count == 0 {
-            converter.process_partial::<Vec<f32>>(None, None)
-        } else {
-            converter.process_partial(Some(&[left, right]), None)
-        }
-        .map_err(|e| e.to_string())?;
-        result.extend(output[0].iter().zip(&output[1]).map(|(l, r)| [*l, *r]));
-        offset += count;
-    }
-    Ok(result[delay..delay + wanted].to_vec())
+    let input =
+        InterleavedSlice::new(source.as_flattened(), 2, source.len()).map_err(|e| e.to_string())?;
+    let output = converter
+        .process_all(&input, source.len(), None)
+        .map_err(|e| e.to_string())?
+        .take_data();
+    Ok(output
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .take(wanted)
+        .copied()
+        .collect())
 }
 #[cfg(test)]
 mod tests {

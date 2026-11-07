@@ -77,7 +77,7 @@ fn pkce_state_registration_and_scope_boundaries() {
     assert_eq!(q["code_challenge_method"], "S256");
     assert_eq!(
         q["code_challenge"],
-        URL_SAFE_NO_PAD.encode(Sha256::digest(a.verifier.expose()))
+        URL_SAFE_NO_PAD.encode(crate::sha256(a.verifier.expose().as_bytes()))
     );
     assert_eq!(q["resource"], RESOURCE);
     assert!(!url.as_str().contains(a.verifier.expose()));
@@ -112,6 +112,10 @@ async fn verifies_signature_issuer_audience_expiry_nonce_and_subject() {
         ("iss", json!("https://untrusted.invalid")),
         ("aud", json!("other-client")),
         ("exp", json!(now() as u64 - 3600)),
+        ("exp", json!("not-a-number")),
+        ("exp", json!([now() as u64 + 3600])),
+        ("nbf", json!("not-a-number")),
+        ("nbf", json!(now() as u64 + 3600)),
         ("nonce", json!("wrong")),
         ("sub", json!("different-user")),
     ] {
