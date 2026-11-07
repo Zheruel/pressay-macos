@@ -8,15 +8,18 @@
   </head>
   <body>
     <main id="tray-panel">
-      <div class="status">
-        <span id="ready-dot" class="ready-dot" aria-hidden="true"></span>
-        <div>
-          <strong id="status-title" role="status">Pressay</strong>
-          <span class="status-hint" id="status-hint"
-            >Hold <kbd id="talk-key">…</kbd> to talk</span
+      <header class="status">
+        <div class="status-line">
+          <strong>Pressay</strong>
+          <span class="status-state"
+            ><span id="ready-dot" class="ready-dot" aria-hidden="true"></span
+            ><span id="status-title" role="status">Ready</span></span
           >
         </div>
-      </div>
+        <span class="status-hint" id="status-hint"
+          >Hold <kbd id="talk-key">…</kbd> to talk</span
+        >
+      </header>
       <div id="update-notice" class="notice" hidden>
         <span id="update-message"></span
         ><button id="install-update" hidden>Install update</button>
@@ -28,6 +31,8 @@
       </section>
       <section id="ready-content" hidden>
         <button id="attention" class="row attention" hidden></button>
+        <hr />
+        <h2 class="section">Last Dictation</h2>
         <div id="recent"></div>
         <hr />
         <label class="row toggle"

@@ -78,7 +78,7 @@ function render() {
       : meetingLive
         ? "Taking notes"
         : ["preparing", "loading"].includes(s.stage)
-          ? "Preparing speech model…"
+          ? "Preparing…"
           : ready
             ? "Ready"
             : "Setup needed";

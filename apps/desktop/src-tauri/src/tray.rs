@@ -356,6 +356,16 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
             .visible_on_all_workspaces(true)
             .skip_taskbar(true)
             .shadow(true)
+            // The menu material behind a transparent page, as native menu
+            // bar extras draw it; the page paints no background of its own.
+            .transparent(true)
+            .effects(
+                tauri::window::EffectsBuilder::new()
+                    .effect(tauri::window::Effect::Menu)
+                    .state(tauri::window::EffectState::Active)
+                    .radius(11.)
+                    .build(),
+            )
             .focused(false)
             .visible(false)
             .accept_first_mouse(true)
