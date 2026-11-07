@@ -340,6 +340,10 @@ fn menu_action(app: &AppHandle, id: &str) {
         }
     });
 }
+#[cfg(target_os = "macos")]
+extern "C" {
+    fn pressay_apply_glass(ns_window: *mut std::ffi::c_void, radius: f64);
+}
 pub fn install(app: &tauri::App) -> tauri::Result<()> {
     app.manage(TrayState::default());
     // Linux StatusNotifier does not emit click coordinates. Keep its native
@@ -356,16 +360,9 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
             .visible_on_all_workspaces(true)
             .skip_taskbar(true)
             .shadow(true)
-            // The menu material behind a transparent page, as native menu
-            // bar extras draw it; the page paints no background of its own.
+            // The page paints no background: macOS's own glass shows through
+            // (see `pressay_apply_glass`), as native menu bar extras draw it.
             .transparent(true)
-            .effects(
-                tauri::window::EffectsBuilder::new()
-                    .effect(tauri::window::Effect::Menu)
-                    .state(tauri::window::EffectState::Active)
-                    .radius(11.)
-                    .build(),
-            )
             .focused(false)
             .visible(false)
             .accept_first_mouse(true)
@@ -373,6 +370,10 @@ pub fn install(app: &tauri::App) -> tauri::Result<()> {
             .map_err(|error| eprintln!("Could not create tray panel: {error}"))
             .ok()
     };
+    #[cfg(target_os = "macos")]
+    if let Some(Ok(ns_window)) = panel.as_ref().map(|window| window.ns_window()) {
+        unsafe { pressay_apply_glass(ns_window, 12.) };
+    }
     if let Some(window) = &panel {
         let handle = window.clone();
         window.on_window_event(move |event| match event {

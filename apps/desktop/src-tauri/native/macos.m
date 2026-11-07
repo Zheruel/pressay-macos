@@ -323,6 +323,38 @@ void pressay_open_permission(int kind) {
         [instance() showGuide:kind];
     });
 }
+// Menu bar panel backdrop: macOS 26's Liquid Glass (NSGlassEffectView), the
+// material native menu bar extras use; the older menu blur where it is absent.
+// It sits behind the transparent web content, in the window's frame view.
+void pressay_apply_glass(void *nsWindow, double radius) {
+    onMain(^{
+        NSWindow *window = (__bridge NSWindow *)nsWindow;
+        NSView *content = window.contentView;
+        NSView *frame = content.superview;
+        if (!content || !frame) return;
+        Class glass = NSClassFromString(@"NSGlassEffectView");
+        NSView *backdrop;
+        if (glass) {
+            backdrop = [[glass alloc] initWithFrame:content.frame];
+            if ([backdrop respondsToSelector:NSSelectorFromString(@"setCornerRadius:")])
+                [backdrop setValue:@(radius) forKey:@"cornerRadius"];
+        } else {
+            NSVisualEffectView *blur = [[NSVisualEffectView alloc] initWithFrame:content.frame];
+            blur.material = NSVisualEffectMaterialMenu;
+            blur.state = NSVisualEffectStateActive;
+            blur.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+            blur.wantsLayer = YES;
+            blur.layer.cornerRadius = radius;
+            blur.layer.masksToBounds = YES;
+            backdrop = blur;
+        }
+        backdrop.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+        [frame addSubview:backdrop positioned:NSWindowBelow relativeTo:content];
+        window.opaque = NO;
+        window.backgroundColor = NSColor.clearColor;
+        window.hasShadow = YES;
+    });
+}
 void pressay_overlay(const char *stage, const char *detail, const float *levels) {
     pressay_island_update(stage, detail, levels);
 }
