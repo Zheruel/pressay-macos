@@ -69,7 +69,7 @@ body {
 }
 #tray-panel {
   width: 100%;
-  padding: 5px;
+  padding: 6px;
   overflow: hidden;
 }
 button,
@@ -79,7 +79,7 @@ input {
 }
 hr {
   height: 1px;
-  margin: 5px 10px;
+  margin: 5px 8px;
   border: 0;
   background: var(--separator);
 }
@@ -87,28 +87,15 @@ kbd {
   font: inherit;
 }
 
-/* Header: bold title like "Sound", state on the right. */
+/* Header: bold title like "Sound", one quiet status line under it. */
 .status {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 5px 10px 4px;
-}
-.status-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 3px;
+  padding: 6px 8px 7px;
 }
 .status strong {
   font-weight: 700;
-}
-.status-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--secondary);
-  font-size: 12px;
 }
 .status-hint {
   color: var(--secondary);
@@ -116,30 +103,17 @@ kbd {
 }
 .status-hint kbd {
   padding: 0 5px;
-  border: 0.5px solid var(--chip-line);
   border-radius: 4px;
   background: var(--chip);
   color: var(--label);
   font-size: 11px;
   line-height: 16px;
 }
-.ready-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--orange);
-}
-.ready-dot.ready {
-  background: var(--green);
-}
-.ready-dot.live {
-  background: var(--red);
-}
 
 /* Section heading like "Output". */
 .section {
   margin: 0;
-  padding: 2px 10px 1px;
+  padding: 3px 8px 2px;
   color: var(--secondary);
   font-size: 11px;
   font-weight: 600;
@@ -153,10 +127,10 @@ kbd {
   gap: 12px;
   width: 100%;
   min-width: 0;
-  min-height: 22px;
-  padding: 2px 10px;
+  min-height: 26px;
+  padding: 2px 8px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   background: transparent;
   text-align: left;
   cursor: default;
@@ -176,41 +150,86 @@ kbd {
   color: var(--orange);
 }
 
-/* Last dictation: the whole row copies it. */
+/* Last dictation, drawn like a notification: app icon, app and time, then
+   the words. The whole row copies them. */
 #recent {
   position: relative;
 }
 .recent {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 1px;
-  padding: 3px 10px 4px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 6px 8px 7px;
+  border-radius: 8px;
 }
-.recent p {
-  width: 100%;
-  margin: 0;
+.app-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+.app-icon.tile {
+  display: grid;
+  place-items: center;
+  background: var(--chip);
+  color: var(--secondary);
+  font-weight: 600;
+}
+.recent-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.recent-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.recent-app {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-time {
+  flex-shrink: 0;
+  color: var(--tertiary);
+  font-size: 11px;
+}
+.recent-text {
+  color: var(--secondary);
+  font-size: 12.5px;
+  line-height: 1.35;
   white-space: normal;
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  line-height: 1.3;
 }
-.recent-meta {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--secondary);
-  font-size: 11px;
+.recent-copy {
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--tertiary);
+  opacity: 0;
 }
-.recent-meta img {
-  width: 12px;
-  height: 12px;
+.recent:hover .recent-copy,
+.recent:focus-visible .recent-copy {
+  opacity: 1;
+}
+.recent-copy svg {
+  width: 14px;
+  height: 14px;
 }
 .empty {
   margin: 0;
-  padding: 2px 10px 4px;
+  padding: 2px 8px 4px;
   color: var(--secondary);
 }
 

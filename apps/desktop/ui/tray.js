@@ -69,20 +69,25 @@ function render() {
   const ready = s.model_ready && allowed;
   const live = ["starting", "recording"].includes(s.stage);
   const meetingLive = s.stage.startsWith("meeting");
-  $("ready-dot").classList.toggle("ready", ready && !live && !meetingLive);
-  $("ready-dot").classList.toggle("live", live || meetingLive);
-  $("status-title").textContent = live
-    ? "Listening…"
+  const talkKey = state.shortcut || s.shortcut_label || "your talk key";
+  const hint = live
+    ? ["Listening…"]
     : ["processing", "polishing"].includes(s.stage)
-      ? "Typing…"
+      ? ["Typing…"]
       : meetingLive
-        ? "Taking notes"
+        ? ["Taking meeting notes…"]
         : ["preparing", "loading"].includes(s.stage)
-          ? "Preparing…"
+          ? ["Preparing your speech model…"]
           : ready
-            ? "Ready"
-            : "Setup needed";
-  $("status-hint").hidden = !ready || meetingLive;
+            ? []
+            : ["Setup needed."];
+  const hintKey = JSON.stringify([hint.length, talkKey, live, s.stage, ready]);
+  if ($("status-hint").dataset.key !== hintKey) {
+    $("status-hint").dataset.key = hintKey;
+    $("status-hint").replaceChildren(...hint);
+  }
+  // When ready, the header is just the name, as in native menus.
+  $("status-hint").hidden = !hint.length;
   $("setup").hidden = s.settings.onboardingComplete === true;
   $("ready-content").hidden = !$("setup").hidden;
   $("attention").hidden = ready || ["preparing", "loading"].includes(s.stage);
@@ -93,8 +98,6 @@ function render() {
     call("show_workspace", { page: allowed ? "general" : "onboarding" }).catch(
       () => {},
     );
-  $("talk-key").textContent =
-    state.shortcut || s.shortcut_label || "Set a talk key";
   if (!aiSaving) $("cleanup").checked = s.settings.claudeCleanup === true;
   $("settings-shortcut").textContent =
     state.platform === "macos" ? "⌘," : "Ctrl+,";
@@ -130,28 +133,36 @@ function render() {
       if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))
         showRecordMenu(e, record);
     };
-    row.append(node("p", text(record)));
-    const info = metadata.get(record.target),
-      line = node("span", undefined, "recent-meta");
+    // Notification-style: the app's own icon, its name and the time, then
+    // the words in two quieter lines.
+    const info = metadata.get(record.target);
+    const name = info?.name || "Dictation";
+    let icon;
     if (info?.icon) {
-      const img = node("img");
-      img.src = info.icon;
-      img.alt = "";
-      line.append(img);
+      icon = node("img", undefined, "app-icon");
+      icon.src = info.icon;
+      icon.alt = "";
+    } else {
+      icon = node("span", name.slice(0, 1).toUpperCase(), "app-icon tile");
+      icon.setAttribute("aria-hidden", "true");
     }
     const time = new Date(record.created_at * 1000).toLocaleTimeString(
       undefined,
       { hour: "numeric", minute: "2-digit" },
     );
-    line.append(
-      node(
-        "span",
-        copied.has(record.id)
-          ? "Copied"
-          : [info?.name, time].filter(Boolean).join(", "),
-      ),
+    const head = node("span", undefined, "recent-head");
+    head.append(
+      node("span", name, "recent-app"),
+      node("span", copied.has(record.id) ? "Copied" : time, "recent-time"),
     );
-    row.append(line);
+    const body = node("span", undefined, "recent-body");
+    body.append(head, node("span", text(record), "recent-text"));
+    const glyph = node("span", undefined, "recent-copy");
+    glyph.setAttribute("aria-hidden", "true");
+    glyph.innerHTML = copied.has(record.id)
+      ? '<svg viewBox="0 0 20 20"><path d="m4 10.5 4 4 8-9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      : '<svg viewBox="0 0 20 20"><rect x="6" y="6" width="10" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12 6V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+    row.append(icon, body, glyph);
     $("recent").append(row);
   }
   const missing = [
