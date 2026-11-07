@@ -56,12 +56,12 @@ jobs:
       PRESSAY_AZURE_CERTIFICATE_PROFILE: ${{ vars.PRESSAY_AZURE_CERTIFICATE_PROFILE }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - name: Check the tag matches the app version
@@ -202,7 +202,7 @@ jobs:
           BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' target/release/bundle/macos/Pressay.app/Contents/Info.plist)"
           python scripts/sparkle-bridge.py .build/release --tag "$RELEASE_TAG" --build "$BUILD"
           (cd .build/release && shasum -a 256 Pressay-macos-arm64.zip > SHA256SUMS)
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}
           path: .build/release/*
@@ -224,10 +224,10 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: .build/release

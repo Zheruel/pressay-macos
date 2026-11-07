@@ -69,7 +69,7 @@ jobs:
           path: Runtime/.build
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
 
