@@ -6,6 +6,13 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Build and verify every platform without publishing, e.g. before tagging.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag to build for (must match the app version)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -15,14 +22,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_TAG: ${{ github.ref_name }}
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
   PRESSAY_UPDATE_PUBLIC_KEY: ${{ vars.PRESSAY_UPDATE_PUBLIC_KEY }}
 
 jobs:
   build:
     name: Build ${{ matrix.platform }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - platform: macos-arm64
@@ -229,6 +236,7 @@ jobs:
       - name: Verify every signature and build the updater feed
         run: python scripts/package-desktop-release.py manifest --tag "$RELEASE_TAG" --output .build/release
       - name: Publish the release, then the updater feed
+        if: github.event_name == 'push'
         run: |
           cd .build/release
           NOTES="$RUNNER_TEMP/notes.md"
