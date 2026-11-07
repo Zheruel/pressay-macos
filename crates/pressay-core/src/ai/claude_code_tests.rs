@@ -134,6 +134,26 @@ async fn dropped_and_cancelled_preparations_kill_waiting_processes() {
     }
 }
 #[tokio::test]
+async fn stopping_and_dropping_idle_processes_never_submits() {
+    for drop_only in [true, false] {
+        let fixture = FakeCli::new();
+        let mut process = Pending::spawn(
+            &fixture.client.executable_path().unwrap(),
+            &arguments("system", "claude-haiku-5-5", "low"),
+        )
+        .unwrap();
+        fixture.wait_kind("waiting", 1).await;
+        let pid = fixture.events()[0]["pid"].as_u64().unwrap() as u32;
+        if drop_only {
+            drop(process);
+        } else {
+            process.stop().await;
+        }
+        fixture.wait_dead(pid).await;
+        assert!(!fixture.events().iter().any(|e| e["kind"] == "submitted"));
+    }
+}
+#[tokio::test]
 async fn cancellation_outer_drop_and_timeout_reap_inference() {
     for kind in ["cancel", "drop", "timeout"] {
         let fixture = FakeCli::new();
