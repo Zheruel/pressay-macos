@@ -1,0 +1,79 @@
+name: Mac runtime
+
+# The Swift/MLX speech worker takes 8+ minutes to compile cold, so this runs only
+# when something it covers changes. Only main saves the build cache; pull
+# requests restore main's copy, so the 10 GB cache budget isn't spent per PR.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Runtime/**"
+      - "scripts/**"
+      - "packaging/**"
+      - "apps/desktop/ui/**"
+      - ".github/workflows/mac-runtime.yml"
+  pull_request:
+    paths:
+      - "Runtime/**"
+      - "scripts/**"
+      - "packaging/**"
+      - "apps/desktop/ui/**"
+      - ".github/workflows/mac-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mac-runtime:
+    name: Mac speech runtime and app scripts
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Show toolchain
+        id: toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          echo "xcode=$(xcodebuild -version | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      # Key compiled dependencies by toolchain to avoid mixing compiler versions.
+      - name: Restore build cache
+        id: cache
+        uses: actions/cache/restore@v6
+        with:
+          path: Runtime/.build
+          key: runtime-swiftbuild-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('Runtime/Package.resolved') }}
+          restore-keys: |
+            runtime-swiftbuild-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
+
+      # The app bundles this Swift/MLX worker for Orukeet and Mega-ASR on Mac.
+      - name: Build the Swift speech worker
+        run: |
+          if ! xcrun metal --version >/dev/null 2>&1; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+          xcrun swift build --package-path Runtime --build-system swiftbuild --disable-sandbox -c release
+
+      - name: Save build cache
+        if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: Runtime/.build
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Check the app's web UI formatting and packaging scripts
+        run: |
+          npx --yes prettier@3.9.10 --check "apps/desktop/ui/**/*.{js,css,html}"
+          python3 -m py_compile scripts/*.py
