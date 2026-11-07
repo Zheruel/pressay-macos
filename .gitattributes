@@ -4,4 +4,4 @@ Runtime/Sources/CNativeASR/vendor/* linguist-vendored
 crates/pressay-core/src/ai/prompts/*.txt text eol=lf
 
 # Preserve literal unified-diff context in the pinned upstream patch.
-scripts/patches/*.patch -whitespace
+scripts/patches/*.patch -whitespace text eol=lf
