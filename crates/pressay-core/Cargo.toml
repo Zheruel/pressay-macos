@@ -9,7 +9,7 @@ rust-version.workspace = true
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 futures-util = "0.3"
-jsonwebtoken = "9.3"
+jsonwebtoken = "10.3"
 rand = "0.8"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
