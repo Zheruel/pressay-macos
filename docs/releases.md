@@ -77,7 +77,7 @@ The optional release workflow builds macOS 26+ Apple Silicon, Windows x64, and U
 
 On macOS, `python3 scripts/build-desktop.py` builds the app first, signs its nested code and resource seal with an ad-hoc identity, verifies the complete bundle, then creates the branded DMG. Set `APPLE_SIGNING_IDENTITY` explicitly to use Developer ID; notarization remains opt-in through `PRESSAY_NOTARIZE=1` and `PRESSAY_NOTARY_PROFILE`. The local installer is integrity-checked but is not a trusted public release.
 
-The desktop bundle remains `dev.localflow.preview` / **Pressay Preview** during migration, keeping its installation separate from the stable app. Cargo workspace, Tauri config, and desktop package versions must agree. The GitHub destination tag can differ from the desktop version, allowing both applications to share a release without misrepresenting either version.
+The desktop bundle is `dev.localflow.app` / **Pressay** and installs in place of the Swift app; its data store and update channel stay separate. Cargo workspace, Tauri config, and desktop package versions must agree. The GitHub destination tag can differ from the desktop version, allowing both applications to share a release without misrepresenting either version.
 
 ### Desktop updater signing
 

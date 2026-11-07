@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the isolated Pressay Preview app and installer."""
+"""Build the Pressay desktop app and installer."""
 from pathlib import Path
 import argparse
 import hashlib

@@ -7,7 +7,7 @@ Date: 2026-11-06. Tracking: [#31](https://github.com/Zheruel/pressay-macos/issue
 
 Use a UI-independent Rust core and Tauri 2 desktop shell. Preserve the existing product behavior, speech models, graphite styling and native integrations while sharing persistence, transcription orchestration, cleanup, accounts and notes. Keep the Swift app available until release acceptance is demonstrated. A shell rewrite alone proves neither faster recognition nor lower memory use.
 
-**Pressay Preview** uses `dev.localflow.preview`, separate storage and separate credential entries. It does not replace `dev.localflow.app` or its updater. Implemented features now include dictation/history/audio, vocabulary, provider cleanup/accounts, voice notes and meetings, speaker separation, notes/write-ups/review/Ask Notes, action exports, call suggestions, configurable hold keys, launch at login, retention and signed-update integration. Both apps receive guided native permission setup; preview practice requires actual captured audio, recognition and matching inserted text.
+**Pressay** (Rust) uses `dev.localflow.app` and installs in place of the Swift app, with separate storage, credential entries and update channel. Implemented features now include dictation/history/audio, vocabulary, provider cleanup/accounts, voice notes and meetings, speaker separation, notes/write-ups/review/Ask Notes, action exports, call suggestions, configurable hold keys, launch at login, retention and signed-update integration. Both apps receive guided native permission setup; preview practice requires actual captured audio, recognition and matching inserted text.
 
 ## Adjustments to the issue proposal
 
@@ -57,7 +57,7 @@ The native Mac exporter reads SwiftData through public read-only APIs and export
 
 The Rust importer validates before transactional writes, deduplicates records/exports, and preserves preview edits and unknown legacy fields. Malformed imports and newer schemas do not partially modify the database. It never interprets SwiftData's private SQLite schema. Separate user-initiated Mac actions can import original audio or copy existing API keys to preview entries; source data and credentials remain intact. Recording import has the preview's five-minute bound. Imported microphone UIDs resolve through native metadata and fail explicitly when the device is absent, rather than silently switching inputs.
 
-Rollback is quitting the preview and using the unchanged Swift app. New preview records do not automatically synchronize back to SwiftData. Explicit JSON/Markdown/task export and transcript copy remain available. The production identity/updater is unchanged.
+Rollback is reinstalling the Swift app, whose store is unchanged. New preview records do not automatically synchronize back to SwiftData. Explicit JSON/Markdown/task export and transcript copy remain available.
 
 Installer and updater code is implemented, including shutdown before executable replacement and signature verification. Trusted signing credentials, feed publication and clean upgrade tests are release configuration/acceptance work, not implied by a local build. See [release setup](../releases.md).
 

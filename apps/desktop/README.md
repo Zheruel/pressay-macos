@@ -1,8 +1,8 @@
-# Pressay cross-platform preview
+# Pressay desktop app
 
-Pressay Preview is the shared Rust core and Tauri implementation for [#31](https://github.com/Zheruel/pressay-macos/issues/31). Its implemented surface includes local dictation, history with audio playback and corrections, manual vocabulary, optional AI cleanup, voice notes, live meetings, speaker separation, editable notes, action items and Ask Notes. Guided setup requires real capture, recognition and insertion before practice completes.
+Pressay is the shared Rust core and Tauri implementation for [#31](https://github.com/Zheruel/pressay-macos/issues/31). Its implemented surface includes local dictation, history with audio playback and corrections, manual vocabulary, optional AI cleanup, voice notes, live meetings, speaker separation, editable notes, action items and Ask Notes. Guided setup requires real capture, recognition and insertion before practice completes.
 
-The app retains the separate identity `dev.localflow.preview` and an independent store. It does not replace the native Mac release. Platform integrations and release acceptance are tracked in the [architecture decision](../../docs/architecture/001-shared-rust-core.md) and [validation record](../../docs/cross-platform-validation.md).
+The app uses the `dev.localflow.app` identity and installs in place of the Swift app, with its own store and credential entries. Platform integrations and release acceptance are tracked in the [architecture decision](../../docs/architecture/001-shared-rust-core.md) and [validation record](../../docs/cross-platform-validation.md).
 
 ## Build
 
@@ -19,7 +19,7 @@ Installers land in `target/release/bundle`. The build stages the pinned native r
 
 The manual `Desktop preview installers` workflow builds macOS, Windows and Linux artifacts without publishing a release. Signing, notarization and the signed desktop update channel need explicit release configuration; see [release setup](../../docs/releases.md). A local preview build does not imply trusted signing or an active update feed.
 
-On macOS, rebuilding an ad-hoc preview changes its signature. If System Settings shows access enabled but Preview still reports it missing, remove Preview's stale entry and add the current built app again under Accessibility (called Device Control and Data Access on newer macOS) and Input Monitoring, then quit and reopen Preview if prompted. Keep the original Pressay app's entries unchanged. This was reproduced during local permission testing; a stable Developer ID signature is part of release validation.
+On macOS, rebuilding with an ad-hoc signature changes the app's identity for permissions. Set `APPLE_SIGNING_IDENTITY` to a stable certificate (for example the local "Pressay Local Signing" identity) to keep Accessibility and Input Monitoring grants across rebuilds. If System Settings shows access enabled but Pressay still reports it missing, remove the stale entry, add the current app again, then reopen Pressay.
 
 For development on macOS/Linux, use the staged workers explicitly so meeting analysis and Mac MLX resources resolve beside the selected ASR worker:
 
@@ -48,8 +48,8 @@ Physical-device, compositor, editor/IME and permission testing remains necessary
 
 ## Migration and rollback
 
-In the updated native Mac app, choose **General → Export for cross-platform preview…**, then import that JSON under **General** in the preview. The export includes all history rows, raw settings/vocabulary and notes, but no credentials. Import validates transactionally, deduplicates records and preserves preview edits and unknown legacy fields. Keep the private export local.
+In the updated native Mac app, choose **General → Export for cross-platform preview…**, then import that JSON under **General** in the Rust app. The export includes all history rows, raw settings/vocabulary and notes, but no credentials. Import validates transactionally, deduplicates records and preserves preview edits and unknown legacy fields. Keep the private export local.
 
-Separate explicit Mac actions can copy existing API keys into preview credential entries or import original dictation recordings. They do not delete or rewrite the original app's data. Audio import accepts recordings up to five minutes; longer originals remain untouched. Microphones are saved by stable device ID. Imported Mac UIDs resolve to the exact device; unavailable IDs or ambiguous old device names require an explicit choice. Meeting analysis uses private temporary system-audio files, removed on completion/cancel and recovered by locked orphan cleanup after a crash; see the validation notes for details.
+Separate explicit Mac actions can copy existing API keys into the Rust app's credential entries or import original dictation recordings. They do not delete or rewrite the original app's data. Audio import accepts recordings up to five minutes; longer originals remain untouched. Microphones are saved by stable device ID. Imported Mac UIDs resolve to the exact device; unavailable IDs or ambiguous old device names require an explicit choice. Meeting analysis uses private temporary system-audio files, removed on completion/cancel and recovered by locked orphan cleanup after a crash; see the validation notes for details.
 
-Rollback is quitting the preview and using the original Swift app and its unchanged store. New preview records are not automatically synchronized back to SwiftData; use explicit export/copy when needed.
+Rollback is reinstalling the original Swift app, whose store is unchanged. New Rust app records are not automatically synchronized back to SwiftData; use explicit export/copy when needed.

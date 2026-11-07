@@ -1121,7 +1121,7 @@ pub fn launch(
                             reply.send(Err("Finish dictation before importing settings".into()));
                         continue;
                     }
-                    let preview_onboarding = state.view.lock().unwrap().settings
+                    let onboarding = state.view.lock().unwrap().settings
                         ["onboardingComplete"]
                         .as_bool()
                         .unwrap_or(false);
@@ -1129,10 +1129,10 @@ pub fn launch(
                         .map_err(|e| e.to_string())
                         .and_then(|mut snapshot| {
                             // Completing setup in the Swift app cannot attest to this
-                            // separately signed preview's permissions or insertion.
+                            // newly installed app's permissions or insertion.
                             if let Some(settings) = snapshot.settings.as_object_mut() {
                                 settings
-                                    .insert("onboardingComplete".into(), json!(preview_onboarding));
+                                    .insert("onboardingComplete".into(), json!(onboarding));
                             }
                             store.import(&snapshot).map_err(|e| e.to_string())
                         })
