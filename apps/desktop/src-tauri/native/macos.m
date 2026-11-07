@@ -109,6 +109,12 @@ static BOOL keyIsDown(uint16_t key) {
     if (key == 63) return (CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) & kCGEventFlagMaskSecondaryFn) != 0;
     return CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, key);
 }
+static BOOL modifierDown(CGEventRef event, uint16_t key) {
+    CGEventFlags flags = CGEventGetFlags(event);
+    uint64_t mask = deviceMask(key);
+    if (mask) return (flags & mask) != 0;
+    return key == 63 && (flags & kCGEventFlagMaskSecondaryFn) != 0;
+}
 static CGEventRef inputEvent(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *context) {
     (void)proxy;
     PressayNative *owner = (__bridge PressayNative *)context;
@@ -180,7 +186,11 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
         return YES;
     }
     if (key != self.key) return NO;
-    BOOL down = modifier(key) ? keyIsDown(key) : type == kCGEventKeyDown;
+    // A modifier's state comes from the event's own flags, as in Hex. The
+    // tap sees the event before the session state updates, so reading
+    // CGEventSourceFlagsState here inverted press and release: recording
+    // started on release and the next poll stopped it.
+    BOOL down = modifier(key) ? modifierDown(event, key) : type == kCGEventKeyDown;
     if (modifier(key) && type != kCGEventFlagsChanged) return NO;
     if (!modifier(key) && type != kCGEventKeyDown && type != kCGEventKeyUp) return NO;
     if (!down) {
