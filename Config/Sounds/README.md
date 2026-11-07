@@ -15,6 +15,6 @@ three low-passed early reflections for a small-room tail. Peaks sit between
 -25 and -29 dBFS (RMS matched to the previous cues) for comfortable frequent
 use, with a click-safe fade to digital silence.
 
-Lengths must match `DictationSoundPlayer.Cue.duration`; the begin length also
-sizes the window trimmed from captured audio. Regenerate with
+Lengths must match `Cue::duration` in `apps/desktop/src-tauri/src/feedback.rs`;
+the begin length also sizes the window trimmed from captured audio. Regenerate with
 `python3 scripts/generate-earcons.py`.
