@@ -1,117 +1,184 @@
 name: Release
 
+# Pushing a vX.Y.Z tag that matches the app version builds Pressay for macOS, Windows
+# and Linux, signs every update, and publishes one GitHub release. Macs still on the
+# retired Swift app update into this release through its Sparkle feed.
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.ref_name }}
+  PRESSAY_UPDATE_PUBLIC_KEY: ${{ vars.PRESSAY_UPDATE_PUBLIC_KEY }}
 
 jobs:
-  release:
-    name: Build and publish DMG
-    runs-on: macos-26
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-26
+            bundles: app
+          - platform: windows-x86_64
+            runner: windows-2025
+            bundles: nsis
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+            bundles: appimage,deb
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write # Azure Artifact Signing uses OIDC when it is configured.
     env:
-      # Keep stable self-signed releases available until Apple credentials exist.
+      # Self-signed Mac releases until Developer ID credentials exist.
       PRESSAY_NOTARIZE: ${{ vars.PRESSAY_NOTARIZE || '0' }}
-      PRESSAY_NOTARY_PROFILE: pressay-release
-
+      # Unsigned Windows installers until Azure Artifact Signing is configured.
+      PRESSAY_WINDOWS_UNSIGNED: ${{ vars.PRESSAY_AZURE_SIGNING_ACCOUNT == '' && '1' || '0' }}
+      PRESSAY_AZURE_SIGNING_ENDPOINT: ${{ vars.PRESSAY_AZURE_SIGNING_ENDPOINT }}
+      PRESSAY_AZURE_SIGNING_ACCOUNT: ${{ vars.PRESSAY_AZURE_SIGNING_ACCOUNT }}
+      PRESSAY_AZURE_CERTIFICATE_PROFILE: ${{ vars.PRESSAY_AZURE_CERTIFICATE_PROFILE }}
     steps:
-      - name: Check out source
-        uses: actions/checkout@v7
-
-      - name: Verify release configuration and version
-        env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Check the tag matches the app version
+        shell: bash
         run: |
-          if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
-            echo 'Configure SPARKLE_PRIVATE_KEY before publishing an updatable release.' >&2
-            exit 1
-          fi
-          if [[ "$PRESSAY_NOTARIZE" != 0 && "$PRESSAY_NOTARIZE" != 1 ]]; then
-            echo 'Repository variable PRESSAY_NOTARIZE must be 0 or 1.' >&2
-            exit 1
-          fi
-          if [[ "$PRESSAY_NOTARIZE" == 1 && ( -z "$APPLE_NOTARY_KEY" || -z "$APPLE_NOTARY_KEY_ID" || -z "$APPLE_NOTARY_ISSUER" ) ]]; then
-            echo 'Configure the Apple notarization secrets described in docs/releases.md before publishing.' >&2
-            exit 1
-          fi
-          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Config/Info.plist)"
-          if [[ "${GITHUB_REF_NAME}" != "v${VERSION}" ]]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match Info.plist version ${VERSION}" >&2
-            exit 1
-          fi
-
-      - name: Run tests
-        run: xcrun swift test --disable-sandbox
-
-      # Keep signing identity stable; switching to Developer ID may need reapproval.
-      - name: Import release signing certificate
-        env:
-          RELEASE_SIGNING_CERTIFICATE: ${{ secrets.RELEASE_SIGNING_CERTIFICATE }}
-          RELEASE_SIGNING_PASSWORD: ${{ secrets.RELEASE_SIGNING_PASSWORD }}
+          VERSION="$(python -c 'import json; print(json.load(open("apps/desktop/src-tauri/tauri.conf.json"))["version"])')"
+          [[ "$RELEASE_TAG" == "v$VERSION" ]] || { echo "Tag $RELEASE_TAG does not match app version $VERSION" >&2; exit 1; }
+      - name: Install pinned packaging tools
+        shell: bash
         run: |
-          if [[ -z "$RELEASE_SIGNING_CERTIFICATE" || -z "$RELEASE_SIGNING_PASSWORD" ]]; then
-            echo 'Configure the release certificate secrets described in docs/releases.md.' >&2
-            exit 1
-          fi
-          umask 077
-          KEYCHAIN="$RUNNER_TEMP/release-signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
-          IDENTITY_FILE="$RUNNER_TEMP/release-signing.p12"
-          trap 'rm -f "$IDENTITY_FILE"' EXIT
-          printf '%s' "$RELEASE_SIGNING_CERTIFICATE" | base64 --decode > "$IDENTITY_FILE"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          echo "RELEASE_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
-          echo "PRESSAY_NOTARY_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
-          security set-keychain-settings -lut 7200 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          security import "$IDENTITY_FILE" -k "$KEYCHAIN" -P "$RELEASE_SIGNING_PASSWORD" -T /usr/bin/codesign >/dev/null
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
-          IFS=$'\n' read -r -d '' -a EXISTING < <(security list-keychains -d user | sed 's/^ *"//; s/"$//') || true
-          security list-keychains -d user -s "$KEYCHAIN" "${EXISTING[@]}"
-          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
-          if [[ -z "$IDENTITY" && "$PRESSAY_NOTARIZE" != 1 ]]; then
-            # Self-signed roots are not included by find-identity -v. Keep using
-            # the certificate hash, preserving the established release identity.
-            IDENTITY="$(security find-identity -p codesigning "$KEYCHAIN" | awk '/"Pressay Release Signing"/ { print $2; exit }')"
-          fi
-          [[ -n "$IDENTITY" ]] || { echo 'Release identity is missing; notarization requires Developer ID Application.' >&2; exit 1; }
-          echo "SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
-
-      - name: Store notarization credentials in the temporary keychain
-        if: env.PRESSAY_NOTARIZE == '1'
+          npm ci --prefix apps/desktop
+          python -m pip install -r packaging/desktop/requirements.txt
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup default stable
+      - name: Verify the updater signing key before building
+        shell: bash
         env:
-          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
-          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: python scripts/package-desktop-release.py preflight --output .build/desktop-release-config.json
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
-          umask 077
-          NOTARY_KEY_FILE="$RUNNER_TEMP/notary-key.p8"
-          trap 'rm -f "$NOTARY_KEY_FILE"' EXIT
-          printf '%s' "$APPLE_NOTARY_KEY" > "$NOTARY_KEY_FILE"
-          xcrun notarytool store-credentials "$PRESSAY_NOTARY_PROFILE" \
-            --key "$NOTARY_KEY_FILE" --key-id "$APPLE_NOTARY_KEY_ID" \
-            --issuer "$APPLE_NOTARY_ISSUER" --keychain "$RELEASE_KEYCHAIN" >/dev/null
-
-      - name: Package and verify app and DMG (notarize when configured)
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config libasound2-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libxkbcommon-dev libdbus-1-dev dbus-daemon libfuse2t64 patchelf xvfb xauth
+      - name: Install Mac Metal compiler
+        if: runner.os == 'macOS'
         run: |
           if ! xcrun metal --version >/dev/null 2>&1; then
             xcodebuild -downloadComponent MetalToolchain
           fi
-          ./scripts/package-dmg.sh
-
-      - name: Sign update and generate feed
+      # The same certificate signed the Swift app, so its permissions and Sparkle
+      # updater accept this app. With PRESSAY_NOTARIZE=1 it must be Developer ID.
+      - name: Import the Mac signing certificate
+        if: runner.os == 'macOS'
+        env:
+          RELEASE_SIGNING_CERTIFICATE: ${{ secrets.RELEASE_SIGNING_CERTIFICATE }}
+          RELEASE_SIGNING_PASSWORD: ${{ secrets.RELEASE_SIGNING_PASSWORD }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          [[ -n "$RELEASE_SIGNING_CERTIFICATE" && -n "$RELEASE_SIGNING_PASSWORD" ]] || { echo 'Configure RELEASE_SIGNING_CERTIFICATE and RELEASE_SIGNING_PASSWORD.' >&2; exit 1; }
+          umask 077
+          KEYCHAIN="$RUNNER_TEMP/release-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          CERTIFICATE="$RUNNER_TEMP/release-signing.p12"
+          NOTARY_KEY="$RUNNER_TEMP/notary-key.p8"
+          trap 'rm -f "$CERTIFICATE" "$NOTARY_KEY"' EXIT
+          printf '%s' "$RELEASE_SIGNING_CERTIFICATE" | base64 --decode > "$CERTIFICATE"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "RELEASE_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERTIFICATE" -k "$KEYCHAIN" -P "$RELEASE_SIGNING_PASSWORD" -T /usr/bin/codesign >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)"
+          if [[ -z "$IDENTITY" && "$PRESSAY_NOTARIZE" != 1 ]]; then
+            # find-identity -v skips self-signed roots; use the certificate hash.
+            IDENTITY="$(security find-identity -p codesigning "$KEYCHAIN" | awk '/"Pressay Release Signing"/ { print $2; exit }')"
+          fi
+          [[ -n "$IDENTITY" ]] || { echo 'Release identity is missing; notarization requires Developer ID Application.' >&2; exit 1; }
+          echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          if [[ "$PRESSAY_NOTARIZE" == 1 ]]; then
+            [[ -n "$APPLE_NOTARY_KEY" && -n "$APPLE_NOTARY_KEY_ID" && -n "$APPLE_NOTARY_ISSUER" ]] || { echo 'Configure the Apple notarization secrets.' >&2; exit 1; }
+            printf '%s' "$APPLE_NOTARY_KEY" > "$NOTARY_KEY"
+            xcrun notarytool store-credentials pressay-release --key "$NOTARY_KEY" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER" --keychain "$KEYCHAIN" >/dev/null
+            { echo 'PRESSAY_NOTARY_PROFILE=pressay-release'; echo "PRESSAY_NOTARY_KEYCHAIN=$KEYCHAIN"; } >> "$GITHUB_ENV"
+          fi
+      - name: Run workspace tests
+        shell: bash
+        run: cargo test --workspace --locked
+      - name: Verify native X11 insertion and clipboard preservation
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cargo test -p pressay-desktop --locked x11_insertion -- --ignored
+      - name: Build runtime resources and all workers
+        shell: bash
+        run: python scripts/build-desktop.py --no-bundle
+      - name: Build the app with the updater key compiled in
+        working-directory: apps/desktop
+        shell: bash
+        run: node node_modules/@tauri-apps/cli/tauri.js build --ci --no-bundle --config ../../.build/desktop-release-config.json
+      - name: List Windows files to sign
+        if: runner.os == 'Windows' && env.PRESSAY_WINDOWS_UNSIGNED != '1'
+        shell: bash
+        run: python scripts/package-desktop-release.py windows-catalog --output .build/windows-signing-files.txt
+      - name: Authenticate to Azure Artifact Signing
+        if: runner.os == 'Windows' && env.PRESSAY_WINDOWS_UNSIGNED != '1'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ vars.PRESSAY_AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.PRESSAY_AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.PRESSAY_AZURE_SUBSCRIPTION_ID }}
+      - name: Sign Windows workers and native libraries
+        if: runner.os == 'Windows' && env.PRESSAY_WINDOWS_UNSIGNED != '1'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2
+        with:
+          endpoint: ${{ vars.PRESSAY_AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.PRESSAY_AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.PRESSAY_AZURE_CERTIFICATE_PROFILE }}
+          files-catalog: ${{ github.workspace }}/.build/windows-signing-files.txt
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Bundle installers
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          BUNDLES: ${{ matrix.bundles }}
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: node node_modules/@tauri-apps/cli/tauri.js bundle --ci --bundles "$BUNDLES" --config ../../.build/desktop-release-config.json
+      - name: Sign the app and installers, then sign updates
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: python scripts/package-desktop-release.py package --tag "$RELEASE_TAG" --output .build/release
+      - name: Publish to Macs on the Swift app (Sparkle feed)
+        if: runner.os == 'macOS'
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
+          [[ -n "$SPARKLE_PRIVATE_KEY" ]] || { echo 'Configure SPARKLE_PRIVATE_KEY.' >&2; exit 1; }
           SPARKLE_VERSION='2.10.1'
           SPARKLE_ARCHIVE="$RUNNER_TEMP/Sparkle.tar.xz"
           curl --fail --location --silent --show-error \
@@ -125,28 +192,55 @@ jobs:
           trap 'rm -f "$SPARKLE_KEY_FILE"' EXIT
           printf '%s' "$SPARKLE_PRIVATE_KEY" > "$SPARKLE_KEY_FILE"
           export SPARKLE_TOOLS_DIR="$RUNNER_TEMP/sparkle/bin"
-          ./scripts/package-update.sh
-
-      - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
+          BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' target/release/bundle/macos/Pressay.app/Contents/Info.plist)"
+          python scripts/sparkle-bridge.py .build/release --tag "$RELEASE_TAG" --build "$BUILD"
+          (cd .build/release && shasum -a 256 Pressay-macos-arm64.zip > SHA256SUMS)
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-${{ matrix.platform }}
+          path: .build/release/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove the temporary keychain
+        if: always() && runner.os == 'macOS'
         run: |
-          NOTES=()
-          if [[ "$PRESSAY_NOTARIZE" != 1 ]]; then
-            NOTES=(--notes 'This build is not Apple-notarized. Browser downloads may require System Settings → Privacy & Security → Open Anyway on first launch.')
-          fi
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "Pressay ${GITHUB_REF_NAME#v}" \
-            --generate-notes \
-            "${NOTES[@]}" \
-            .build/Pressay-*.dmg \
-            .build/updates/Pressay-macos-arm64.zip \
-            .build/updates/SHA256SUMS \
-            .build/updates/appcast.xml
+          if [[ -n "${RELEASE_KEYCHAIN:-}" ]]; then security delete-keychain "$RELEASE_KEYCHAIN" || true; fi
 
-      - name: Remove release signing keychain
-        if: always()
+  publish:
+    name: Verify every platform and publish
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: .build/release
+          merge-multiple: true
+      - run: python -m pip install -r packaging/desktop/requirements.txt
+      - name: Verify every signature and build the updater feed
+        run: python scripts/package-desktop-release.py manifest --tag "$RELEASE_TAG" --output .build/release
+      - name: Publish the release, then the updater feed
         run: |
-          if [[ -n "${RELEASE_KEYCHAIN:-}" ]]; then
-            security delete-keychain "$RELEASE_KEYCHAIN" || true
+          cd .build/release
+          NOTES="$RUNNER_TEMP/notes.md"
+          {
+            echo 'Mac builds are signed with the Pressay release certificate but not Apple-notarized: a browser download may need **System Settings › Privacy & Security › Open Anyway** on first launch. The install script and in-app updates are not affected.'
+            echo
+            echo 'Windows installers are not code-signed yet, so SmartScreen may warn before installing.'
+          } > "$NOTES"
+          gh release create "$RELEASE_TAG" --title "Pressay ${RELEASE_TAG#v}" --notes-file "$NOTES" --generate-notes --latest \
+            Pressay-* appcast.xml SHA256SUMS DESKTOP-SHA256SUMS
+          if ! gh release view desktop-updates >/dev/null 2>&1; then
+            gh release create desktop-updates --latest=false --title 'Pressay update feed' \
+              --notes 'Signed update feed for the installed app. Installers are on the versioned releases.'
           fi
+          gh release upload desktop-updates desktop-latest.json --clobber

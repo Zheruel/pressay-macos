@@ -5,7 +5,8 @@ fail() { printf 'Pressay: %s\n' "$*" >&2; exit 1; }
 
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || fail 'Requires an Apple Silicon Mac.'
 [[ "$(sw_vers -productVersion | cut -d. -f1)" -ge 26 ]] || fail 'Requires macOS 26 or newer.'
-if pgrep -x Pressay >/dev/null; then
+running() { pgrep -x pressay-desktop >/dev/null || pgrep -x Pressay >/dev/null; }
+if running; then
     fail 'Quit Pressay before installing. Finish any dictation or meeting first.'
 fi
 
@@ -48,7 +49,7 @@ APP="$STAGING/Pressay.app"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" == dev.localflow.app ]] \
     || fail 'Unexpected app identifier.'
 codesign --verify --deep --strict "$APP" || fail 'App signature verification failed.'
-if pgrep -x Pressay >/dev/null; then
+if running; then
     fail 'Pressay started during the download. Quit it before installing.'
 fi
 

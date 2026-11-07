@@ -4,6 +4,8 @@ mod audio;
 mod dictation;
 mod engine;
 mod feedback;
+#[cfg(target_os = "macos")]
+mod legacy;
 mod lifecycle;
 mod meeting;
 mod meeting_capture;
@@ -373,6 +375,8 @@ fn main() {
             )
             .map_err(std::io::Error::other)?;
             app.manage(shared.clone());
+            #[cfg(target_os = "macos")]
+            legacy::take_over(shared.clone(), data.clone());
             let update_failure = lifecycle::take_update_failure(&data);
             let update_failed = update_failure.is_some();
             feedback::initialize();

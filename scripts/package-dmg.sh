@@ -2,8 +2,9 @@
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
-VERSION="${PRESSAY_DMG_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$ROOT/Config/Info.plist")}"
-APP="${PRESSAY_DMG_APP:-$ROOT/.build/Pressay.app}"
+# Packages an already built app; scripts/build-desktop.py and the release workflow call this.
+APP="${PRESSAY_DMG_APP:-$ROOT/target/release/bundle/macos/Pressay.app}"
+VERSION="${PRESSAY_DMG_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")}"
 OUTPUT="${PRESSAY_DMG_OUTPUT:-$ROOT/.build/Pressay-$VERSION.dmg}"
 ARTWORK="$ROOT/.build/dmg-artwork"
 TOOLS="$ROOT/.build/dmg-tools"
@@ -18,20 +19,12 @@ if [[ "$NOTARIZE" == 1 && -z "${PRESSAY_NOTARY_PROFILE:-}" ]]; then
     exit 1
 fi
 
-# Explicitly opt out only when repackaging an already built app, such as layout QA.
-if [[ -n "${PRESSAY_DMG_APP:-}" && "${PRESSAY_SKIP_BUILD:-0}" != 1 ]]; then
-    echo "A custom app requires PRESSAY_SKIP_BUILD=1." >&2
-    exit 1
-fi
-if [[ "${PRESSAY_SKIP_BUILD:-0}" != 1 ]]; then
-    "$ROOT/scripts/build-app.sh"
-fi
 [[ -d "$APP" ]] || { echo "Missing app: $APP" >&2; exit 1; }
 codesign --verify --deep --strict "$APP"
 APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 [[ "$APP_VERSION" == "$VERSION" ]] || { echo 'Built app version does not match the requested installer version.' >&2; exit 1; }
 
-# Inspect the actual signature, including when build-app selected its own identity.
+# Inspect the actual signature.
 AUTHORITY="$(codesign --display --verbose=2 "$APP" 2>&1 | sed -n 's/^Authority=\(Developer ID Application:.*\)/\1/p' | head -n 1)"
 if [[ "$NOTARIZE" == 1 ]]; then
     [[ -n "$AUTHORITY" ]] || { echo 'Notarized releases require Developer ID Application signing.' >&2; exit 1; }

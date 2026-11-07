@@ -14,11 +14,9 @@ updates:
       actions:
         patterns: ["*"]
 
-  # Package.swift: FluidAudio (pinned exact; Dependabot bumps the pin). The
-  # transcribe.cpp binaryTarget is a url + checksum it cannot bump — update it
-  # by hand on new upstream releases.
+  # Runtime/Package.swift: the Mac speech worker's Swift packages.
   - package-ecosystem: swift
-    directory: /
+    directory: /Runtime
     schedule:
       interval: weekly
     cooldown:

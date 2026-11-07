@@ -90,7 +90,10 @@ def preflight(output: Path):
     overlay = json.loads((NATIVE / "tauri.bundle.json").read_text())
     overlay["bundle"]["createUpdaterArtifacts"] = False  # Sign only final OS-signed bytes.
     overlay["plugins"] = {"updater": {"pubkey": key, "requireSignedVersion": True}}
-    if platform.system() == "Windows":
+    # Sparkle in the retired Swift app compares CFBundleVersion numbers (it last shipped 26).
+    major, minor, patch = (int(part) for part in value["version"].split("-")[0].split("."))
+    overlay["bundle"]["macOS"] = {"bundleVersion": str(major * 10000 + minor * 100 + patch)}
+    if platform.system() == "Windows" and not windows_unsigned():
         overlay["bundle"]["windows"] = {"bundleVCRuntime": True, "signCommand": {"cmd": "pwsh", "args": ["-NoProfile", "-File", str(ROOT / "packaging/desktop/sign-windows.ps1"), "%1"]}}
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(overlay, indent=2) + "\n")
@@ -117,21 +120,33 @@ def verify_windows(paths):
         listing.write_text(json.dumps([str(path.resolve()) for path in paths]))
         run("pwsh", "-NoProfile", "-File", ROOT / "packaging/desktop/verify-windows.ps1", "-FileList", listing)
 
+def windows_unsigned():
+    """Until Azure Artifact Signing is configured, Windows installers ship unsigned."""
+    return os.environ.get("PRESSAY_WINDOWS_UNSIGNED") == "1"
+
 def mac_package(output: Path, version: str):
     identity = os.environ.get("APPLE_SIGNING_IDENTITY", "")
-    require(identity.startswith("Developer ID Application:"), "Public Mac artifacts require Developer ID Application signing")
-    require(os.environ.get("PRESSAY_NOTARY_PROFILE"), "Public Mac artifacts require a notarytool keychain profile")
+    notarize = os.environ.get("PRESSAY_NOTARIZE", "1") == "1"
+    if notarize:
+        require(identity.startswith("Developer ID Application:"), "Notarized Mac artifacts require Developer ID Application signing")
+        require(os.environ.get("PRESSAY_NOTARY_PROFILE"), "Notarized Mac artifacts require a notarytool keychain profile")
+    else:
+        # The stable self-signed release certificate keeps the Swift app's permissions and lets
+        # its Sparkle updater install this app. Releases say they are not notarized.
+        require(identity, "Set APPLE_SIGNING_IDENTITY to the release signing certificate")
     app = one("macos/*.app")
     # Installer tooling (pip, dmgbuild) has no need for the updater private key.
     base = {k: v for k, v in os.environ.items() if not k.startswith("TAURI_SIGNING_")}
     run(sys.executable, ROOT / "scripts/sign-desktop-macos.py", app, "--identity", identity, env=base)
-    dmg = output / f"Pressay-Desktop-{version}-macos-arm64.dmg"
-    environment = base | {"PRESSAY_SKIP_BUILD": "1", "PRESSAY_NOTARIZE": "1", "PRESSAY_DMG_APP": str(app),
+    dmg = output / f"Pressay-{version}-macos-arm64.dmg"
+    environment = base | {"PRESSAY_SKIP_BUILD": "1", "PRESSAY_NOTARIZE": "1" if notarize else "0", "PRESSAY_DMG_APP": str(app),
         "PRESSAY_DMG_VERSION": version, "PRESSAY_DMG_OUTPUT": str(dmg), "SIGNING_IDENTITY": identity}
     run(ROOT / "scripts/package-dmg.sh", env=environment)
-    archive = output / f"Pressay-Desktop-{version}-macos-arm64.app.tar.gz"
+    archive = output / f"Pressay-{version}-macos-arm64.app.tar.gz"
     # The app was stapled by package-dmg before this archive is created.
     run("tar", "-czf", archive, "-C", app.parent, app.name)
+    # The same app, zipped for install.sh and the Swift app's Sparkle updater.
+    run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, output / "Pressay-macos-arm64.zip")
     return [(archive, ["darwin-aarch64", "darwin-aarch64-app"])], [dmg]
 
 def package(output: Path, tag: str):
@@ -151,15 +166,16 @@ def package(output: Path, tag: str):
         windows_catalog(output.parent / "windows-verify-files.txt")
         paths = [ROOT / "target/release/pressay-desktop.exe", original]
         paths.extend(p for directory in [NATIVE / "runtime", NATIVE / "binaries"] for p in directory.rglob("*") if p.is_file() and p.suffix.lower() in (".exe", ".dll"))
-        verify_windows(paths)
-        artifact = output / f"Pressay-Desktop-{version}-windows-x86_64-setup.exe"
+        if not windows_unsigned():
+            verify_windows(paths)
+        artifact = output / f"Pressay-{version}-windows-x86_64-setup.exe"
         shutil.copy2(original, artifact)
         artifacts = [(artifact, ["windows-x86_64", "windows-x86_64-nsis"])]
     elif system == "Linux":
         require(platform.machine().lower() in ("x86_64", "amd64"), "The release matrix targets Linux x64")
         artifacts = []
         for pattern, extension, targets in [("appimage/*.AppImage", "AppImage", ["linux-x86_64", "linux-x86_64-appimage"]), ("deb/*.deb", "deb", ["linux-x86_64-deb"])]:
-            artifact = output / f"Pressay-Desktop-{version}-linux-x86_64.{extension}"
+            artifact = output / f"Pressay-{version}-linux-x86_64.{extension}"
             shutil.copy2(one(pattern), artifact)
             artifacts.append((artifact, targets))
     else:
