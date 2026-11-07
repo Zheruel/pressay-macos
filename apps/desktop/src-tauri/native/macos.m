@@ -18,7 +18,6 @@ int pressay_microphone_status(void) {
     }
 }
 int pressay_accessibility_status(void) { return AXIsProcessTrusted() ? 1 : 2; }
-int pressay_input_status(void) { return CGPreflightListenEventAccess() ? 1 : 2; }
 
 @interface PressayPanel : NSPanel @end
 @implementation PressayPanel
@@ -152,7 +151,10 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
 }
 - (BOOL)createTap {
     if (self.tap) return CGEventTapIsEnabled(self.tap);
-    if (!CGPreflightListenEventAccess() || !AXIsProcessTrusted()) return NO;
+    // An active (filtering) tap needs only Accessibility, which applies to the
+    // running process. Input Monitoring is never asked for: its preflight
+    // answer is fixed at launch, so requiring it stranded fresh grants.
+    if (!AXIsProcessTrusted()) return NO;
     CGEventMask mask = CGEventMaskBit(kCGEventFlagsChanged) | CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp);
     self.tap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault,
                                mask, inputEvent, (__bridge void *)self);
@@ -195,7 +197,7 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
     return !modifier(key);
 }
 - (void)poll {
-    BOOL allowed = CGPreflightListenEventAccess() && AXIsProcessTrusted();
+    BOOL allowed = AXIsProcessTrusted();
     if (!allowed && self.tap) {
         CGEventTapEnable(self.tap, false);
         CFRunLoopRemoveSource(CFRunLoopGetMain(), self.source, kCFRunLoopCommonModes);
@@ -211,7 +213,7 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
     if (self.pressed && !keyIsDown(self.key)) { self.pressed = NO; [self notify:2 detail:0]; }
     if (self.blockedUntilRelease && !keyIsDown(self.key)) self.blockedUntilRelease = NO;
     if (self.guide.isVisible) {
-        BOOL granted = self.guideKind == 0 ? pressay_microphone_status() == 1 : self.guideKind == 1 ? AXIsProcessTrusted() : CGPreflightListenEventAccess();
+        BOOL granted = self.guideKind == 0 ? pressay_microphone_status() == 1 : AXIsProcessTrusted();
         if (granted) [self.guide orderOut:nil]; else [self positionGuide];
     }
 }
@@ -232,10 +234,9 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
         self.guide.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace | NSWindowCollectionBehaviorFullScreenAuxiliary;
     }
     NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 310, 330)];
-    NSString *title = kind == 0 ? @"Allow Microphone" : kind == 1 ? @"Allow Accessibility" : @"Allow Input Monitoring";
+    NSString *title = kind == 0 ? @"Allow Microphone" : @"Allow Accessibility";
     NSString *detail = kind == 0 ? @"Enable the existing Pressay entry to hear your voice. Microphone access requires macOS’s permission prompt; dragging an app does not grant it."
-        : kind == 1 ? @"Pressay needs permission to insert your words. Drag the actual app below into the Accessibility list, then enable its switch."
-        : @"Enable Pressay so your hold-to-talk key works while another app is focused. If macOS asks, quit and reopen Pressay after enabling it.";
+        : @"Pressay needs this to notice your talk key and type your words. Drag the app below into the Accessibility list, then switch it on.";
     [content addSubview:textLabel(title, NSMakeRect(22, 264, 266, 34), 20, NSFontWeightSemibold)];
     [content addSubview:textLabel(detail, NSMakeRect(22, 160, 266, 92), 13, NSFontWeightRegular)];
     if (kind == 1 && [NSBundle.mainBundle.bundleURL.pathExtension isEqualToString:@"app"]) {
@@ -306,9 +307,8 @@ void pressay_open_permission(int kind) {
             }];
             return;
         }
-        NSString *anchor = kind == 0 ? @"Privacy_Microphone" : kind == 1 ? @"Privacy_Accessibility" : @"Privacy_ListenEvent";
+        NSString *anchor = kind == 0 ? @"Privacy_Microphone" : @"Privacy_Accessibility";
         if (kind == 1) AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@YES});
-        if (kind == 2) CGRequestListenEventAccess();
         [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[@"x-apple.systempreferences:com.apple.preference.security?" stringByAppendingString:anchor]]];
         [instance() showGuide:kind];
     });

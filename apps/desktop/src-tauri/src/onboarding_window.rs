@@ -67,7 +67,7 @@ fn show(app: &AppHandle) -> Result<(), String> {
         tauri::WebviewUrl::App("index.html?onboarding".into()),
     )
     .title("Welcome to Pressay")
-    .inner_size(540., 720.)
+    .inner_size(980., 760.)
     .resizable(false)
     .maximizable(false)
     .visible(false)

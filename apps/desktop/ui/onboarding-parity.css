@@ -1,396 +1,624 @@
-/* Native OnboardingWindow.swift geometry, typography and single-column flow. */
-#onboarding {
-  width: 540px;
-  max-width: calc(100vw - 24px);
-  height: 720px;
-  max-height: calc(100dvh - 24px);
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--base);
-  color: var(--text);
-  box-shadow: 0 20px 70px #0004;
-  overflow: hidden;
+/* First-run tour (onboarding.js): a full-window, centred flow modeled on
+   Hex's onboarding. Flat surfaces, one accent, no step counter. */
+#onboarding.tour {
+  --tour-bg: #f7f7f8;
+  --tour-card: #ffffff;
+  --tour-line: #e4e4e8;
+  --tour-text: #17171a;
+  --tour-muted: #6b6b73;
+  --tour-key: #ececf0;
+  --tour-button: #e9e9ed;
+  --tour-primary: #2b2b30;
+  --tour-primaryText: #ffffff;
+  --tour-success: #23874f;
+  --tour-glow: #e0703a;
 }
-#onboarding::backdrop {
-  background: #0003;
-  backdrop-filter: none;
+@media (prefers-color-scheme: dark) {
+  #onboarding.tour {
+    --tour-bg: #0a0a0a;
+    --tour-card: #151515;
+    --tour-line: #262626;
+    --tour-text: #f4f4f5;
+    --tour-muted: #a1a1aa;
+    --tour-key: #1d1d1f;
+    --tour-button: #2a2a2c;
+    --tour-primary: #5c5c60;
+    --tour-primaryText: #ffffff;
+    --tour-success: #4ade80;
+    --tour-glow: #c2552a;
+  }
 }
-#onboarding .setup-native {
+#onboarding.tour {
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  padding: 49px 39px 27px;
-  position: relative;
+  align-items: center;
+  background: var(--tour-bg);
+  color: var(--tour-text);
+  font:
+    14px/1.4 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  overflow: hidden auto;
 }
-#onboarding .setup-symbols {
+#onboarding.tour[hidden] {
+  display: none;
+}
+.tour-symbols {
   position: absolute;
   width: 0;
   height: 0;
-  overflow: hidden;
 }
-#onboarding #close-setup {
-  position: absolute;
-  left: 12px;
-  top: 9px;
-  right: auto;
-  width: 22px;
-  height: 22px;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 20px;
-  line-height: 22px;
-}
-#onboarding .setup-native-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 0 27px;
-  padding: 0;
-  border: 0;
-}
-#onboarding .setup-native-header img {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
-}
-#onboarding #setup-step-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 1.4px;
-  color: var(--muted);
-}
-#onboarding h1 {
-  margin: 0;
-  font-size: 31px;
-  font-weight: 600;
-  line-height: 1.16;
-  letter-spacing: -0.8px;
-}
-#onboarding #setup-description {
-  margin: 12px 0 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 20px;
-  max-width: none;
-}
-#onboarding .setup-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 25px 0 8px;
-  scrollbar-width: none;
-}
-#onboarding .setup-scroll::-webkit-scrollbar {
-  display: none;
-}
-#onboarding section {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-#onboarding .setup-group {
-  background: var(--surface);
-  border: 0;
-  border-radius: 11px;
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-#onboarding svg:not(.setup-symbols) {
-  width: 23px;
-  height: 23px;
-  flex-shrink: 0;
+.tour svg {
   fill: none;
-  stroke: var(--accent);
+  stroke: currentColor;
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-#onboarding h2 {
-  margin: 0 0 5px;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 16px;
-  letter-spacing: 0;
-}
-#onboarding .setup-model-card {
-  padding: 22px;
-}
-#onboarding .setup-model-heading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-#onboarding .setup-permission-state.allowed,
-#onboarding .setup-success,
-#onboarding #setup-model-ready {
-  color: var(--success);
-}
-#onboarding button {
-  width: auto;
-  min-height: 32px;
-  border: 1px solid var(--strong);
-  border-radius: 6px;
-  padding: 5px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-  background: var(--button);
-  box-shadow: none;
-}
-#onboarding button.primary {
-  background: var(--accent);
-  color: var(--accentText);
-}
-#onboarding button.quiet {
-  border-color: transparent;
-  background: transparent;
-  padding-inline: 8px;
-}
-#onboarding button:disabled {
-  opacity: 0.45;
-}
-#onboarding button:focus-visible,
-#onboarding select:focus-visible,
-#onboarding input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-#onboarding .setup-note {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-  margin: 0;
-}
-#onboarding .setup-recovery {
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--muted);
-  margin: 12px 0 0;
-}
-#onboarding #setup-model {
-  font-size: 15px;
-  font-weight: 600;
-  flex: 1;
-  min-width: 0;
-  width: 100%;
-  color: var(--text);
-  background-color: var(--surface);
-  border: 0;
-  padding: 0 18px 0 0;
-  height: auto;
-}
-#onboarding #setup-model-size {
-  display: none;
-}
-#onboarding #setup-model-status {
-  margin-top: 14px;
-}
-#onboarding #setup-prepare {
-  margin-top: 14px;
-}
-#onboarding .download {
-  margin-top: 14px;
-  padding: 0;
-  background: transparent;
-}
-#onboarding .download-label {
-  font-size: 11px;
-  margin: 8px 0 0;
-}
-#onboarding progress {
-  width: 100%;
-  height: 5px;
-  accent-color: var(--accent);
-}
-#onboarding .setup-setting {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  min-height: 58px;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--line);
-}
-#onboarding .setup-setting strong {
-  font-size: 13px;
-  font-weight: 500;
-}
-#onboarding .setup-setting p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.4;
-}
-#onboarding #setup-shortcut {
-  flex-shrink: 0;
-  max-width: 180px;
-}
-#onboarding #setup-shortcut-status:empty {
-  display: none;
-}
-#onboarding .setup-switch {
-  position: relative;
-  width: 32px;
-  height: 19px;
-  flex-shrink: 0;
-  margin: 0;
-}
-#onboarding .setup-switch input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  margin: 0;
-  cursor: pointer;
-}
-#onboarding .setup-switch span {
-  display: block;
-  width: 32px;
-  height: 19px;
-  border-radius: 10px;
-  background: var(--strong);
-  pointer-events: none;
-}
-#onboarding .setup-switch span::after {
-  content: "";
-  display: block;
-  position: absolute;
-  left: 2px;
-  top: 2px;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px #0003;
-}
-#onboarding .setup-switch input:checked + span {
-  background: var(--accent);
-}
-#onboarding .setup-switch input:checked + span::after {
-  left: 15px;
-}
-#onboarding .setup-switch input:focus-visible + span {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-#onboarding .setup-practice-prompt {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--accent);
-  margin: 0 0 14px;
-}
-#onboarding #practice {
-  display: block;
-  height: 150px;
-  min-height: 150px;
-  width: 100%;
-  resize: none;
-  margin: 0 0 14px;
-  padding: 12px;
-  border: 1px solid var(--strong);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
-  font:
-    17px/1.5 -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-}
-#onboarding #practice-status,
-#onboarding #setup-practice-evidence {
-  margin-bottom: 14px;
-}
-#onboarding .setup-footer {
-  display: flex;
-  flex-shrink: 0;
-  gap: 12px;
-  padding: 0;
-  margin: 8px 0 0;
-  border: 0;
-}
-#onboarding .setup-footer > span {
-  flex: 1;
-}
-#onboarding .setup-progress {
-  display: flex;
-  gap: 5px;
-  margin-top: 24px;
-  flex-shrink: 0;
-}
-#onboarding .setup-progress i {
-  height: 3px;
-  flex: 1;
-  border-radius: 3px;
-  background: var(--line);
-}
-#onboarding .setup-progress i.complete {
-  background: var(--accent);
-}
-#onboarding .setup-error {
-  color: var(--danger);
-  font-size: 11px;
-  line-height: 1.5;
-  margin: 14px 0 0;
-}
-#onboarding .setup-error:empty {
-  display: none;
-}
-#onboarding .setup-sr-only {
+.tour-sr {
   position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
   clip-path: inset(50%);
-  white-space: nowrap;
-}
-@media (max-width: 560px) {
-  #onboarding .setup-native {
-    padding-inline: 24px;
-  }
-  #onboarding h1 {
-    font-size: 28px;
-  }
 }
 
-#onboarding #setup-title:focus {
-  outline: none;
-}
-#onboarding #setup-practice-evidence.setup-success {
-  font-size: 13px;
-  font-weight: 500;
-}
-#onboarding .setup-model-card + .setup-setting,
-#onboarding .setup-setting + #setup-shortcut-status + .setup-setting {
-  margin-top: 20px;
-}
-
-#onboarding #setup-practice-evidence.setup-success {
-  color: var(--success);
-}
-#onboarding .setup-practice-microphone {
+/* Top bar: download pill, Skip, the reopen banner. The page moves the window. */
+.tour-top {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  height: 48px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 14px;
+  justify-content: center;
+  z-index: 2;
 }
-#onboarding .setup-practice-microphone svg {
-  width: 14px;
-  height: 14px;
-  stroke: currentColor;
+.tour-skip {
+  position: absolute;
+  right: 16px;
+  top: 10px;
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--tour-muted) !important;
 }
-#onboarding .setup-practice-microphone #practice-status {
+.tour-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
-}
-#onboarding .setup-practice-microphone.is-live {
-  color: var(--success);
+  color: var(--tour-muted);
+  font-size: 15px;
 }
 
-/* The dedicated native setup window reuses only this view, not the main shell. */
+/* Scenes */
+.tour-scene {
+  width: min(560px, calc(100% - 48px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 36px 0 48px;
+}
+.tour-scene[hidden] {
+  display: none;
+}
+.tour-scene.tour-centred {
+  margin: auto 0;
+  padding-bottom: 96px;
+}
+.tour h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  line-height: 1.2;
+  outline: none;
+}
+.tour-lead {
+  margin: 10px 0 0;
+  color: var(--tour-muted);
+  font-size: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tour-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 22px;
+}
+.tour-actions:not(:has(button:not([hidden]))) {
+  display: none;
+}
+
+/* Buttons */
+.tour button {
+  min-height: 32px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--tour-button);
+  color: var(--tour-text);
+  font:
+    600 14px/1 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  cursor: default;
+}
+.tour button.tour-primary {
+  background: var(--tour-primary);
+  color: var(--tour-primaryText);
+}
+.tour button:disabled {
+  opacity: 0.45;
+}
+.tour button:focus-visible,
+.tour select:focus-visible,
+.tour textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.tour button[hidden] {
+  display: none;
+}
+
+/* Model capsule and progress pill */
+.tour-capsule select {
+  appearance: none;
+  border: 1px solid var(--tour-line);
+  border-radius: 999px;
+  background: var(--tour-card)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.3'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  color: var(--tour-text);
+  font:
+    600 14px -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  padding: 4px 26px 4px 12px;
+  max-width: 260px;
+}
+.tour-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  padding: 6px 14px 6px 10px;
+  border: 1px solid var(--tour-line);
+  border-radius: 999px;
+  background: var(--tour-card);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tour-pill-top {
+  margin: 0;
+}
+.tour-pill-top .tour-pill-percent {
+  color: var(--tour-muted);
+  font-weight: 500;
+}
+.tour-pill[hidden] {
+  display: none;
+}
+.tour-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--tour-text) calc(var(--progress, 0.08) * 1turn),
+    var(--tour-line) 0
+  );
+  mask: radial-gradient(circle, transparent 5px, #000 5.5px);
+}
+.tour-pill.done .tour-spinner {
+  background: var(--tour-success);
+}
+
+/* Permissions */
+.tour-card {
+  width: 100%;
+  max-width: 470px;
+  margin-top: 24px;
+  border: 1px solid var(--tour-line);
+  border-radius: 10px;
+  background: var(--tour-card);
+  text-align: left;
+}
+.tour-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  min-height: 60px;
+}
+.tour-row[hidden] {
+  display: none;
+}
+.tour-row:not([hidden]) ~ .tour-row:not([hidden]) {
+  border-top: 1px solid var(--tour-line);
+}
+.tour-row > svg {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  color: var(--tour-muted);
+}
+.tour-row > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tour-row strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.tour-row small {
+  color: var(--tour-muted);
+  font-size: 12.5px;
+  line-height: 1.3;
+}
+.tour-row-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--tour-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.tour-row-state:empty {
+  display: none;
+}
+.tour-row-state.allowed {
+  color: var(--tour-success);
+  font-weight: 600;
+  font-size: 14px;
+}
+.tour-row-state svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
+}
+
+/* Demo */
+.tour-versus {
+  display: inline-flex;
+  margin-top: 14px;
+  border: 1px solid var(--tour-line);
+  border-radius: 999px;
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--tour-muted);
+}
+.tour-versus[hidden] {
+  display: none;
+}
+.tour-versus span {
+  padding: 4px 10px;
+}
+.tour-versus span + span {
+  border-left: 1px solid var(--tour-line);
+}
+.tour-versus strong {
+  color: var(--tour-text);
+}
+.tour-versus .tour-fast {
+  color: var(--tour-success);
+}
+.tour-message {
+  width: 100%;
+  max-width: 290px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--tour-line);
+  border-radius: 16px;
+  background: var(--tour-card);
+  text-align: left;
+  transition:
+    box-shadow 0.25s,
+    border-color 0.25s,
+    opacity 0.25s;
+}
+[data-scene="demo"] .tour-message {
+  max-width: 290px;
+  width: 290px;
+}
+.tour-message header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.tour-message header div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.tour-message header small {
+  color: var(--tour-muted);
+  font-size: 11.5px;
+}
+.tour-message header strong {
+  font-size: 14px;
+}
+.tour-app-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background:
+    radial-gradient(ellipse 9px 7px at 50% 46%, #fff 98%, transparent 100%),
+    linear-gradient(#5ff777, #0bc52b);
+}
+.tour-message > p {
+  margin: 6px 0 12px 40px;
+  font-size: 14px;
+}
+.tour-reply,
+.tour-message textarea {
+  display: block;
+  width: 100%;
+  min-height: 46px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--tour-line);
+  border-radius: 8px;
+  background: var(--tour-bg);
+  color: var(--tour-text);
+  font:
+    14px/1.4 -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  resize: none;
+}
+.tour-reply {
+  position: relative;
+  padding-right: 64px;
+}
+.tour-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--tour-text);
+  animation: tour-blink 1s steps(1) infinite;
+}
+.tour-reply.spoken .tour-caret {
+  display: none;
+}
+.tour-reply.spoken #tour-demo-text {
+  animation: tour-arrive 0.35s ease-out;
+}
+.tour-sent {
+  position: absolute;
+  right: 10px;
+  bottom: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--tour-success);
+  font-size: 12.5px;
+}
+.tour-sent[hidden] {
+  display: none;
+}
+.tour-sent svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.2;
+}
+.tour-hud {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  margin-top: 28px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: #000;
+}
+.tour-hud[hidden] {
+  display: none;
+}
+.tour-hud i {
+  width: 3px;
+  height: 8px;
+  border-radius: 2px;
+  background: #fff;
+  animation: tour-voice 0.7s ease-in-out infinite alternate;
+}
+.tour-hud i:nth-child(2n) {
+  animation-delay: -0.3s;
+}
+.tour-hud i:nth-child(3n) {
+  animation-delay: -0.5s;
+}
+.tour-keyboard {
+  margin-top: 40px;
+  padding: 8px;
+  border: 1px solid var(--tour-line);
+  border-radius: 12px;
+  background: var(--tour-card);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.tour-keyboard[hidden] {
+  display: none;
+}
+.tour-keyboard div {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+}
+.tour-keyboard i {
+  width: 26px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--tour-key);
+  border: 1px solid var(--tour-line);
+  font:
+    500 11px -apple-system,
+    sans-serif;
+  font-style: normal;
+  text-transform: uppercase;
+  color: var(--tour-muted);
+  transition:
+    background 0.08s,
+    transform 0.08s;
+}
+.tour-keyboard i.tour-space {
+  width: 190px;
+}
+.tour-keyboard i.down {
+  background: var(--tour-text);
+  color: var(--tour-bg);
+  transform: translateY(1px);
+}
+
+/* Practice */
+.tour-try-heading {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.tour-done {
+  position: absolute;
+  right: -160px;
+  top: 6px;
+}
+@media (max-width: 920px) {
+  .tour-done {
+    position: static;
+    margin-top: 14px;
+  }
+}
+.tour-inbox {
+  width: calc(100vw - 96px);
+  max-width: 900px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 18px;
+  margin-top: 30px;
+  align-items: start;
+}
+.tour-inbox .tour-message {
+  max-width: none;
+  margin: 0;
+  opacity: 0.55;
+}
+.tour-inbox .tour-message.lit {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--tour-glow) 70%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--tour-glow) 40%, transparent),
+    0 0 26px color-mix(in srgb, var(--tour-glow) 35%, transparent);
+}
+.tour-inbox .tour-message.sent {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--tour-success) 60%, transparent);
+}
+.tour-inbox .tour-message > p {
+  margin-left: 40px;
+}
+.tour-hint {
+  margin: 26px 0 0;
+  min-height: 20px;
+  color: var(--tour-muted);
+}
+
+/* Ready */
+.tour-logo {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  margin-bottom: 26px;
+}
+.tour-keys {
+  display: inline-flex;
+  gap: 3px;
+}
+.tour kbd {
+  display: inline-block;
+  padding: 3px 8px;
+  border: 1px solid var(--tour-line);
+  border-radius: 6px;
+  background: var(--tour-key);
+  color: var(--tour-text);
+  font:
+    600 13px -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+}
+.tour-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0 0;
+  padding: 7px 14px;
+  border: 1px solid var(--tour-line);
+  border-radius: 999px;
+  background: var(--tour-card);
+  color: var(--tour-muted);
+  font-size: 13px;
+}
+.tour-chip img {
+  border-radius: 3px;
+}
+.tour-error {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100% - 32px));
+  margin: 0;
+  color: var(--danger);
+  font-size: 12.5px;
+  text-align: center;
+}
+.tour-error:empty {
+  display: none;
+}
+@keyframes tour-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes tour-voice {
+  to {
+    height: 22px;
+  }
+}
+@keyframes tour-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour *,
+  .tour *::before,
+  .tour *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* The dedicated setup window shows only the tour. */
 body.onboarding-window {
   display: block;
   width: 100vw;
@@ -403,119 +631,6 @@ body.onboarding-window {
 body.onboarding-window > :not(#onboarding) {
   display: none !important;
 }
-body.onboarding-window #onboarding {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100dvh;
-  max-width: none;
-  max-height: none;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-body.onboarding-window #onboarding::backdrop {
-  background: var(--base);
-}
-body.onboarding-window #close-setup {
-  display: none;
-}
-body.onboarding-window #onboarding .setup-native {
-  padding: 50px 40px 28px;
-}
-@media (max-width: 500px) {
-  body.onboarding-window #onboarding .setup-native {
-    padding-inline: 24px;
-  }
-}
-body.onboarding-window #onboarding h1 {
-  font-size: 31px;
-}
-
-/* Welcome: one quiet privacy line. */
-#onboarding section.setup-welcome {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--muted);
-  font-size: 13px;
-}
-#onboarding section.setup-welcome svg {
-  width: 18px;
-  height: 18px;
-}
-#onboarding section.setup-welcome p {
-  margin: 0;
-}
-
-/* Permissions: one compact checklist, a row per macOS permission. */
-#onboarding .setup-permission-list {
-  display: flex;
-  flex-direction: column;
-}
-#onboarding .setup-permission-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 62px;
-  padding: 12px 16px;
-}
-#onboarding .setup-permission-row + .setup-permission-row {
-  border-top: 1px solid var(--line);
-}
-#onboarding .setup-permission-row > div {
-  flex: 1;
-  min-width: 0;
-}
-#onboarding .setup-permission-row h2 {
-  margin: 0 0 2px;
-}
-#onboarding .setup-permission-detail {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 16px;
-}
-#onboarding .setup-permission-row svg {
-  width: 20px;
-  height: 20px;
-}
-#onboarding .setup-permission-state {
-  color: var(--muted);
-  font-size: 11px;
-  flex-shrink: 0;
-}
-#onboarding .setup-permission-state.allowed {
-  font-size: 16px;
-  font-weight: 600;
-}
-#onboarding .setup-permission-state:empty {
-  display: none;
-}
-#onboarding .setup-permission-row .setup-permission-allow {
-  min-width: 64px;
-  flex-shrink: 0;
-}
-#onboarding #platform-note {
-  margin: 14px 0 0;
-}
-#onboarding #setup-permission-recovery {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-top: 14px;
-}
-#onboarding #setup-permission-recovery[hidden],
-#onboarding #platform-note[hidden] {
-  display: none;
-}
-#onboarding #setup-permission-recovery button {
-  min-height: 0;
-  padding: 2px 6px;
-  font-size: 11px;
-  color: var(--accent);
-}
-#onboarding #setup-practice-evidence:empty {
+body:not(.onboarding-window) #onboarding {
   display: none;
 }

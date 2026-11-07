@@ -285,18 +285,32 @@ function renderGeneralPermissions() {
   generalPermissionKey = key;
   const group = $("general-permissions");
   group.replaceChildren();
+  // On Mac the talk-key tap needs only Accessibility (as in Hex), so there
+  // is no Input Monitoring row; the shortcut is its result, not a grant.
   const kinds = [
     ["microphone", "microphone", "Microphone"],
     ["accessibility", "insertion", mac ? "Accessibility" : "Text insertion"],
-    ["shortcut", "shortcut", mac ? "Input Monitoring" : "Global shortcut"],
+    ...(mac ? [] : [["shortcut", "shortcut", "Global shortcut"]]),
   ];
+  if (
+    mac &&
+    permissions.insertion === "granted" &&
+    permissions.shortcut !== "granted"
+  ) {
+    const row = element("div", undefined, "setting-row");
+    row.append(
+      element("span", "Talk key needs a restart"),
+      button("Restart Pressay", () => call("restart_app")),
+    );
+    group.append(row);
+  }
   if (kinds.every(([, field]) => permissions[field] === "granted")) {
     const row = element("div", undefined, "setting-row");
     row.append(
       element(
         "span",
         mac
-          ? "Microphone, Accessibility & Input Monitoring"
+          ? "Microphone & Accessibility"
           : "Microphone, text insertion & global shortcut",
       ),
       element("span", "Allowed", "settings-allowed"),

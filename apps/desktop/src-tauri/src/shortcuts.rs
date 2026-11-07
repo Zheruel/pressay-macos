@@ -634,7 +634,7 @@ extern "C" fn native_event(event: i32, detail: i32, _: *mut std::ffi::c_void) {
             match event {
                 1 => inner.event(Event::Pressed), 2 => inner.event(Event::Released),
                 3 => inner.event(Event::Cancel), 4 => inner.event(Event::Suspended),
-                5 => inner.available(detail == 1, (detail != 1).then(|| "Allow Accessibility and Input Monitoring in System Settings. Pressay will reconnect automatically.".into())),
+                5 => inner.available(detail == 1, (detail != 1).then(|| "Allow Accessibility in System Settings. Pressay will reconnect automatically.".into())),
                 _ => {}
             }
         }

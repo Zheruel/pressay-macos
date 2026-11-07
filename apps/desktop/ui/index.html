@@ -761,198 +761,170 @@
         </section>
       </section>
     </main>
-    <dialog
-      id="onboarding"
-      aria-labelledby="setup-title"
-      aria-describedby="setup-description"
-    >
-      <div class="setup-native" data-tauri-drag-region>
-        <button id="close-setup" class="close" aria-label="Close setup">
-          ×
-        </button>
-        <svg class="setup-symbols" aria-hidden="true">
-          <defs>
-            <symbol id="setup-shield" viewBox="0 0 24 24">
-              <path d="M12 2 4 5v6c0 5 8 10 8 10s8-5 8-10V5Z" />
-              <rect x="8" y="10" width="8" height="6" rx="1" />
-              <path d="M9 10V8a3 3 0 0 1 6 0v2" />
-            </symbol>
-            <symbol id="setup-keyboard" viewBox="0 0 24 24">
-              <rect x="2" y="5" width="20" height="14" rx="2" />
-              <path d="M6 9h1m4 0h1m4 0h1M6 12h1m4 0h1m4 0h1M7 16h10" />
-            </symbol>
-            <symbol id="setup-mic" viewBox="0 0 24 24">
-              <rect x="9" y="2" width="6" height="13" rx="3" />
-              <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
-            </symbol>
-            <symbol id="setup-mic-off" viewBox="0 0 24 24">
-              <path
-                d="M15 10V5a3 3 0 0 0-5.8-1M9 9v3a3 3 0 0 0 5 2M5 10v2a7 7 0 0 0 12 5M19 10v2M12 19v3M8 22h8M2 2l20 20"
-              />
-            </symbol>
-            <symbol id="setup-access" viewBox="0 0 24 24">
-              <circle cx="12" cy="4" r="2" />
-              <path d="M3 8l9 2 9-2M12 10v5m0 0-5 7m5-7 5 7" />
-            </symbol>
-            <symbol id="setup-wave" viewBox="0 0 24 24">
-              <path d="M3 10v4m4-8v12m5-16v20m5-16v12m4-8v4" />
-            </symbol>
-          </defs>
-        </svg>
-        <header class="setup-native-header" data-tauri-drag-region>
-          <img src="icon.png" alt="" width="48" height="48" /><span
-            id="setup-step-label"
-            >WELCOME TO PRESSAY</span
-          >
-        </header>
-        <h1 id="setup-title" tabindex="-1">Your voice. Your words.</h1>
-        <p id="setup-description">
-          Hold a key, speak, release. Pressay types it at your cursor.
+    <div id="onboarding" class="tour" hidden>
+      <svg class="tour-symbols" aria-hidden="true">
+        <defs>
+          <symbol id="tour-mic" viewBox="0 0 24 24">
+            <rect x="9" y="2" width="6" height="13" rx="3" />
+            <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
+          </symbol>
+          <symbol id="tour-cursor" viewBox="0 0 24 24">
+            <path d="M9 4h6M9 20h6M12 4v16" />
+          </symbol>
+          <symbol id="tour-check" viewBox="0 0 24 24">
+            <path d="m5 12 5 5 9-10" />
+          </symbol>
+        </defs>
+      </svg>
+      <header class="tour-top" data-tauri-drag-region>
+        <p class="tour-banner" id="tour-reopen" hidden>
+          Pressay’s shortcut didn’t start.
+          <button id="tour-reopen-button">Reopen Pressay</button>
         </p>
-        <div class="setup-scroll">
-          <section data-setup="0" class="setup-welcome">
-            <svg aria-hidden="true"><use href="#setup-shield" /></svg>
-            <p id="setup-private-copy">
-              Transcribed on your Mac. No account needed.
-            </p>
-          </section>
-          <section data-setup="1" hidden>
-            <div class="setup-group setup-permission-list">
-              <div class="setup-permission-row" data-permission="0">
-                <svg aria-hidden="true"><use href="#setup-mic" /></svg>
-                <div>
-                  <h2 class="setup-permission-title">Microphone</h2>
-                  <p class="setup-permission-detail">
-                    Hears you while you hold the key
-                  </p>
-                </div>
-                <span class="setup-permission-state" role="status"></span>
-                <button class="primary setup-permission-allow">Allow</button>
-              </div>
-              <div class="setup-permission-row" data-permission="1">
-                <svg aria-hidden="true"><use href="#setup-access" /></svg>
-                <div>
-                  <h2 class="setup-permission-title">Accessibility</h2>
-                  <p class="setup-permission-detail">
-                    Types text at your cursor
-                  </p>
-                </div>
-                <span class="setup-permission-state" role="status"></span>
-                <button class="primary setup-permission-allow">Allow</button>
-              </div>
-              <div class="setup-permission-row" data-permission="2">
-                <svg aria-hidden="true"><use href="#setup-keyboard" /></svg>
-                <div>
-                  <h2 class="setup-permission-title">Input Monitoring</h2>
-                  <p class="setup-permission-detail">
-                    Notices your talk key in any app
-                  </p>
-                </div>
-                <span class="setup-permission-state" role="status"></span>
-                <button class="primary setup-permission-allow">Allow</button>
-              </div>
-            </div>
-            <p class="setup-note" id="platform-note"></p>
-            <p class="setup-recovery" id="setup-permission-recovery" hidden>
-              Switched on but not detected?
-              <button class="quiet" id="setup-restart">Reopen Pressay</button>
-            </p>
-          </section>
-          <section data-setup="2" hidden>
-            <div class="setup-group setup-model-card">
-              <div class="setup-model-heading">
-                <svg aria-hidden="true"><use href="#setup-wave" /></svg
-                ><label class="setup-sr-only" for="setup-model"
-                  >Speech model</label
-                ><select id="setup-model"></select
-                ><span id="setup-model-ready" aria-label="Model ready" hidden
-                  >✓</span
-                >
-              </div>
-              <p id="setup-model-size" class="setup-note"></p>
-              <p id="setup-model-status" class="setup-note" role="status"></p>
-              <div class="download" hidden>
-                <progress
-                  max="1"
-                  value="0"
-                  aria-label="Speech model download"
-                ></progress>
-                <p class="download-label" role="status"></p>
-              </div>
-              <button id="setup-prepare">Try again</button>
-            </div>
-            <div class="setup-setting">
-              <div>
-                <strong>Hold to talk</strong>
-                <p>Release to type. Esc to cancel.</p>
-              </div>
-              <button
-                id="setup-shortcut"
-                aria-label="Record hold-to-talk shortcut"
-              >
-                Right Option
-              </button>
-            </div>
-            <p
-              id="setup-shortcut-status"
-              class="setup-recovery"
-              role="status"
-            ></p>
-            <div class="setup-setting">
-              <div>
-                <strong>Open at login</strong>
-                <p id="setup-login-detail">
-                  Ready every time you open your Mac.
-                </p>
-              </div>
-              <label class="setup-switch"
-                ><input
-                  type="checkbox"
-                  id="setup-login"
-                  aria-label="Open at login" /><span aria-hidden="true"></span
-              ></label>
-            </div>
-          </section>
-          <section data-setup="3" hidden>
-            <p class="setup-practice-prompt">
-              Try saying “My words, exactly where I need them.”
-            </p>
-            <label class="setup-sr-only" for="practice"
-              >Practice dictation</label
-            >
-            <textarea
-              id="practice"
-              rows="4"
-              spellcheck="false"
-              aria-describedby="setup-description practice-status"
-            ></textarea>
-            <p class="setup-practice-microphone setup-note">
-              <svg aria-hidden="true">
-                <use id="setup-practice-mic" href="#setup-mic-off" /></svg
-              ><span id="practice-status" role="status">Microphone is off</span>
-            </p>
-            <p id="setup-practice-evidence" class="setup-note"></p>
-            <button class="quiet" id="setup-practice-retry">
-              Try another dictation
-            </button>
-          </section>
-          <p class="setup-error" id="setup-error" role="alert"></p>
+        <div class="tour-pill tour-pill-top" id="tour-top-pill" hidden>
+          <span class="tour-spinner" aria-hidden="true"></span
+          ><strong class="tour-pill-model"></strong
+          ><span class="tour-pill-percent"></span>
         </div>
-        <footer class="setup-footer">
-          <button id="setup-back" hidden>Back</button><span></span
-          ><button class="primary" id="setup-welcome-next">Get started</button
-          ><button class="primary" id="permissions-next" hidden>Continue</button
-          ><button class="primary" id="model-next" hidden disabled>
-            Continue</button
-          ><button class="primary" id="finish-setup" hidden disabled>
-            Start dictating
+        <button class="tour-skip" id="tour-skip" hidden>Skip</button>
+      </header>
+
+      <section class="tour-scene tour-centred" data-scene="setup">
+        <h1>Setting up Pressay</h1>
+        <p class="tour-lead">
+          <span id="tour-download-verb">Downloading</span>
+          <label class="tour-capsule"
+            ><span class="tour-sr">Speech model</span
+            ><select id="tour-model"></select
+          ></label>
+          speech model
+        </p>
+        <div class="tour-pill" id="tour-setup-pill">
+          <span class="tour-spinner" aria-hidden="true"></span
+          ><span class="tour-pill-percent"></span>
+        </div>
+        <div class="tour-actions">
+          <button class="tour-primary" id="tour-setup-continue" hidden>
+            Continue →
           </button>
-        </footer>
-        <div class="setup-progress" aria-hidden="true">
-          <i data-step="1"></i><i data-step="2"></i><i data-step="3"></i>
         </div>
-      </div>
-    </dialog>
+      </section>
+
+      <section class="tour-scene" data-scene="demo" hidden>
+        <h1 id="tour-demo-title">Typing it out</h1>
+        <p class="tour-lead" id="tour-demo-lead">
+          The usual way: one key at a time.
+        </p>
+        <div class="tour-versus" id="tour-versus" hidden>
+          <span>Typing <strong>too long</strong></span
+          ><span>Pressay <strong class="tour-fast">fast</strong></span>
+        </div>
+        <article class="tour-message">
+          <header>
+            <span class="tour-app-icon" aria-hidden="true"></span>
+            <div>
+              <small>Messages</small>
+              <strong>Jay · CEO</strong>
+            </div>
+            <small>now</small>
+          </header>
+          <p>The investors are in the room. Are we ready to ship?</p>
+          <div class="tour-reply" id="tour-demo-reply">
+            <span id="tour-demo-text"></span><i class="tour-caret"></i>
+            <span class="tour-sent" id="tour-demo-sent" hidden
+              ><svg aria-hidden="true"><use href="#tour-check" /></svg
+              >Sent</span
+            >
+          </div>
+        </article>
+        <div class="tour-hud" id="tour-hud" hidden aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <div class="tour-keyboard" id="tour-keyboard" aria-hidden="true"></div>
+        <div class="tour-actions">
+          <button class="tour-primary" id="tour-demo-continue" hidden>
+            Continue →
+          </button>
+        </div>
+      </section>
+
+      <section class="tour-scene tour-centred" data-scene="permissions" hidden>
+        <h1>Let Pressay hear you and type for you</h1>
+        <p class="tour-lead" id="tour-permissions-lead">
+          macOS asks once. You can change these any time in System Settings.
+        </p>
+        <div class="tour-card" id="tour-permission-rows">
+          <div class="tour-row" data-permission="microphone">
+            <svg aria-hidden="true"><use href="#tour-mic" /></svg>
+            <div>
+              <strong>Microphone</strong>
+              <small class="tour-row-detail"></small>
+            </div>
+            <span class="tour-row-state"></span>
+            <button class="tour-row-action"></button>
+          </div>
+          <div class="tour-row" data-permission="accessibility">
+            <svg aria-hidden="true"><use href="#tour-cursor" /></svg>
+            <div>
+              <strong class="tour-row-title">Accessibility</strong>
+              <small class="tour-row-detail"></small>
+            </div>
+            <span class="tour-row-state"></span>
+            <button class="tour-row-action"></button>
+          </div>
+        </div>
+        <div class="tour-actions">
+          <button class="tour-primary" id="tour-restart" hidden>
+            Restart Pressay
+          </button>
+        </div>
+      </section>
+
+      <section class="tour-scene tour-centred" data-scene="waiting" hidden>
+        <h1>Almost ready</h1>
+        <p class="tour-lead">
+          Finishing the speech model so Pressay can hear you.
+        </p>
+        <div class="tour-pill" id="tour-waiting-pill">
+          <span class="tour-spinner" aria-hidden="true"></span
+          ><span class="tour-pill-percent"></span>
+        </div>
+        <div class="tour-actions">
+          <button id="tour-retry-model" hidden>Try again</button>
+        </div>
+      </section>
+
+      <section class="tour-scene" data-scene="try" hidden>
+        <div class="tour-try-heading">
+          <h1>Clear your messages</h1>
+          <p class="tour-lead">
+            Hold <span class="tour-keys"></span> and answer the one that’s lit
+          </p>
+          <button class="tour-done" id="tour-done" disabled>Done</button>
+        </div>
+        <div class="tour-inbox" id="tour-inbox"></div>
+        <p class="tour-hint" id="tour-try-hint" role="status"></p>
+      </section>
+
+      <section class="tour-scene tour-centred" data-scene="ready" hidden>
+        <img class="tour-logo" src="icon.png" alt="" width="72" height="72" />
+        <h1>Pressay is ready</h1>
+        <p class="tour-lead">
+          Hold <span class="tour-keys"></span> anywhere, then talk.
+        </p>
+        <p class="tour-chip">
+          <img src="icon.png" alt="" width="14" height="14" />Lives quietly in
+          your menu bar
+        </p>
+        <div class="tour-actions">
+          <button id="tour-try-again">Try again</button
+          ><button class="tour-primary" id="tour-finish">
+            Start using Pressay
+          </button>
+        </div>
+      </section>
+      <p class="tour-error" id="setup-error" role="alert"></p>
+    </div>
     <dialog id="ask-dialog" aria-labelledby="ask-title">
       <div class="ask-content">
         <header class="ask-header">
@@ -1029,5 +1001,6 @@
     </dialog>
     <script src="workspace.js"></script>
     <script src="app.js"></script>
+    <script src="onboarding.js"></script>
   </body>
 </html>

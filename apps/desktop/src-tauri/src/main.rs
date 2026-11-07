@@ -77,7 +77,7 @@ fn cancel(state: State<'_, Arc<Shared>>) {
 fn request_permission(kind: String) -> Result<(), String> {
     platform::request_permission(&kind)
 }
-/// macOS applies some privacy changes (notably Input Monitoring) only to a new
+/// macOS occasionally applies a privacy change only to a new
 /// process, so setup offers a relaunch when a switched-on grant is not seen.
 #[tauri::command]
 fn restart_app(app: tauri::AppHandle, state: State<'_, Arc<Shared>>) -> Result<(), String> {
@@ -144,10 +144,11 @@ async fn save_settings(patch: Value, state: State<'_, Arc<Shared>>) -> Result<()
 #[tauri::command]
 async fn complete_onboarding(
     observed: String,
+    skipped: Option<bool>,
     state: State<'_, Arc<Shared>>,
 ) -> Result<(), String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    state.send(Command::Complete(observed, tx))?;
+    state.send(Command::Complete(observed, skipped.unwrap_or(false), tx))?;
     rx.await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
