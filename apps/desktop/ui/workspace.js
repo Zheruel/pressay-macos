@@ -265,17 +265,25 @@ async function refreshInputDevices() {
 let generalTab = "dictation",
   generalPermissionKey = null,
   accountRefresh = null;
+const settingsTabs = ["dictation", "ai", "notetaker", "general"];
 function showGeneralTab(tab) {
-  if (!["dictation", "notetaker"].includes(tab)) return;
+  if (!settingsTabs.includes(tab)) return;
+  if (generalTab !== tab) stopShortcutCapture();
   generalTab = tab;
-  stopShortcutCapture();
-  for (const button of document.querySelectorAll("[data-general-tab]")) {
-    const selected = button.dataset.generalTab === tab;
+  for (const button of document.querySelectorAll("[data-settings-tab]")) {
+    const selected = button.dataset.settingsTab === tab;
     button.setAttribute("aria-selected", String(selected));
     button.tabIndex = selected ? 0 : -1;
-    $("general-" + button.dataset.generalTab).hidden = !selected;
   }
-  if (tab === "notetaker") refreshAccount();
+  for (const pane of document.querySelectorAll("[data-settings-pane]"))
+    pane.hidden = pane.dataset.settingsPane !== tab;
+  if (tab === "ai" || tab === "notetaker") refreshAccount();
+}
+function openSettings(tab = generalTab) {
+  showGeneralTab(tab);
+  const dialog = $("settings-dialog");
+  if (!dialog.open) dialog.showModal();
+  dialog.querySelector(".settings-body").scrollTop = 0;
 }
 function renderGeneralPermissions() {
   const permissions = current.permissions,
@@ -471,12 +479,16 @@ function renderStats(history) {
       speaking += r.duration;
     }
   }
+  $("week").hidden = !history.length;
   $("weekly-words").textContent = words.toLocaleString();
-  $("wpm").textContent =
-    speaking >= 30 ? Math.round((words * 60) / speaking) : "—";
-  $("wpm-unit").hidden = speaking < 30;
-  $("saved-time").textContent =
-    `${Math.max(0, Math.round(words / 40 - speaking / 60))} min`;
+  const unit = (value, label) => {
+    const small = element("small", label);
+    return [String(value), small];
+  };
+  $("saved-time").replaceChildren(
+    ...unit(Math.max(0, Math.round(words / 40 - speaking / 60)), "min"),
+  );
+  renderWeekChart(history);
   let cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate()),
     streak = 0;
   if (!days.has(localDay(cursor))) cursor.setDate(cursor.getDate() - 1);
@@ -484,7 +496,51 @@ function renderStats(history) {
     streak++;
     cursor.setDate(cursor.getDate() - 1);
   }
-  $("streak").textContent = `${streak} ${streak === 1 ? "day" : "days"}`;
+  $("streak").replaceChildren(
+    ...unit(streak, streak === 1 ? "day" : "days"),
+  );
+}
+let weekChartKey = "";
+function renderWeekChart(history) {
+  const today = new Date(),
+    start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  // Monday-first week, so the chart reads like a calendar row.
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const counts = Array(7).fill(0);
+  for (const r of history) {
+    const day = Math.floor(
+      (localDay(new Date(r.created_at * 1000)) - start.getTime()) / 864e5,
+    );
+    if (day >= 0 && day < 7)
+      counts[day] += (r.correction || r.text)
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean).length;
+  }
+  const todayIndex = (today.getDay() + 6) % 7,
+    key = JSON.stringify([counts, todayIndex]);
+  if (key === weekChartKey) return;
+  weekChartKey = key;
+  const peak = Math.max(1, ...counts),
+    formatter = new Intl.DateTimeFormat(formattingLocale(), {
+      weekday: "narrow",
+    });
+  $("week-chart").replaceChildren(
+    ...counts.map((count, index) => {
+      const day = new Date(start);
+      day.setDate(start.getDate() + index);
+      const column = element(
+        "div",
+        undefined,
+        index === todayIndex ? "today" : index > todayIndex ? "future" : "",
+      );
+      const bar = element("i");
+      bar.style.height = `${Math.max(3, Math.round((count / peak) * 48))}px`;
+      column.title = `${count.toLocaleString()} words`;
+      column.append(bar, element("span", formatter.format(day)));
+      return column;
+    }),
+  );
 }
 function historyAppName(record) {
   const metadata =
@@ -554,22 +610,31 @@ function renderHistory(s) {
   historyKey = key;
   $("history").replaceChildren();
   $("clear-history").disabled = !s.history.length;
-  document.querySelector(".history-filters").hidden = !s.history.length;
-  $("history-retention").hidden = !s.history.length;
-  const records = s.history.filter(
+  // The newest dictation is the Home hero; the list starts after it unless
+  // the person is searching or filtering.
+  const filtering = !!query || pinned;
+  document.querySelector(".history-filters").hidden =
+    !filtering && s.history.length < 2;
+  $("history-retention").hidden = s.history.length < 2;
+  const records = (filtering ? s.history : s.history.slice(1)).filter(
     (r) =>
       (!pinned || r.pinned) &&
       `${r.text} ${r.correction || ""} ${r.raw} ${historyAppName(r)}`
         .toLocaleLowerCase()
         .includes(query),
   );
-  if (!records.length) {
+  $("history-heading").textContent = filtering
+    ? `${records.length} ${records.length === 1 ? "dictation" : "dictations"}`
+    : records.length
+      ? historyDay(records[0].created_at)
+      : "Earlier";
+  if (!records.length && (filtering || !s.history.length)) {
     const empty = element("div", undefined, "native-history-empty");
     empty.append(
       historyIcon("clock"),
       element(
         "h2",
-        s.history.length ? "No matching dictations." : "No dictations yet",
+        s.history.length ? "Nothing matches" : "No dictations yet",
       ),
       element(
         "p",
@@ -587,17 +652,29 @@ function renderHistory(s) {
   for (const r of records) {
     const title = historyDay(r.created_at);
     if (title !== groupTitle) {
-      const section = element("section", undefined, "secondary-section");
-      group = element("div", undefined, "secondary-group native-history-group");
-      section.append(element("h2", title), group);
+      const section = element("section", undefined, "history-day");
+      group = element("div", undefined, "history-day-rows");
+      // The first day's title sits in the header row beside search.
+      if (groupTitle !== null || filtering) section.append(element("h3", title));
+      section.append(group);
       $("history").append(section);
       groupTitle = title;
     }
     const article = element("article", undefined, "native-history-row");
+    const time = element(
+      "time",
+      new Date(r.created_at * 1000).toLocaleTimeString(formattingLocale(), {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+      "history-time",
+    );
     const appName = historyAppName(r);
     const icon = element("div", undefined, "history-app-icon");
     icon.setAttribute("aria-hidden", "true");
-    icon.append(historyIcon("app"));
+    if (appName)
+      icon.append(element("span", appName.trim()[0].toLocaleUpperCase(), "app-initial"));
+    else icon.append(historyIcon("app"));
     const appIcon =
       typeof appMetadata === "undefined" ? null : appMetadata[r.target]?.icon;
     if (appIcon?.startsWith("data:image/")) {
@@ -608,19 +685,13 @@ function renderHistory(s) {
     }
     const content = element("div", undefined, "history-row-content");
     const text = element("p", r.correction || r.text, "history-row-text");
-    const meta = [
-      appName,
-      new Date(r.created_at * 1000).toLocaleTimeString(formattingLocale(), {
-        hour: "numeric",
-        minute: "2-digit",
-      }),
-      `${Math.round(r.duration)} sec`,
-      r.pinned ? "Pinned" : "",
-      r.correction ? "Corrected" : "",
-    ]
+    const meta = [appName, r.pinned ? "Pinned" : "", r.correction ? "Corrected" : ""]
       .filter(Boolean)
-      .join(" · ");
-    content.append(text, element("p", meta, "history-row-meta"));
+      .join(", ");
+    content.append(text);
+    if (filtering) content.append(element("p", meta, "history-row-meta"));
+    const warning = dictationWarning(r);
+    if (warning) content.append(warningNote(warning));
     const pasteStatus = element("small", "", "history-row-status");
     pasteStatus.setAttribute("role", "status");
     content.append(pasteStatus);
@@ -750,9 +821,21 @@ function renderHistory(s) {
       menu.open = true;
       summary.focus();
     };
-    article.append(icon, content, copy, menu);
+    if (!filtering) icon.title = appName;
+    article.append(time, icon, content, copy, menu);
     group.append(article);
   }
+}
+function dictationWarning(record) {
+  const warning = record.legacy?.warning;
+  return typeof warning === "string" ? warning.replace(/\.$/u, "") : "";
+}
+function warningNote(text) {
+  const note = element("p", undefined, "history-row-note");
+  note.innerHTML =
+    '<svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M10 3 18 16.5H2L10 3Z" fill="currentColor"/><path d="M10 8v4" stroke="var(--base)" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="14.3" r="1" fill="var(--base)"/></svg>';
+  note.append(element("span", text + "."));
+  return note;
 }
 function renderMarkdown(source, container, note) {
   container.replaceChildren();
@@ -874,16 +957,35 @@ function selectNote(id) {
 function renderNotes(s) {
   const recording = s.stage.startsWith("meeting");
   if (s.active_note && recording) selectedNote = s.active_note;
-  const n = s.notes.find((n) => n.id === selectedNote);
+  let n = s.notes.find((n) => n.id === selectedNote);
   if (!n && selectedNote) selectedNote = null;
+  // Split view: with nothing chosen, open the newest meeting on the right.
+  if (!n && !recording && !notesActionMode && !$("notes-search").value) {
+    n = s.notes.reduce(
+      (newest, note) =>
+        !newest || note.created_at > newest.created_at ? note : newest,
+      null,
+    );
+    if (n) {
+      selectedNote = n.id;
+      noteVersion = "";
+      notesKey = "";
+    }
+  }
   const panel = document.querySelector('[data-panel="meetings"]');
   panel.dataset.noteView = recording
     ? "live"
     : n || notesActionMode
       ? "detail"
       : "home";
-  $("notes-home").hidden = recording || !!n || notesActionMode;
   $("note-detail").hidden = recording || (!n && !notesActionMode);
+  $("notes-placeholder").hidden = recording || !!n || notesActionMode;
+  $("notes-placeholder-title").textContent = s.notes.length
+    ? "Pick a meeting"
+    : "No meetings yet";
+  $("notes-placeholder-text").textContent = s.notes.length
+    ? "Its summary and transcript open here."
+    : "Start Notetaker for a call or an in-person meeting. Your notes appear here.";
   $("ask-all").hidden =
     recording ||
     !s.notes.some((note) => note.lines?.length || note.plainTranscript) ||
@@ -914,7 +1016,6 @@ function renderNotes(s) {
     $("live-meeting-menu").hidden = finishing || !s.active_note;
     $("live-meeting-notice").hidden = !n?.notice || n.interrupted;
     $("live-meeting-notice").textContent = n?.notice || "";
-    return;
   }
   const query = $("notes-search").value.toLocaleLowerCase();
   const key = JSON.stringify([
@@ -945,25 +1046,38 @@ function renderNotes(s) {
           "p",
           query
             ? "Try another search."
-            : "Start Notetaker for a call or an in-person meeting. Your meetings will appear here.",
+            : "Your meetings will appear here.",
         ),
       );
       $("meetings").append(empty);
     }
+    let groupTitle = null;
     for (const note of notes) {
-      const row = button("", () => selectNote(note.id), "note-card");
+      const title = historyDay(note.created_at);
+      if (title !== groupTitle) {
+        $("meetings").append(element("h3", title, "notes-day"));
+        groupTitle = title;
+      }
+      const row = button(
+        "",
+        () => selectNote(note.id),
+        "note-card" + (note.id === selectedNote ? " active" : ""),
+      );
+      if (note.id === selectedNote) row.setAttribute("aria-current", "true");
       const copy = element("span", undefined, "note-row-copy");
       copy.append(
         element("strong", note.title || "Untitled"),
         element(
           "small",
           [
-            noteDate(note),
+            new Date((note.created_at || 0) * 1000).toLocaleTimeString(
+              formattingLocale(),
+              { hour: "numeric", minute: "2-digit" },
+            ),
             noteDuration(note.duration),
-            (note.participants || []).join(", "),
           ]
             .filter(Boolean)
-            .join(" · "),
+            .join(", "),
         ),
       );
       const writing =
@@ -973,11 +1087,7 @@ function renderNotes(s) {
         copy,
         element(
           "span",
-          writing
-            ? "Writing up…"
-            : note.body
-              ? "Written up"
-              : "Transcript only",
+          writing ? "Writing up…" : note.body ? "" : "Transcript only",
           "note-write-status" + (note.body ? " written" : ""),
         ),
       );
@@ -1004,6 +1114,7 @@ function renderNotes(s) {
       chevron,
     );
   }
+  if (recording) return;
   if (notesActionMode) {
     renderNotesActions(s);
     return;
@@ -1636,7 +1747,7 @@ function syncPreferences(s) {
   );
   $("ai-enabled").checked = s.claudeCleanup === true;
   if (
-    !document.activeElement?.closest('[data-panel="ai"]') &&
+    !document.activeElement?.closest("#settings-ai") &&
     !accountSaving &&
     !accountVerifying &&
     !accountSigningIn
@@ -1654,6 +1765,7 @@ function syncPreferences(s) {
   $("meeting-hours").value = s.maxMeetingHours || 3;
   $("meeting-model").value = s.meetingASRModel || "moss";
   $("detect-calls").checked = s.detectCalls !== false;
+  $("detect-calls-quick").checked = s.detectCalls !== false;
   $("wayland-cursor").checked = s.waylandCurrentCursor === true;
   $("wayland-option").hidden = !current.permissions.wayland;
   $("wayland-help").hidden = !current.permissions.wayland;
@@ -1939,28 +2051,38 @@ async function sendAsk(question) {
 function setupWorkspace() {
   workspaceReady = true;
   $("general-dictation").append(document.querySelector(".dictation-limit"));
-  for (const tab of document.querySelectorAll("[data-general-tab]")) {
-    tab.onclick = () => showGeneralTab(tab.dataset.generalTab);
+  for (const tab of document.querySelectorAll("[data-settings-tab]")) {
+    tab.onclick = () => showGeneralTab(tab.dataset.settingsTab);
     tab.onkeydown = (event) => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
         return;
       event.preventDefault();
-      const next =
-        event.key === "Home"
-          ? "dictation"
-          : event.key === "End"
-            ? "notetaker"
-            : generalTab === "dictation"
-              ? "notetaker"
-              : "dictation";
+      const index = settingsTabs.indexOf(generalTab),
+        next =
+          event.key === "Home"
+            ? settingsTabs[0]
+            : event.key === "End"
+              ? settingsTabs.at(-1)
+              : settingsTabs[
+                  (index + (event.key === "ArrowRight" ? 1 : -1) + 4) % 4
+                ];
       showGeneralTab(next);
-      $("general-" + next + "-tab").focus();
+      $("settings-tab-" + next).focus();
     };
   }
+  $("open-settings").onclick = () => openSettings();
+  $("close-settings").onclick = () => $("settings-dialog").close();
+  $("settings-dialog").addEventListener("cancel", (event) => {
+    // Esc belongs to the shortcut recorder while it is listening.
+    if (shortcutCapturing) event.preventDefault();
+  });
+  $("settings-dialog").addEventListener("close", () => stopShortcutCapture());
+  $("settings-dialog").addEventListener("click", (event) => {
+    if (event.target === $("settings-dialog")) $("settings-dialog").close();
+  });
   $("notes-connect-ai").onclick = () => {
-    navigate("ai");
+    openSettings("ai");
     document.querySelector("[data-ai-provider][aria-pressed=true]").focus();
-    refreshAccount();
   };
   $("clear-history").onclick = async () => {
     if (
@@ -1974,10 +2096,10 @@ function setupWorkspace() {
   for (const id of ["history-search", "history-pinned"])
     $(id).addEventListener("input", () => renderHistory(current.view));
   document.querySelector(".history-search-key").textContent =
-    current.platform === "macos" ? "⌘ F" : "Ctrl F";
+    current.platform === "macos" ? "⌘F" : "Ctrl F";
   document.addEventListener("keydown", (event) => {
     if (
-      !document.querySelector('[data-panel="history"]').hidden &&
+      !document.querySelector('[data-panel="dictation"]').hidden &&
       event.key.toLowerCase() === "f" &&
       (current.platform === "macos" ? event.metaKey : event.ctrlKey)
     ) {
@@ -1986,11 +2108,6 @@ function setupWorkspace() {
     }
   });
   $("notes-search").oninput = () => renderNotes(current.view);
-  document.querySelector("#notes-home .heading").oncontextmenu = (event) => {
-    event.preventDefault();
-    $("notes-extra-actions").open = true;
-    $("notes-extra-actions").querySelector("button").focus();
-  };
   $("notes-extra-actions").onkeydown = (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -1998,15 +2115,13 @@ function setupWorkspace() {
       $("notes-extra-actions").querySelector("summary").focus();
     }
   };
-  $("notes-settings").onclick = () => {
-    navigate("general");
-    $("general-notetaker-tab")?.click();
-  };
+  $("notes-settings").onclick = () => openSettings("notetaker");
   $("find-meeting").onclick = () => {
-    document.querySelector(".notes-toolbar").hidden = false;
     $("notes-search").focus();
     $("find-meeting").closest("details").open = false;
   };
+  $("detect-calls-quick").onchange = () =>
+    setting({ detectCalls: $("detect-calls-quick").checked }).catch(() => {});
   document.addEventListener("pointerdown", (event) => {
     for (const menu of document.querySelectorAll(
       "details.notes-menu[open], details.history-row-menu[open], details.history-filter-menu[open]",
@@ -2392,7 +2507,7 @@ function setupWorkspace() {
       return;
     if (event.key === ",") {
       event.preventDefault();
-      navigate("general");
+      openSettings();
     }
     if (document.querySelector('[data-panel="meetings"]').hidden) return;
     if (event.key.toLowerCase() === "j" && !$("ask-all").hidden) {
@@ -2422,8 +2537,4 @@ function setupWorkspace() {
       ? `${c.application} is using your microphone. Take notes for this call?`
       : "";
   });
-  for (const page of ["general", "ai"])
-    document
-      .querySelector(`[data-page="${page}"]`)
-      .addEventListener("click", refreshAccount);
 }

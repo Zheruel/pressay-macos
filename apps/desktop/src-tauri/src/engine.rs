@@ -903,6 +903,14 @@ pub fn launch(
                             if audio_saved {
                                 record.legacy = json!({"managedAudio":true});
                             }
+                            // The warning belongs to this dictation, so History can show it
+                            // on the row long after the transient error toast is gone.
+                            if let Some(warning) = &warning {
+                                if !record.legacy.is_object() {
+                                    record.legacy = json!({});
+                                }
+                                record.legacy["warning"] = json!(warning);
+                            }
                             // Save before insertion so failures never discard recognized speech.
                             if let Err(e) = store.add(&record) {
                                 let _ = workspace.audio.remove(&record.id);
