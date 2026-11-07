@@ -777,16 +777,11 @@
         </defs>
       </svg>
       <header class="tour-top" data-tauri-drag-region>
-        <p class="tour-banner" id="tour-reopen" hidden>
-          Pressay’s shortcut didn’t start.
-          <button id="tour-reopen-button">Reopen Pressay</button>
-        </p>
         <div class="tour-pill tour-pill-top" id="tour-top-pill" hidden>
           <span class="tour-spinner" aria-hidden="true"></span
           ><strong class="tour-pill-model"></strong
           ><span class="tour-pill-percent"></span>
         </div>
-        <button class="tour-skip" id="tour-skip" hidden>Skip</button>
       </header>
 
       <section class="tour-scene tour-centred" data-scene="setup">
@@ -805,44 +800,6 @@
         </div>
         <div class="tour-actions">
           <button class="tour-primary" id="tour-setup-continue" hidden>
-            Continue →
-          </button>
-        </div>
-      </section>
-
-      <section class="tour-scene" data-scene="demo" hidden>
-        <h1 id="tour-demo-title">Typing it out</h1>
-        <p class="tour-lead" id="tour-demo-lead">
-          The usual way: one key at a time.
-        </p>
-        <div class="tour-versus" id="tour-versus" hidden>
-          <span>Typing <strong>too long</strong></span
-          ><span>Pressay <strong class="tour-fast">fast</strong></span>
-        </div>
-        <article class="tour-message">
-          <header>
-            <span class="tour-app-icon" aria-hidden="true"></span>
-            <div>
-              <small>Messages</small>
-              <strong>Jay · CEO</strong>
-            </div>
-            <small>now</small>
-          </header>
-          <p>The investors are in the room. Are we ready to ship?</p>
-          <div class="tour-reply" id="tour-demo-reply">
-            <span id="tour-demo-text"></span><i class="tour-caret"></i>
-            <span class="tour-sent" id="tour-demo-sent" hidden
-              ><svg aria-hidden="true"><use href="#tour-check" /></svg
-              >Sent</span
-            >
-          </div>
-        </article>
-        <div class="tour-hud" id="tour-hud" hidden aria-hidden="true">
-          <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-        </div>
-        <div class="tour-keyboard" id="tour-keyboard" aria-hidden="true"></div>
-        <div class="tour-actions">
-          <button class="tour-primary" id="tour-demo-continue" hidden>
             Continue →
           </button>
         </div>
@@ -894,18 +851,6 @@
         </div>
       </section>
 
-      <section class="tour-scene" data-scene="try" hidden>
-        <div class="tour-try-heading">
-          <h1>Clear your messages</h1>
-          <p class="tour-lead">
-            Hold <span class="tour-keys"></span> and answer the one that’s lit
-          </p>
-          <button class="tour-done" id="tour-done" disabled>Done</button>
-        </div>
-        <div class="tour-inbox" id="tour-inbox"></div>
-        <p class="tour-hint" id="tour-try-hint" role="status"></p>
-      </section>
-
       <section class="tour-scene tour-centred" data-scene="ready" hidden>
         <img class="tour-logo" src="icon.png" alt="" width="72" height="72" />
         <h1>Pressay is ready</h1>
@@ -917,8 +862,7 @@
           your menu bar
         </p>
         <div class="tour-actions">
-          <button id="tour-try-again">Try again</button
-          ><button class="tour-primary" id="tour-finish">
+          <button class="tour-primary" id="tour-finish">
             Start using Pressay
           </button>
         </div>

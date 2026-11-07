@@ -1,32 +1,16 @@
-/* First-run tour (onboarding.js): a full-window, centred flow modeled on
-   Hex's onboarding. Flat surfaces, one accent, no step counter. */
+/* First-run tour (onboarding.js): a centred flow modeled on Hex's
+   onboarding, drawn with the workspace's own Graphite tokens. */
 #onboarding.tour {
-  --tour-bg: #f7f7f8;
-  --tour-card: #ffffff;
-  --tour-line: #e4e4e8;
-  --tour-text: #17171a;
-  --tour-muted: #6b6b73;
-  --tour-key: #ececf0;
-  --tour-button: #e9e9ed;
-  --tour-primary: #2b2b30;
-  --tour-primaryText: #ffffff;
-  --tour-success: #23874f;
-  --tour-glow: #e0703a;
-}
-@media (prefers-color-scheme: dark) {
-  #onboarding.tour {
-    --tour-bg: #0a0a0a;
-    --tour-card: #151515;
-    --tour-line: #262626;
-    --tour-text: #f4f4f5;
-    --tour-muted: #a1a1aa;
-    --tour-key: #1d1d1f;
-    --tour-button: #2a2a2c;
-    --tour-primary: #5c5c60;
-    --tour-primaryText: #ffffff;
-    --tour-success: #4ade80;
-    --tour-glow: #c2552a;
-  }
+  --tour-bg: var(--base);
+  --tour-card: var(--surface);
+  --tour-line: var(--line);
+  --tour-text: var(--text);
+  --tour-muted: var(--muted);
+  --tour-key: var(--button);
+  --tour-button: var(--button);
+  --tour-primary: var(--accent);
+  --tour-primaryText: var(--accentText);
+  --tour-success: var(--success);
 }
 #onboarding.tour {
   position: fixed;
@@ -78,22 +62,6 @@
   justify-content: center;
   z-index: 2;
 }
-.tour-skip {
-  position: absolute;
-  right: 16px;
-  top: 10px;
-  background: transparent !important;
-  border: 0 !important;
-  color: var(--tour-muted) !important;
-}
-.tour-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  color: var(--tour-muted);
-  font-size: 15px;
-}
 
 /* Scenes */
 .tour-scene {
@@ -113,7 +81,7 @@
 }
 .tour h1 {
   margin: 0;
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 600;
   letter-spacing: -0.4px;
   line-height: 1.2;
@@ -122,7 +90,7 @@
 .tour-lead {
   margin: 10px 0 0;
   color: var(--tour-muted);
-  font-size: 17px;
+  font-size: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -141,14 +109,14 @@
 
 /* Buttons */
 .tour button {
-  min-height: 32px;
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 7px;
+  min-height: 30px;
+  padding: 5px 14px;
+  border: 1px solid var(--strong);
+  border-radius: 6px;
   background: var(--tour-button);
   color: var(--tour-text);
   font:
-    600 14px/1 -apple-system,
+    500 13px/1 -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
@@ -156,7 +124,9 @@
 }
 .tour button.tour-primary {
   background: var(--tour-primary);
+  border-color: var(--tour-primary);
   color: var(--tour-primaryText);
+  font-weight: 600;
 }
 .tour button:disabled {
   opacity: 0.45;
@@ -290,257 +260,6 @@
   stroke-width: 2.2;
 }
 
-/* Demo */
-.tour-versus {
-  display: inline-flex;
-  margin-top: 14px;
-  border: 1px solid var(--tour-line);
-  border-radius: 999px;
-  overflow: hidden;
-  font-size: 13px;
-  color: var(--tour-muted);
-}
-.tour-versus[hidden] {
-  display: none;
-}
-.tour-versus span {
-  padding: 4px 10px;
-}
-.tour-versus span + span {
-  border-left: 1px solid var(--tour-line);
-}
-.tour-versus strong {
-  color: var(--tour-text);
-}
-.tour-versus .tour-fast {
-  color: var(--tour-success);
-}
-.tour-message {
-  width: 100%;
-  max-width: 290px;
-  margin-top: 16px;
-  padding: 14px;
-  border: 1px solid var(--tour-line);
-  border-radius: 16px;
-  background: var(--tour-card);
-  text-align: left;
-  transition:
-    box-shadow 0.25s,
-    border-color 0.25s,
-    opacity 0.25s;
-}
-[data-scene="demo"] .tour-message {
-  max-width: 290px;
-  width: 290px;
-}
-.tour-message header {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-.tour-message header div {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-.tour-message header small {
-  color: var(--tour-muted);
-  font-size: 11.5px;
-}
-.tour-message header strong {
-  font-size: 14px;
-}
-.tour-app-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  background:
-    radial-gradient(ellipse 9px 7px at 50% 46%, #fff 98%, transparent 100%),
-    linear-gradient(#5ff777, #0bc52b);
-}
-.tour-message > p {
-  margin: 6px 0 12px 40px;
-  font-size: 14px;
-}
-.tour-reply,
-.tour-message textarea {
-  display: block;
-  width: 100%;
-  min-height: 46px;
-  box-sizing: border-box;
-  padding: 10px 12px;
-  border: 1px solid var(--tour-line);
-  border-radius: 8px;
-  background: var(--tour-bg);
-  color: var(--tour-text);
-  font:
-    14px/1.4 -apple-system,
-    BlinkMacSystemFont,
-    sans-serif;
-  resize: none;
-}
-.tour-reply {
-  position: relative;
-  padding-right: 64px;
-}
-.tour-caret {
-  display: inline-block;
-  width: 1.5px;
-  height: 1.1em;
-  margin-left: 1px;
-  vertical-align: text-bottom;
-  background: var(--tour-text);
-  animation: tour-blink 1s steps(1) infinite;
-}
-.tour-reply.spoken .tour-caret {
-  display: none;
-}
-.tour-reply.spoken #tour-demo-text {
-  animation: tour-arrive 0.35s ease-out;
-}
-.tour-sent {
-  position: absolute;
-  right: 10px;
-  bottom: 9px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--tour-success);
-  font-size: 12.5px;
-}
-.tour-sent[hidden] {
-  display: none;
-}
-.tour-sent svg {
-  width: 12px;
-  height: 12px;
-  stroke-width: 2.2;
-}
-.tour-hud {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 36px;
-  margin-top: 28px;
-  padding: 0 18px;
-  border-radius: 999px;
-  background: #000;
-}
-.tour-hud[hidden] {
-  display: none;
-}
-.tour-hud i {
-  width: 3px;
-  height: 8px;
-  border-radius: 2px;
-  background: #fff;
-  animation: tour-voice 0.7s ease-in-out infinite alternate;
-}
-.tour-hud i:nth-child(2n) {
-  animation-delay: -0.3s;
-}
-.tour-hud i:nth-child(3n) {
-  animation-delay: -0.5s;
-}
-.tour-keyboard {
-  margin-top: 40px;
-  padding: 8px;
-  border: 1px solid var(--tour-line);
-  border-radius: 12px;
-  background: var(--tour-card);
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.tour-keyboard[hidden] {
-  display: none;
-}
-.tour-keyboard div {
-  display: flex;
-  justify-content: center;
-  gap: 5px;
-}
-.tour-keyboard i {
-  width: 26px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border-radius: 5px;
-  background: var(--tour-key);
-  border: 1px solid var(--tour-line);
-  font:
-    500 11px -apple-system,
-    sans-serif;
-  font-style: normal;
-  text-transform: uppercase;
-  color: var(--tour-muted);
-  transition:
-    background 0.08s,
-    transform 0.08s;
-}
-.tour-keyboard i.tour-space {
-  width: 190px;
-}
-.tour-keyboard i.down {
-  background: var(--tour-text);
-  color: var(--tour-bg);
-  transform: translateY(1px);
-}
-
-/* Practice */
-.tour-try-heading {
-  position: relative;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.tour-done {
-  position: absolute;
-  right: -160px;
-  top: 6px;
-}
-@media (max-width: 920px) {
-  .tour-done {
-    position: static;
-    margin-top: 14px;
-  }
-}
-.tour-inbox {
-  width: calc(100vw - 96px);
-  max-width: 900px;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 18px;
-  margin-top: 30px;
-  align-items: start;
-}
-.tour-inbox .tour-message {
-  max-width: none;
-  margin: 0;
-  opacity: 0.55;
-}
-.tour-inbox .tour-message.lit {
-  opacity: 1;
-  border-color: color-mix(in srgb, var(--tour-glow) 70%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--tour-glow) 40%, transparent),
-    0 0 26px color-mix(in srgb, var(--tour-glow) 35%, transparent);
-}
-.tour-inbox .tour-message.sent {
-  opacity: 1;
-  border-color: color-mix(in srgb, var(--tour-success) 60%, transparent);
-}
-.tour-inbox .tour-message > p {
-  margin-left: 40px;
-}
-.tour-hint {
-  margin: 26px 0 0;
-  min-height: 20px;
-  color: var(--tour-muted);
-}
-
 /* Ready */
 .tour-logo {
   width: 72px;
@@ -592,22 +311,6 @@
 }
 .tour-error:empty {
   display: none;
-}
-@keyframes tour-blink {
-  50% {
-    opacity: 0;
-  }
-}
-@keyframes tour-voice {
-  to {
-    height: 22px;
-  }
-}
-@keyframes tour-arrive {
-  from {
-    opacity: 0;
-    transform: translateY(3px);
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   .tour *,
