@@ -525,7 +525,14 @@ async fn run(
     }
     if discard_finished_note(&note, complete_transcript, cancel.is_cancelled()) {
         store.delete_note(&id).map_err(|e| e.to_string())?;
-        engine::update(app, shared, |s| s.active_note = None);
+        let silent = !cancel.is_cancelled() && !shared.is_shutting_down();
+        engine::update(app, shared, |s| {
+            s.active_note = None;
+            if silent {
+                s.error =
+                    Some("Nothing was heard. Check your microphone in Settings › General.".into());
+            }
+        });
     } else {
         store.put_note(&note).map_err(|e| e.to_string())?;
     }
@@ -541,8 +548,7 @@ fn duration_warning_due(elapsed: Duration, limit: Duration) -> bool {
     elapsed < limit && elapsed >= limit.saturating_sub(Duration::from_secs(120))
 }
 fn discard_finished_note(note: &Note, complete: bool, discarded: bool) -> bool {
-    // Every session currently creates a new note. Explicit discard removes it;
-    // a normal silent stop keeps personal notes, and errors preserve recovery.
+    // A silent stop keeps personal notes; errors keep the note for recovery.
     discarded || (complete && note.lines.is_empty() && note.my_notes.is_empty())
 }
 

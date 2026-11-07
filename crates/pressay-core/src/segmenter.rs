@@ -46,8 +46,8 @@ impl Segmenter {
         }
         result
     }
-    /// Feed one model-labelled frame without rounding512-sample VAD decisions
-    /// onto the adaptive480-sample grid. Timing counters are always samples.
+    /// Feed one model-labelled frame without rounding 512-sample VAD decisions
+    /// onto the adaptive 480-sample grid. Timing counters are always samples.
     pub fn append_labeled(&mut self, samples: &[f32], speech: bool) -> Vec<Segment> {
         let mut out = vec![];
         for frame in samples.chunks(512) {

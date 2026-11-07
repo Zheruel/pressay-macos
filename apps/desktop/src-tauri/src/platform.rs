@@ -691,6 +691,15 @@ mod targets {
             .reply()
             .map_err(|e| e.to_string())?
             .focus;
+        // None (0) and PointerRoot (1) are not windows; querying them is BadWindow.
+        if window <= 1 {
+            return Ok(Focus {
+                window: window as u64,
+                foreground: window as u64,
+                process: 0,
+                caret: None,
+            });
+        }
         let mut foreground = window;
         let mut client = None;
         for _ in 0..32 {

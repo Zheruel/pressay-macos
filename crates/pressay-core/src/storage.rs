@@ -171,6 +171,7 @@ impl Store {
         rows.map(|r| {
             let mut value: Value = serde_json::from_str(&r?)?;
             if let Ok(note) = serde_json::from_value::<crate::notes::Note>(value.clone()) {
+                value["kind"] = Value::String(note.kind.clone());
                 value["actions"] =
                     serde_json::to_value(crate::notes::ActionItem::parse(&note.body))?;
                 value["plainTranscript"] = Value::String(note.transcript());
@@ -198,11 +199,9 @@ impl Store {
             if text.len() > 1_000_000 {
                 return Err(Error::Message("Correction is too long".into()));
             }
-            record.correction = if text.trim().is_empty() {
-                None
-            } else {
-                Some(text.into())
-            };
+            let text = text.trim();
+            record.correction = (!text.is_empty()).then(|| text.into());
+            record.pinned |= record.correction.is_some();
         }
         if let Some(pinned) = pinned {
             record.pinned = pinned;
@@ -307,8 +306,9 @@ impl Store {
         {
             return Ok(false);
         }
-        // Existing preview choices win; preserve all legacy fields, including ones
-        // this version cannot expose. A future port may still need them.
+        // Existing preview choices win, except blanks the preview seeded before
+        // import; preserve all legacy fields, including ones this version cannot
+        // expose. A future port may still need them.
         let settings: Option<String> = tx
             .query_row("SELECT value FROM metadata WHERE key='settings'", [], |r| {
                 r.get(0)
@@ -317,7 +317,12 @@ impl Store {
         let mut combined = snapshot.settings.clone();
         if let Some(settings) = settings {
             if let Some(existing) = serde_json::from_str::<Value>(&settings)?.as_object() {
-                combined.as_object_mut().unwrap().extend(existing.clone());
+                combined.as_object_mut().unwrap().extend(
+                    existing
+                        .iter()
+                        .filter(|(_, v)| !v.is_null() && v.as_str() != Some(""))
+                        .map(|(k, v)| (k.clone(), v.clone())),
+                );
             }
         }
         tx.execute("INSERT INTO metadata VALUES ('settings',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [serde_json::to_string(&combined)?])?;
@@ -432,11 +437,15 @@ mod tests {
         };
         assert!(store.import(&s).is_err());
         assert_eq!(store.settings().unwrap(), serde_json::json!({}));
+        store
+            .save_settings(&serde_json::json!({"vocabulary":"", "asrModel":"moss"}))
+            .unwrap();
         s.notes = vec![serde_json::json!({"id":"meeting1", "body":"original"})];
         assert!(store.import(&s).unwrap());
         assert!(!store.import(&s).unwrap());
         assert_eq!(store.notes().unwrap().len(), 1);
         assert_eq!(store.settings().unwrap()["vocabulary"], "custom");
+        assert_eq!(store.settings().unwrap()["asrModel"], "moss");
         drop(store);
         assert_eq!(
             Store::open(&dir.path().join("core.db"))

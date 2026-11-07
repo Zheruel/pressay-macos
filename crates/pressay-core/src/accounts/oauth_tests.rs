@@ -150,6 +150,16 @@ async fn loopback_login_exchanges_verifier_and_keeps_tokens_out_of_status() {
     let captured = nonce.clone();
     let fixture=Fixture::new(move|request,base|if request.path=="/token"{let fields:HashMap<_,_>=url_fields(&request.body);assert_eq!(fields["grant_type"],"authorization_code");assert_eq!(fields["code"],"fixture-code");assert!(fields["code_verifier"].len()>=43);assert_eq!(fields["resource"],RESOURCE);let mut c=claims();c["nonce"]=json!(captured.lock().unwrap().clone());Reply::json(json!({"id_token":token(c),"access_token":"fixture-access","refresh_token":"fixture-refresh","expires_in":3600,"scope":SCOPES}))}else{config(&request.path,base)}).await;
     let store = Arc::new(MemorySecrets::default());
+    // A different, signed-out account's registration must not block this sign-in.
+    store
+        .set(
+            REGISTRATION_KEY,
+            &Secret::new(
+                json!({"client_id":"fixture-client","subject":"previous-user","email":null})
+                    .to_string(),
+            ),
+        )
+        .unwrap();
     let account = account(store.clone(), &fixture);
     let status = account
         .sign_in(
@@ -291,9 +301,45 @@ async fn sign_out_cannot_be_undone_by_inflight_refresh() {
     assert!(!account.status().await.signed_in);
 }
 #[tokio::test]
+async fn rotated_refresh_token_survives_unverifiable_id_token() {
+    let fixture = Fixture::new(|request, _| {
+        if request.path == "/token" {
+            Reply::json(
+                json!({"access_token":"rotated-access","refresh_token":"rotated-refresh","id_token":"unverifiable","expires_in":3600}),
+            )
+        } else {
+            let mut reply = Reply::json(json!({}));
+            reply.status = 503;
+            reply
+        }
+    })
+    .await;
+    let store = Arc::new(MemorySecrets::default());
+    store
+        .set(
+            TOKEN_KEY,
+            &Secret::new(serde_json::to_string(&credentials()).unwrap()),
+        )
+        .unwrap();
+    let account = account(store.clone(), &fixture);
+    assert_eq!(
+        account
+            .access_token(&CancellationToken::new())
+            .await
+            .unwrap()
+            .expose(),
+        "rotated-access"
+    );
+    let saved: Credentials =
+        serde_json::from_str(store.get(TOKEN_KEY).unwrap().unwrap().expose()).unwrap();
+    assert_eq!(saved.refresh_token, "rotated-refresh");
+    assert_eq!(saved.id_token, "fixture-id-token");
+}
+#[tokio::test]
 async fn terminal_refresh_error_clears_tokens_and_scope_loss_is_not_hidden() {
     for response in [
         json!({"error":"refresh_token_reused"}),
+        json!({"error":{"code":"refresh_token_expired","message":"private"}}),
         json!({"access_token":"new-access","refresh_token":"new-refresh","expires_in":3600,"scope":"openid email"}),
     ] {
         let fixture = Fixture::new(move |_, _| {

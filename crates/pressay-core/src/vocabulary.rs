@@ -50,15 +50,20 @@ pub fn normalize(text: &str, entries: &[Entry]) -> String {
                 Regex::new(&format!("(?i){}", regex::escape(candidate))).expect("escaped term");
             let mut result = String::new();
             let mut end = 0;
-            for m in regex.find_iter(&text) {
+            let mut at = 0;
+            while let Some(m) = regex.find_at(&text, at) {
                 if text[..m.start()].chars().next_back().is_some_and(word)
                     || text[m.end()..].chars().next().is_some_and(word)
                 {
+                    // Like the shipping lookarounds, retry one character later:
+                    // a rejected match may overlap a valid one ("banana na na").
+                    at = m.start() + text[m.start()..].chars().next().map_or(1, char::len_utf8);
                     continue;
                 }
                 result.push_str(&text[end..m.start()]);
                 result.push_str(&entry.preferred);
                 end = m.end();
+                at = end;
             }
             result.push_str(&text[end..]);
             text = result;
@@ -79,6 +84,10 @@ mod tests {
         assert_eq!(
             normalize("supabases _supabase supersupabase", &e),
             "supabases _supabase supersupabase"
+        );
+        assert_eq!(
+            normalize("banana na na", &parse("Nana <= na na")),
+            "banana Nana"
         );
         assert_eq!(
             normalize("Some kind of plan, maybe.", &[]),

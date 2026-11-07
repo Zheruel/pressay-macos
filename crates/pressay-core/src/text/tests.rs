@@ -58,6 +58,16 @@ fn deterministic_source_vectors_preserve_constraints_and_meaning() {
     assert!(!uses_english_rules(multilingual, Some("hr")));
     assert!(uses_english_rules("short", Some("en")));
     assert!(!uses_english_rules("", None));
+    assert!(uses_english_rules("um send it", Some("auto")));
+    assert!(uses_english_rules(
+        "um I think we should ship it tomorrow",
+        None
+    ));
+    assert!(!uses_english_rules(
+        "Ich glaube wir sollten das morgen machen",
+        None
+    ));
+    assert!(!uses_english_rules("el perro come la comida", None));
 }
 #[test]
 fn phonetic_source_vectors_correct_only_unambiguous_user_terms() {

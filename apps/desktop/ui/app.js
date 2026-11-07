@@ -39,7 +39,11 @@ let current,
   initialized = false,
   modelSelectionPending = null;
 const dialog = $("onboarding");
+// Command failures stay visible briefly; the 1 s status poll would otherwise
+// replace them with the engine's own error state almost immediately.
+let commandError = null;
 function error(message) {
+  commandError = { text: String(message), until: Date.now() + 8000 };
   $("error").textContent = String(message);
   $("error").hidden = false;
   $("setup-error").textContent = String(message);
@@ -176,7 +180,6 @@ function openSetup() {
   }
   setStep(0);
 }
-if ($("setup-again")) $("setup-again").onclick = openSetup;
 async function closeSetup() {
   await stopSetupShortcut();
   try {
@@ -355,7 +358,6 @@ window.__TAURI__.event.listen("pressay-shortcut-captured", ({ payload }) => {
 });
 window.addEventListener("blur", stopSetupShortcut);
 $("cancel").onclick = () => call("cancel").catch(() => {});
-if ($("quit")) $("quit").onclick = () => call("quit").catch(() => {});
 let dictionaryRows = [],
   dictionarySaved = null,
   dictionaryDirty = false,
@@ -539,7 +541,9 @@ $("finish-setup").onclick = async () => {
   try {
     await call("complete_onboarding", { observed: $("practice").value });
     await closeSetup();
-  } catch {}
+  } catch (error) {
+    setupFailure(error);
+  }
 };
 $("migration").onchange = async () => {
   const file = $("migration").files[0];
@@ -552,7 +556,10 @@ $("migration").onchange = async () => {
     await call("import_migration", { source: await file.text() });
     $("migration-result").textContent =
       "Imported. Your original Mac data is unchanged.";
-  } catch {}
+  } catch {
+  } finally {
+    $("migration").value = "";
+  }
 };
 function element(tag, text, className) {
   const el = document.createElement(tag);
@@ -786,7 +793,10 @@ function render(data) {
   );
   $("sidebar-model").textContent =
     `On-device · ${activeModel?.name || "Speech recognition"}`;
-  const warning = s.error || s.shortcut_error || "";
+  const warning =
+    s.error ||
+    s.shortcut_error ||
+    (commandError && Date.now() < commandError.until ? commandError.text : "");
   $("error").hidden = !warning;
   $("error").textContent = warning;
   $("setup-error").textContent = warning;

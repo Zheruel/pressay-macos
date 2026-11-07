@@ -451,8 +451,8 @@ mod tests {
         assert_eq!(trim(&samples, Some(900..2100)), Err(TrimError::Silence));
         samples[1900..2560].fill(0.1);
         let result = trim(&samples, Some(900..2100)).unwrap();
-        // The first visible speech is at2240. Padding must retain the real
-        // speech which started at1900, inside the cue guard.
+        // The first visible speech is at 2240. Padding must retain the real
+        // speech which started at 1900, inside the cue guard.
         assert_eq!(&result[1760..1760 + 19200], &samples[..19200]);
         samples[..320].fill(0.2);
         let result = trim(&samples, Some(900..2100)).unwrap();

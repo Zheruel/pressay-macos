@@ -431,7 +431,6 @@ pub fn request_keyboard() -> Result<(), String> {
         return Ok(());
     }
     close_keyboard();
-    let generation = output().generation.load(Ordering::Acquire);
     let cancel = output().shutdown.child_token();
     *output().request.lock().unwrap() = cancel.clone();
     *output().permission.lock().unwrap() = (
@@ -439,12 +438,11 @@ pub fn request_keyboard() -> Result<(), String> {
         Some("Approve keyboard control in your desktop's permission dialog.".into()),
     );
     tauri::async_runtime::spawn(async move {
-        let result = prepare_keyboard(cancel).await;
+        let result = prepare_keyboard(cancel.clone()).await;
         output().pending.store(false, Ordering::Release);
-        if generation != output().generation.load(Ordering::Acquire)
-            || !current_cursor_enabled()
-            || output().shutdown.is_cancelled()
-        {
+        // Only close_keyboard (opt-out, a new request, shutdown) cancels a grant.
+        // Insertion cancels bump the generation and must not discard consent.
+        if cancel.is_cancelled() || !current_cursor_enabled() || output().shutdown.is_cancelled() {
             if let Ok(session) = result {
                 close_session(&session.connection, &session.session).await;
             }

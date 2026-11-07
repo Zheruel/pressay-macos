@@ -106,9 +106,15 @@ impl Shared {
             let mut view = self.view.lock().unwrap();
             if view.stage != "idle" || !view.model_ready {
                 self.start_pending.store(false, Ordering::Release);
-                return Err(
-                    "Prepare the speech model and finish the current operation first".into(),
-                );
+                return Err(match view.stage.as_str() {
+                    "meeting" | "meeting_finishing" => "Stop the Notetaker to dictate",
+                    "processing" | "polishing" => "Still processing the previous dictation",
+                    "idle" | "preparing" | "loading" => {
+                        "Wait for the local model to finish preparing"
+                    }
+                    _ => "Finish the current operation first",
+                }
+                .into());
             }
             view.stage = "starting".into();
         }
@@ -133,7 +139,7 @@ impl Shared {
             }
             if is_stop {
                 // Losing a key release must never leave the microphone recording.
-                self.cancel();
+                self.cancel_dictation();
                 return Err("Command queue filled; the recording was cancelled".into());
             }
             return Err("Pressay is busy; wait for the current operation".into());
@@ -152,6 +158,17 @@ impl Shared {
         self.generation.fetch_add(1, Ordering::AcqRel);
         self.cancel.lock().unwrap().cancel();
         self.cancel_wake.notify_one();
+    }
+    /// Escape, shortcut rebinding, screen sleep and session lock end dictation
+    /// only. A meeting keeps recording through them, as in the Mac app; only an
+    /// explicit discard may delete it. An idle model stays loaded.
+    pub fn cancel_dictation(&self) {
+        let stage = self.view.lock().unwrap().stage.clone();
+        if stage == "idle" || stage.starts_with("meeting") {
+            platform::cancel_pending_insertions();
+            return;
+        }
+        self.cancel();
     }
     /// The application must await this before exiting. Cancellation does not by
     /// itself prove that a native microphone or child process has closed.
@@ -327,6 +344,14 @@ pub fn track_overlay(app: AppHandle, shared: Arc<Shared>) {
     });
 }
 
+/// A rejected hotkey press must not look like a dead key. Only an idle app
+/// shows the message, so a meeting island or running dictation stays intact.
+pub fn reject_start(app: &AppHandle, shared: &Shared, error: String) {
+    crate::feedback::cue(crate::feedback::Cue::Error);
+    if shared.view.lock().unwrap().stage == "idle" {
+        update(app, shared, |s| s.error = Some(error));
+    }
+}
 fn failed(app: &AppHandle, shared: &Shared, error: impl ToString) {
     shared.cancel.lock().unwrap().cancel();
     crate::feedback::cue(crate::feedback::Cue::Error);
@@ -924,8 +949,8 @@ pub fn launch(
                                 task.abort();
                                 let _ = task.await;
                             }
-                            loaded = None;
-                            update(&app, &state, |s| s.model_ready = false);
+                            // Keep the model selected; nothing would reload it. The worker
+                            // stays resident or is relaunched by the next request.
                             failed(&app, &state, e);
                         }
                     }
@@ -1280,6 +1305,23 @@ mod tests {
             .unwrap();
         shared.send(Command::Cancel).unwrap();
         assert!(cancellation.is_discarded());
+    }
+
+    #[tokio::test]
+    async fn sleep_or_escape_during_a_meeting_never_discards_it() {
+        let (shared, _rx) = shared(8);
+        let cancellation = crate::meeting::Cancellation::new();
+        *shared.meeting_stop.lock().unwrap() =
+            Some((CancellationToken::new(), cancellation.clone()));
+        for stage in ["meeting_starting", "meeting", "idle"] {
+            shared.view.lock().unwrap().stage = stage.into();
+            shared.cancel_dictation();
+        }
+        assert!(!cancellation.is_discarded());
+        assert_eq!(shared.generation.load(Ordering::Acquire), 0);
+        shared.view.lock().unwrap().stage = "recording".into();
+        shared.cancel_dictation();
+        assert_eq!(shared.generation.load(Ordering::Acquire), 1);
     }
 
     #[tokio::test]

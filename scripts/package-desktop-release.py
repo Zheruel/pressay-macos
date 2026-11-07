@@ -122,9 +122,11 @@ def mac_package(output: Path, version: str):
     require(identity.startswith("Developer ID Application:"), "Public Mac artifacts require Developer ID Application signing")
     require(os.environ.get("PRESSAY_NOTARY_PROFILE"), "Public Mac artifacts require a notarytool keychain profile")
     app = one("macos/*.app")
-    run(sys.executable, ROOT / "scripts/sign-desktop-macos.py", app, "--identity", identity)
+    # Installer tooling (pip, dmgbuild) has no need for the updater private key.
+    base = {k: v for k, v in os.environ.items() if not k.startswith("TAURI_SIGNING_")}
+    run(sys.executable, ROOT / "scripts/sign-desktop-macos.py", app, "--identity", identity, env=base)
     dmg = output / f"Pressay-Desktop-{version}-macos-arm64.dmg"
-    environment = os.environ | {"PRESSAY_SKIP_BUILD": "1", "PRESSAY_NOTARIZE": "1", "PRESSAY_DMG_APP": str(app),
+    environment = base | {"PRESSAY_SKIP_BUILD": "1", "PRESSAY_NOTARIZE": "1", "PRESSAY_DMG_APP": str(app),
         "PRESSAY_DMG_VERSION": version, "PRESSAY_DMG_OUTPUT": str(dmg), "SIGNING_IDENTITY": identity}
     run(ROOT / "scripts/package-dmg.sh", env=environment)
     archive = output / f"Pressay-Desktop-{version}-macos-arm64.app.tar.gz"

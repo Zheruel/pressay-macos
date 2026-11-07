@@ -33,11 +33,29 @@ pub fn is_terminal(app: Option<&str>) -> bool {
 }
 
 pub fn uses_english_rules(text: &str, language_hint: Option<&str>) -> bool {
-    if let Some(hint) = language_hint.filter(|hint| !matches!(*hint, "auto" | "")) {
+    if let Some(hint) = language_hint.filter(|hint| !matches!(*hint, "auto" | "Automatic" | "")) {
         return matches!(hint, "en" | "english" | "English");
     }
-    whatlang::detect(text)
-        .is_some_and(|info| info.lang() == whatlang::Lang::Eng && info.confidence() >= 0.8)
+    match whatlang::detect(text) {
+        Some(info) if info.confidence() >= 0.8 => info.lang() == whatlang::Lang::Eng,
+        // Trigram detection is unreliable on dictation-length text, where
+        // NLLanguageRecognizer (Swift) still recognizes English.
+        _ => mostly_english_words(text),
+    }
+}
+
+fn mostly_english_words(text: &str) -> bool {
+    let words: Vec<String> = text
+        .split(|c: char| !c.is_alphabetic())
+        .map(str::to_lowercase)
+        .filter(|w| w.chars().count() > 1 || w == "i" || w == "a")
+        .filter(|w| !matches!(w.trim_end_matches('m').trim_end_matches('h'), "u" | "er"))
+        .collect();
+    let known = words
+        .iter()
+        .filter(|w| english_word(w) || suffix_stem(w))
+        .count();
+    !words.is_empty() && known * 4 >= words.len() * 3
 }
 
 pub fn clean(

@@ -1,7 +1,6 @@
 //! Targeted post-meeting corrections and evidence-backed speaker naming.
 use super::{notes::NotesModel, prompts, AiError, AiService, Connection};
 use crate::vocabulary::Entry;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -57,15 +56,13 @@ fn occurrences(text: &str, phrase: &str) -> Vec<std::ops::Range<usize>> {
     if phrase.is_empty() {
         return vec![];
     }
-    Regex::new(&regex::escape(phrase))
-        .unwrap()
-        .find_iter(text)
-        .filter(|m| {
+    text.match_indices(phrase)
+        .map(|(start, m)| start..start + m.len())
+        .filter(|range| {
             let inside = |c: char| c.is_alphabetic() || c.is_numeric() || c == '\'';
-            !text[..m.start()].chars().next_back().is_some_and(inside)
-                && !text[m.end()..].chars().next().is_some_and(inside)
+            !text[..range.start].chars().next_back().is_some_and(inside)
+                && !text[range.end..].chars().next().is_some_and(inside)
         })
-        .map(|m| m.range())
         .collect()
 }
 /// Invalid or unsupported suggestions are omitted; malformed JSON is a no-op.
@@ -210,5 +207,7 @@ mod tests {
                 .is_empty()
         );
         assert!(parse("not JSON", &lines, &[]).fixes.is_empty());
+        let long = "word ".repeat(100_000);
+        assert_eq!(occurrences(&long, long.trim_end()).len(), 1);
     }
 }

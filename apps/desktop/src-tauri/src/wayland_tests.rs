@@ -46,8 +46,8 @@ async fn respond(
     ))
     .unwrap();
     connection.object_server().at(path.clone(), Request).await?;
-    // Deliberately respond before returning the method handle. This used to
-    // race clients that subscribe only after the method reply.
+    // Respond before returning the method handle: clients must subscribe
+    // before calling, not after the method reply.
     connection
         .emit_signal(
             None::<&str>,

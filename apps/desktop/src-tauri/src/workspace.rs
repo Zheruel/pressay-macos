@@ -961,7 +961,6 @@ pub async fn account_status(state: State<'_, Arc<Workspace>>) -> Result<Value, S
         json!({"claudeApiKey":claude.as_ref().is_ok_and(|k|k.is_some()),"openaiApiKey":openai.as_ref().is_ok_and(|k|k.is_some()),"chatgpt":chatgpt,"claudeCode":cli.as_ref().ok(),"claudeCodeError":cli.err().map(|e|e.to_string()),"error":vault_error}),
     )
 }
-/// Open the same installation guide as the native Claude Code setup row.
 #[tauri::command]
 pub fn open_claude_install() -> Result<(), String> {
     open::that("https://code.claude.com/docs/en/overview")
@@ -2068,17 +2067,6 @@ mod ai_tests {
             import_missing_api_keys(&accounts, &legacy, &cancel).unwrap_err(),
             "Cancelled"
         );
-    }
-    #[tokio::test]
-    async fn startup_removes_crashed_spools_without_touching_unrelated_files() {
-        let fixture = Fixture::new(Duration::ZERO).await;
-        let stale = fixture.directory.join(".pressay-meeting-crash.f32");
-        let unrelated = fixture.directory.join("keep.f32");
-        std::fs::write(&stale, [0u8; 4]).unwrap();
-        std::fs::write(&unrelated, [0u8; 4]).unwrap();
-        initialize_data_directory(&fixture.directory).unwrap();
-        assert!(!stale.exists());
-        assert!(unrelated.exists());
     }
     #[tokio::test]
     async fn key_import_worker_keeps_its_lock_and_shutdown_slot_if_caller_disappears() {

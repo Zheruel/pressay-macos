@@ -82,7 +82,7 @@ function render() {
     );
   $("talk-key").textContent =
     state.shortcut || s.shortcut_label || "Set a talk key";
-  if (!aiSaving) $("cleanup").checked = s.settings.claudeCleanup !== false;
+  if (!aiSaving) $("cleanup").checked = s.settings.claudeCleanup === true;
   $("settings-shortcut").textContent =
     state.platform === "macos" ? "⌘," : "Ctrl+,";
   $("quit-shortcut").textContent = state.platform === "macos" ? "⌘Q" : "Ctrl+Q";

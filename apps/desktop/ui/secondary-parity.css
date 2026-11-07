@@ -474,7 +474,6 @@ body[data-platform="macos"] .connection-segments button[aria-pressed="true"] {
   }
 }
 
-/* Native History keeps a compact search field and full-width record text. */
 .native-history-search {
   flex: 0 0 252px;
   width: 252px;

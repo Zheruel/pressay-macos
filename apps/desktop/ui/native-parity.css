@@ -203,10 +203,10 @@ select {
 #input-device {
   width: auto;
   max-width: 260px;
-  min-width: 124px;
+  min-width: 136px;
 }
 #input-device:has(option[value=""]:checked) {
-  width: 124px;
+  width: 136px;
 }
 #dictation-language,
 #meeting-language {

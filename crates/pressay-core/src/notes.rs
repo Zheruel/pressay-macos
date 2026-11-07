@@ -65,7 +65,7 @@ pub fn timestamp(seconds: f64) -> String {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Note {
     pub id: String,
-    #[serde(default = "meeting_kind")]
+    #[serde(default = "voice_kind")]
     pub kind: String,
     #[serde(default)]
     pub created_at: f64,
@@ -99,8 +99,9 @@ pub struct Note {
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
-fn meeting_kind() -> String {
-    "meeting".into()
+/// Matches the Swift decoder: notes saved without a kind are voice notes.
+fn voice_kind() -> String {
+    "voice".into()
 }
 impl Note {
     pub fn new(kind: &str) -> Self {
@@ -505,6 +506,7 @@ mod tests {
         let v = serde_json::to_value(n).unwrap();
         assert_eq!(v["unknown"]["keep"], true);
         assert_eq!(v["createdAt"], "2026-10-01T12:00:00Z");
+        assert_eq!(v["kind"], "voice", "Swift decodes a missing kind as voice");
     }
     #[test]
     fn slow_ai_cannot_overwrite_manual_edits() {

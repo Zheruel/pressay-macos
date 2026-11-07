@@ -12,6 +12,8 @@ let selectedNote = null,
   exchanges = [],
   askBusy = false;
 const pendingNotes = new Set();
+const writeUpErrors = new Map();
+let accountChecked = false;
 let shortcutDirty = false,
   shortcutSaved = null,
   shortcutCapturing = false,
@@ -684,6 +686,11 @@ function renderHistory(s) {
     if (r.legacy?.managedAudio)
       actions.append(
         act("Listen", async () => {
+          const previous = content.querySelector("audio");
+          if (previous) {
+            URL.revokeObjectURL(previous.src);
+            previous.remove();
+          }
           const base64 = await call("recording", { id: r.id });
           const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
           const url = URL.createObjectURL(
@@ -988,10 +995,14 @@ function renderNotes(s) {
     return;
   }
   if (!n) return;
+  if (!accountChecked) refreshAccount();
   const version = JSON.stringify([
     n,
     noteTab,
     pendingNotes.has(n.id) || current.jobs?.includes(n.id),
+    writeUpErrors.get(n.id),
+    s.settings.notesUseAI,
+    accountInfo && notesProviderAvailable(),
   ]);
   if (version === noteVersion || noteEditing) return;
   noteVersion = version;
@@ -1099,31 +1110,20 @@ function renderNotes(s) {
     if (n.notice) body.append(element("p", n.notice, "notice"));
     const row = element("div", undefined, "row");
     const writing = pendingNotes.has(n.id) || current.jobs?.includes(n.id);
+    const failure = !writing && writeUpErrors.get(n.id);
+    if (failure) {
+      const banner = element("div", undefined, "notice row");
+      banner.append(
+        element("span", failure),
+        button("Try Again", () => writeUp(n, true)),
+      );
+      body.append(banner);
+    }
     row.append(
       button(
         writing ? "Writing up…" : n.body ? "Write Up Again" : "Write Up Notes",
-        async () => {
-          if (writing) return;
-          if (
-            n.edited &&
-            !window.confirm(
-              "Replace your edited notes with a new AI write-up? The transcript and My notes will stay.",
-            )
-          )
-            return;
-          pendingNotes.add(n.id);
-          noteVersion = "";
-          renderNotes(current.view);
-          try {
-            await call("write_note", {
-              id: n.id,
-              replaceEdits: n.edited === true,
-            });
-          } finally {
-            pendingNotes.delete(n.id);
-            noteVersion = "";
-            renderNotes(current.view);
-          }
+        () => {
+          if (!writing) writeUp(n);
         },
         "primary",
       ),
@@ -1145,18 +1145,40 @@ function renderNotes(s) {
             "",
           );
       }
-    } else
+    } else {
+      const building = s.active_note === n.id;
+      const aiOff = s.settings.notesUseAI === false;
+      const noProvider = accountInfo && !notesProviderAvailable();
       markdown.append(
         element(
           "div",
-          s.active_note === n.id
+          building
             ? "Your transcript is building. Notes will be ready after the recording ends."
-            : s.settings.notesUseAI === false
-              ? "AI notes are off. The full transcript is in the Transcript tab."
-              : "This meeting hasn’t been written up yet. The full transcript is in the Transcript tab.",
+            : noProvider
+              ? "Connect an Anthropic API key or a ChatGPT subscription to write a summary, decisions and action items. The full transcript is in the Transcript tab."
+              : aiOff
+                ? "AI notes are off. The full transcript is in the Transcript tab."
+                : "This meeting hasn’t been written up yet. The full transcript is in the Transcript tab.",
           "empty",
         ),
       );
+      if (!building && noProvider) {
+        row.replaceChildren(
+          button("Set Up AI…", () => navigate("ai"), "primary"),
+        );
+      } else if (!building && aiOff) {
+        row.replaceChildren(
+          button(
+            "Turn On AI Notes",
+            async () => {
+              await setting({ notesUseAI: true });
+              writeUp(n);
+            },
+            "primary",
+          ),
+        );
+      }
+    }
     body.append(markdown);
     if (n.actions?.some((a) => a.owner?.toLowerCase() === "me" && !a.done)) {
       menuItems.append(
@@ -1277,8 +1299,8 @@ function renderNotes(s) {
     area.oninput = () => {
       noteEditing = true;
     };
-    body.append(
-      area,
+    const actions = element("div", undefined, "row");
+    actions.append(
       button(
         "Save my notes",
         async () => {
@@ -1290,6 +1312,53 @@ function renderNotes(s) {
         "primary",
       ),
     );
+    if (
+      n.kind === "meeting" &&
+      n.body &&
+      !n.edited &&
+      s.settings.notesUseAI !== false &&
+      notesProviderAvailable()
+    ) {
+      const update = button("Update Summary", async () => {
+        await call("edit_note", { id: n.id, patch: { myNotes: area.value } });
+        noteEditing = false;
+        noteTab = "summary";
+        writeUp(n);
+      });
+      update.hidden = true;
+      area.addEventListener("input", () => {
+        update.hidden = area.value === (n.myNotes || "");
+      });
+      actions.append(update);
+    }
+    body.append(area, actions);
+  }
+}
+function notesProviderAvailable() {
+  return !!(accountInfo?.claudeApiKey || accountInfo?.chatgpt?.signed_in);
+}
+async function writeUp(n, confirmed = false) {
+  if (pendingNotes.has(n.id)) return;
+  if (
+    n.edited &&
+    !confirmed &&
+    !window.confirm(
+      "Replace your edited notes with a new AI write-up? The transcript and My notes will stay.",
+    )
+  )
+    return;
+  pendingNotes.add(n.id);
+  writeUpErrors.delete(n.id);
+  noteVersion = "";
+  renderNotes(current.view);
+  try {
+    await invoke("write_note", { id: n.id, replaceEdits: n.edited === true });
+  } catch (e) {
+    writeUpErrors.set(n.id, String(e));
+  } finally {
+    pendingNotes.delete(n.id);
+    noteVersion = "";
+    renderNotes(current.view);
   }
 }
 function editNoteNames(note) {
@@ -1309,7 +1378,7 @@ function editNoteNames(note) {
     ...(note.lines || []).map((line) => line.voice || 0),
     (note.speakerNames || []).length,
   );
-  for (let i = 0; i < Math.min(4, voiceCount); i++) {
+  for (let i = 0; i < voiceCount; i++) {
     const input = element("input");
     input.value = note.speakerNames?.[i] || "";
     input.placeholder = `Speaker ${i + 1}`;
@@ -1348,6 +1417,12 @@ function editNoteNames(note) {
   participants.focus();
 }
 function renderNotesActions(s) {
+  const version = JSON.stringify([
+    "actions",
+    s.notes.map((note) => [note.id, note.title, note.actions]),
+  ]);
+  if (version === noteVersion) return;
+  noteVersion = version;
   const detail = $("note-detail");
   detail.replaceChildren();
   const toolbar = element("div", undefined, "native-note-toolbar");
@@ -1706,8 +1781,10 @@ async function refreshAccount() {
     } catch {
       accountInfo = null;
     }
+    accountChecked = true;
     renderNotesSettings(current.view.settings);
     renderAsk();
+    renderNotes(current.view);
   })().finally(() => {
     accountRefresh = null;
   });
@@ -1916,6 +1993,23 @@ function setupWorkspace() {
     $("notes-search").focus();
     $("find-meeting").closest("details").open = false;
   };
+  document.addEventListener("pointerdown", (event) => {
+    for (const menu of document.querySelectorAll(
+      "details.notes-menu[open], details.history-row-menu[open], details.history-filter-menu[open]",
+    ))
+      if (!menu.contains(event.target)) menu.open = false;
+  });
+  document.addEventListener("click", (event) => {
+    const item = event.target.closest?.(".notes-menu-items button");
+    if (item) item.closest("details").open = false;
+  });
+  document.addEventListener("keydown", (event) => {
+    const menu = event.target.closest?.("details.notes-menu[open]");
+    if (event.key !== "Escape" || !menu) return;
+    event.preventDefault();
+    menu.open = false;
+    menu.querySelector("summary").focus();
+  });
   $("notes-open-actions").onclick = () => {
     notesActionMode = true;
     selectedNote = null;

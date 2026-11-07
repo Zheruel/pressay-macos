@@ -165,10 +165,10 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
 - (BOOL)handle:(CGEventType)type event:(CGEventRef)event {
     if (event && CGEventGetIntegerValueField(event, kCGEventSourceUserData) == PressaySyntheticInput) return NO;
     if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
-        // A lost key-up is cancellation, never an open-ended recording.
-        self.pressed = NO; self.blockedUntilRelease = YES;
-        [self notify:3 detail:0];
+        // A busy main thread disables the tap; that is not a user cancel, so never
+        // abort in-flight work. Only a key-up lost meanwhile ends the hold.
         if (self.tap) CGEventTapEnable(self.tap, true);
+        if (self.pressed && !keyIsDown(self.key)) { self.pressed = NO; [self notify:2 detail:0]; }
         return NO;
     }
     uint16_t key = (uint16_t)CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
@@ -415,12 +415,76 @@ int pressay_target_process(uint64_t token) {
     @synchronized(PressayFocus.class) { return targets[@(token)].pid; }
 }
 void pressay_release_target(uint64_t token) { @synchronized(PressayFocus.class) { [targets removeObjectForKey:@(token)]; } }
+static NSObject *pasteLock;
+static NSArray<NSDictionary<NSPasteboardType, NSData *> *> *pendingSnapshot;
+static NSInteger pendingChangeCount;
+static NSUInteger restoreGeneration;
+static NSArray<NSDictionary<NSPasteboardType, NSData *> *> *snapshotPasteboard(NSPasteboard *pasteboard) {
+    NSMutableArray *items = [NSMutableArray array];
+    for (NSPasteboardItem *item in pasteboard.pasteboardItems ?: @[]) {
+        NSMutableDictionary *values = [NSMutableDictionary dictionary];
+        for (NSPasteboardType type in item.types) { NSData *data = [item dataForType:type]; if (data) values[type] = data; }
+        [items addObject:values];
+    }
+    return items;
+}
+static void restorePasteboard(NSPasteboard *pasteboard, NSArray<NSDictionary<NSPasteboardType, NSData *> *> *items) {
+    [pasteboard clearContents];
+    NSMutableArray *restored = [NSMutableArray array];
+    for (NSDictionary<NSPasteboardType, NSData *> *values in items) {
+        NSPasteboardItem *item = [NSPasteboardItem new];
+        for (NSPasteboardType type in values) [item setData:values[type] forType:type];
+        [restored addObject:item];
+    }
+    if (restored.count) [pasteboard writeObjects:restored];
+}
+// Web/Electron editors can accept an AXSelectedText write while ignoring it, and
+// Electron drops events posted to its main process. Cmd-V through the HID tap
+// reaches the focused renderer; the user's clipboard is restored afterwards.
+static BOOL pasteText(NSString *text) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ pasteLock = [NSObject new]; });
+    NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
+    @synchronized(pasteLock) {
+        // A second insertion before the restore must keep the user's original clipboard.
+        NSArray *snapshot = pendingSnapshot && pendingChangeCount == pasteboard.changeCount ? pendingSnapshot : snapshotPasteboard(pasteboard);
+        CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
+        CGEventRef down = source ? CGEventCreateKeyboardEvent(source, 9, true) : NULL, up = source ? CGEventCreateKeyboardEvent(source, 9, false) : NULL;
+        BOOL ready = down && up;
+        if (ready) {
+            [pasteboard clearContents];
+            ready = [pasteboard setString:text forType:NSPasteboardTypeString];
+            if (!ready) restorePasteboard(pasteboard, snapshot);
+        }
+        if (ready) {
+            CGEventSourceSetUserData(source, PressaySyntheticInput);
+            CGEventSetFlags(down, kCGEventFlagMaskCommand); CGEventSetFlags(up, kCGEventFlagMaskCommand);
+            CGEventPost(kCGHIDEventTap, down); CGEventPost(kCGHIDEventTap, up);
+            NSInteger inserted = pasteboard.changeCount;
+            NSUInteger generation = ++restoreGeneration;
+            pendingSnapshot = snapshot; pendingChangeCount = inserted;
+            // Electron/content-editable clients may read the pasteboard asynchronously.
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                @synchronized(pasteLock) {
+                    if (generation != restoreGeneration) return;
+                    if (pasteboard.changeCount == inserted) restorePasteboard(pasteboard, snapshot);
+                    pendingSnapshot = nil;
+                }
+            });
+        }
+        if (down) CFRelease(down);
+        if (up) CFRelease(up);
+        if (source) CFRelease(source);
+        return ready;
+    }
+}
 int pressay_insert_text(const char *utf8, uint64_t token) {
     @autoreleasepool {
         PressayFocus *target = checkedTarget(token, YES);
         if (!target) return 1;
         NSString *text = utf8 ? [NSString stringWithUTF8String:utf8] : nil;
         if (!text || text.length == 0 || text.length > 65536) return 2;
+        if (pasteText(text)) return 0;
         Boolean settable = false;
         if (AXUIElementIsAttributeSettable(target.element, kAXSelectedTextAttribute, &settable) == kAXErrorSuccess && settable
             && AXUIElementSetAttributeValue(target.element, kAXSelectedTextAttribute, (__bridge CFStringRef)text) == kAXErrorSuccess) return 0;

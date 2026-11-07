@@ -295,7 +295,7 @@ impl ChatGptAccount {
                     id,
                     &issued,
                     Some(attempt.nonce.expose()),
-                    registration.as_ref().and_then(|r| r.subject.as_deref()),
+                    previous.as_ref().map(|c| c.subject.as_str()),
                 )
                 .await?;
             let credentials = Credentials {
@@ -428,10 +428,16 @@ impl ChatGptAccount {
             session.credentials = None;
             return Err(AiError::PlanNotGranted);
         }
+        // The server has already rotated the refresh token. An unverifiable ID
+        // token (or a failed JWKS fetch) must not discard it; keep the old hint.
         if let Some(id) = token.get("id_token").and_then(Value::as_str) {
-            self.verify_identity(id, &current.client_id, None, Some(&current.subject))
-                .await?;
-            refreshed.id_token = id.into();
+            if self
+                .verify_identity(id, &current.client_id, None, Some(&current.subject))
+                .await
+                .is_ok()
+            {
+                refreshed.id_token = id.into();
+            }
         }
         refreshed.expires_at = expiry(&token)?;
         if self.generation.load(Ordering::Acquire) != generation {
@@ -521,9 +527,16 @@ impl ChatGptAccount {
             .await
             .map_err(|_| AiError::Transport)?;
         let status = response.status().as_u16();
-        let value = bounded_json(response).await?;
+        let value = bounded_json(response).await;
         if status != 200 {
-            let code = value.get("error").and_then(Value::as_str).unwrap_or("");
+            // Gateways return HTML for 5xx; report the status, not a bad credential.
+            let value = value.unwrap_or(Value::Null);
+            // Both OAuth `{"error":"code"}` and `{"error":{"code":"code"}}` occur.
+            let code = value
+                .get("error")
+                .and_then(Value::as_str)
+                .or_else(|| value.pointer("/error/code").and_then(Value::as_str))
+                .unwrap_or("");
             if (400..=401).contains(&status)
                 && [
                     "invalid_grant",
@@ -539,7 +552,7 @@ impl ChatGptAccount {
             }
             return Err(AiError::Http(status));
         }
-        Ok(value)
+        value
     }
     async fn verify_identity(
         &self,

@@ -133,17 +133,14 @@ pub fn list_input_options() -> Result<Vec<InputDevice>, String> {
     let mut devices = cpal::default_host()
         .input_devices()
         .map_err(|error| format!("Could not list microphones: {error}"))?
-        .map(|device| {
-            Ok(InputDevice {
-                id: format!("cpal:{}", device.id().map_err(|e| e.to_string())?),
-                name: device
-                    .description()
-                    .map_err(|e| e.to_string())?
-                    .name()
-                    .to_owned(),
+        // A device that cannot describe itself must not hide every other microphone.
+        .filter_map(|device| {
+            Some(InputDevice {
+                id: format!("cpal:{}", device.id().ok()?),
+                name: device.description().ok()?.name().to_owned(),
             })
         })
-        .collect::<Result<Vec<_>, String>>()?;
+        .collect::<Vec<_>>();
     devices.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
     devices.dedup_by(|a, b| a.id == b.id);
     Ok(devices)

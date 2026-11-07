@@ -381,12 +381,14 @@ fn main() {
                 use shortcuts::Event;
                 match event {
                     Event::Pressed => {
-                        let _ = callback_shared.send(Command::Start);
+                        if let Err(error) = callback_shared.send(Command::Start) {
+                            engine::reject_start(&callback_app, &callback_shared, error);
+                        }
                     }
                     Event::Released => {
                         let _ = callback_shared.send(Command::Stop);
                     }
-                    Event::Cancel | Event::Suspended => callback_shared.cancel(),
+                    Event::Cancel | Event::Suspended => callback_shared.cancel_dictation(),
                     Event::Availability {
                         available,
                         trigger,

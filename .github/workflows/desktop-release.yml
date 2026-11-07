@@ -44,8 +44,6 @@ jobs:
       id-token: write # Azure Artifact Signing uses OIDC, not an exported certificate.
     env:
       PRESSAY_UPDATE_PUBLIC_KEY: ${{ vars.PRESSAY_UPDATE_PUBLIC_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       PRESSAY_AZURE_SIGNING_ENDPOINT: ${{ vars.PRESSAY_AZURE_SIGNING_ENDPOINT }}
       PRESSAY_AZURE_SIGNING_ACCOUNT: ${{ vars.PRESSAY_AZURE_SIGNING_ACCOUNT }}
@@ -69,6 +67,9 @@ jobs:
           rustup default stable
       - name: Verify updater signing key before building
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: python scripts/package-desktop-release.py preflight --output .build/desktop-release-config.json
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
@@ -160,6 +161,9 @@ jobs:
         run: node node_modules/@tauri-apps/cli/tauri.js bundle --ci --bundles "$BUNDLES" --config ../../.build/desktop-release-config.json
       - name: Notarize Mac installer and sign final updater artifacts
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: python scripts/package-desktop-release.py package --tag "$RELEASE_TAG" --output .build/desktop-release
       - uses: actions/upload-artifact@v6
         with:

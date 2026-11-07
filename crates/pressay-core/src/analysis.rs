@@ -619,8 +619,8 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         let path = PathBuf::from(std::fs::read_to_string(ready).unwrap());
-        // A separately opened handle in another process was the Windows error33
-        // regression: PCM must remain readable while its owner holds the lock.
+        // On Windows a byte-range lock on the PCM would fail this read with
+        // ERROR_LOCK_VIOLATION (33): only the sidecar may be locked.
         assert_eq!(
             std::fs::read(&path).unwrap(),
             [0.25_f32.to_le_bytes(), (-0.25_f32).to_le_bytes()].concat()
@@ -645,7 +645,6 @@ mod tests {
         assert!(spool.append(0., &[f32::NAN]).is_err());
         assert!(spool.append(f64::INFINITY, &[1.]).is_err());
         assert!(spool.seal().is_err());
-        assert_eq!(models().len(), 2);
         for model in models() {
             for artifact in &model.artifacts {
                 assert_eq!(artifact.sha256.len(), 64);

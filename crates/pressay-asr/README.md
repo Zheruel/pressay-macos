@@ -8,13 +8,13 @@ recognition library into the UI process or require Python.
 The parent must serialize requests, impose deadlines, kill the child when a job
 is cancelled, and reap it before replacing a model. The worker validates the
 request envelope, 16 kHz mono little-endian PCM, finite samples, and a 60-second
-maximum. A `truncated: true` reply requires splitting/retrying; it is not success
+maximum (300 seconds for `whisperTurboGGML`). A `truncated: true` reply requires splitting/retrying; it is not success
 with a shorter transcript. Model preparation reports `ready` only after loading
 and a one-second silent warm-up have succeeded. Native diagnostics go to stderr.
 
 | Model | Runtime location below the supplied directory | Platforms |
 | --- | --- | --- |
-| `moss`, `parakeetUltra`, `qwen3ASR17` | `transcribe/libtranscribe.dylib`, `transcribe/transcribe.dll`, or `transcribe/libtranscribe.so` | macOS, Windows, Linux |
+| `moss`, `parakeetUltra`, `qwen3ASR17`, `qwen3ASR06`, `funASRMLTNano`, `whisperTurboGGML`, `voxtralMini` | `transcribe/libtranscribe.dylib`, `transcribe/transcribe.dll`, or `transcribe/libtranscribe.so` | macOS, Windows, Linux |
 | `orukeet` | `orukeet/lib/libnemo_speech_asr_c.dylib` | Apple Silicon macOS |
 | `megaASR` | Use the existing Swift worker | Apple Silicon macOS |
 

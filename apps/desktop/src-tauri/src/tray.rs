@@ -189,7 +189,7 @@ fn fallback_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             "tray-ai",
             "AI Cleanup",
             true,
-            view.settings["claudeCleanup"].as_bool().unwrap_or(true),
+            view.settings["claudeCleanup"].as_bool().unwrap_or(false),
             None::<&str>,
         )?)?;
         menu.append(&PredefinedMenuItem::separator(app)?)?;
@@ -269,7 +269,7 @@ fn menu_action(app: &AppHandle, id: &str) {
                     let enabled = app.state::<Arc<Shared>>().view.lock().unwrap().settings
                         ["claudeCleanup"]
                         .as_bool()
-                        .unwrap_or(true);
+                        .unwrap_or(false);
                     crate::save_settings(
                         serde_json::json!({"claudeCleanup": !enabled}),
                         app.state(),
