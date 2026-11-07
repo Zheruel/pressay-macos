@@ -75,7 +75,7 @@ function navigate(page) {
     b.setAttribute("aria-current", b.dataset.page === page ? "page" : "false");
   });
   if (changed) document.querySelector("main").scrollTop = 0;
-  if (page !== "meetings") $("ask-dialog").close();
+  if (page !== "meetings") window.pressayAsk?.close();
 }
 document
   .querySelectorAll("[data-page]")

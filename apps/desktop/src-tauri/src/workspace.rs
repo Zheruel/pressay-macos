@@ -825,28 +825,184 @@ async fn write_up_inner(
     store.put_note(&current).map_err(|e| e.to_string())?;
     Ok(())
 }
-fn relevant_meetings(mut notes: Vec<Note>, question: &str, history: &[Exchange]) -> Vec<Note> {
-    let context = std::iter::once(question)
-        .chain(history.iter().map(|e| e.question.as_str()))
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase();
-    let words = context
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| w.chars().count() > 3)
-        .collect::<Vec<_>>();
-    notes.retain(|n| n.kind == "meeting" && !n.transcript().trim().is_empty());
-    let hits = |n: &Note| {
-        let text = format!("{} {} {}", n.title, n.body, n.my_notes).to_lowercase();
-        words.iter().filter(|w| text.contains(**w)).count()
+/// A date range named in the question ("yesterday", "last week", "on Monday",
+/// "in October"), as local-time Unix seconds. The latest mention wins.
+fn question_dates(text: &str, now: chrono::DateTime<chrono::Local>) -> Option<(f64, f64)> {
+    use chrono::{Datelike, Duration, NaiveDate, TimeZone};
+    let text = text.to_lowercase();
+    let today = now.date_naive();
+    let start_of = |d: NaiveDate| {
+        chrono::Local
+            .from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
+            .earliest()
+            .map(|t| t.timestamp() as f64)
+            .unwrap_or(0.)
     };
-    notes.sort_by(|a, b| {
-        hits(b)
-            .cmp(&hits(a))
-            .then_with(|| b.created_at.total_cmp(&a.created_at))
+    let span = |from: NaiveDate, days: i64| (start_of(from), start_of(from + Duration::days(days)));
+    let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+    let has = |phrase: &str| {
+        text.match_indices(phrase).any(|(i, _)| {
+            let before = text[..i].chars().last();
+            let after = text[i + phrase.len()..].chars().next();
+            !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+        })
+    };
+    if has("today") || has("this morning") || has("this afternoon") {
+        return Some(span(today, 1));
+    }
+    if has("yesterday") {
+        return Some(span(today - Duration::days(1), 1));
+    }
+    if has("last week") || has("previous week") {
+        return Some(span(monday - Duration::days(7), 7));
+    }
+    if has("this week") {
+        return Some(span(monday, 7));
+    }
+    if has("last month") {
+        let first = today.with_day(1).unwrap();
+        let previous = (first - Duration::days(1)).with_day(1).unwrap();
+        return Some((start_of(previous), start_of(first)));
+    }
+    if has("this month") {
+        let first = today.with_day(1).unwrap();
+        return Some((start_of(first), start_of(today + Duration::days(1))));
+    }
+    const DAYS: [&str; 7] = [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    ];
+    for (index, day) in DAYS.iter().enumerate() {
+        if has(day) {
+            let back = (today.weekday().num_days_from_monday() as i64 - index as i64).rem_euclid(7);
+            return Some(span(today - Duration::days(back), 1));
+        }
+    }
+    const MONTHS: [&str; 12] = [
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+    ];
+    for (index, month) in MONTHS.iter().enumerate() {
+        // "may" is too common a word to read as a month on its own.
+        if (*month != "may" && has(month)) || has(&format!("in {month}")) {
+            let number = index as u32 + 1;
+            let year = if number > today.month() {
+                today.year() - 1
+            } else {
+                today.year()
+            };
+            let first = NaiveDate::from_ymd_opt(year, number, 1)?;
+            let next = if number == 12 {
+                NaiveDate::from_ymd_opt(year + 1, 1, 1)?
+            } else {
+                NaiveDate::from_ymd_opt(year, number + 1, 1)?
+            };
+            return Some((start_of(first), start_of(next)));
+        }
+    }
+    None
+}
+fn note_people(note: &Note) -> String {
+    let mut people: Vec<String> = note.participants.clone();
+    for name in &note.speaker_names {
+        if !name.trim().is_empty() && !people.contains(name) {
+            people.push(name.clone());
+        }
+    }
+    people.join(", ")
+}
+/// Picks the meetings an all-meetings question should read: those in a date
+/// range the question names, ranked by how many of its words they mention
+/// (titles and names count most, then notes, then the transcript), newest
+/// first on ties.
+fn relevant_meetings(mut notes: Vec<Note>, question: &str, history: &[Exchange]) -> Vec<Note> {
+    use pressay_core::ai::notes::{search_terms, term_hits};
+    notes.retain(|n| {
+        matches!(n.kind.as_str(), "meeting" | "voice")
+            && (!n.transcript().trim().is_empty() || !n.body.trim().is_empty())
     });
-    notes.truncate(40);
-    notes
+    if let Some((from, to)) = question_dates(question, chrono::Local::now()) {
+        let dated: Vec<Note> = notes
+            .iter()
+            .filter(|n| n.created_at >= from && n.created_at < to)
+            .cloned()
+            .collect();
+        if !dated.is_empty() {
+            notes = dated;
+        }
+    }
+    let terms = search_terms(
+        &std::iter::once(question)
+            .chain(history.iter().map(|e| e.question.as_str()))
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
+    let mut scored: Vec<(usize, Note)> = notes
+        .into_iter()
+        .map(|n| {
+            let score = 3 * term_hits(&format!("{} {}", n.title, note_people(&n)), &terms)
+                + 2 * term_hits(&format!("{} {}", n.body, n.my_notes), &terms)
+                + term_hits(&n.transcript(), &terms);
+            (score, n)
+        })
+        .collect();
+    scored.sort_by(|(a, x), (b, y)| b.cmp(a).then_with(|| y.created_at.total_cmp(&x.created_at)));
+    scored.truncate(25);
+    scored.into_iter().map(|(_, n)| n).collect()
+}
+#[derive(serde::Serialize, Debug)]
+pub struct AskSource {
+    n: usize,
+    id: String,
+    title: String,
+    created_at: f64,
+}
+#[derive(serde::Serialize, Debug)]
+pub struct AskReply {
+    text: String,
+    sources: Vec<AskSource>,
+}
+/// The meetings an answer cites as [n], in the order it first cites them.
+fn cited_sources(text: &str, notes: &[Note]) -> Vec<AskSource> {
+    let mut seen = vec![];
+    let mut rest = text;
+    while let Some(open) = rest.find('[') {
+        rest = &rest[open + 1..];
+        let Some(close) = rest.find(']') else { break };
+        for part in rest[..close].split(',') {
+            if let Ok(n) = part.trim().parse::<usize>() {
+                if n >= 1 && n <= notes.len() && !seen.contains(&n) {
+                    seen.push(n);
+                }
+            }
+        }
+    }
+    seen.into_iter()
+        .map(|n| {
+            let note = &notes[n - 1];
+            AskSource {
+                n,
+                id: note.id.clone(),
+                title: note.title.clone(),
+                created_at: note.created_at,
+            }
+        })
+        .collect()
 }
 #[tauri::command]
 pub async fn ask_notes(
@@ -854,7 +1010,7 @@ pub async fn ask_notes(
     ids: Vec<String>,
     history: Vec<Exchange>,
     state: State<'_, Arc<Workspace>>,
-) -> Result<String, String> {
+) -> Result<AskReply, String> {
     ask_inner(question, ids, history, &state).await
 }
 async fn ask_inner(
@@ -862,7 +1018,7 @@ async fn ask_inner(
     ids: Vec<String>,
     history: Vec<Exchange>,
     state: &Workspace,
-) -> Result<String, String> {
+) -> Result<AskReply, String> {
     if question.trim().is_empty() {
         return Err("Enter a question".into());
     }
@@ -902,7 +1058,10 @@ async fn ask_inner(
     };
     check_notes_enabled(&settings)?;
     if notes.is_empty() {
-        return Ok("There are no meetings to search yet.".into());
+        return Ok(AskReply {
+            text: "There are no meetings to search yet.".into(),
+            sources: vec![],
+        });
     }
     let (model, connection) = model_config(&settings, &state.ai, token).await?;
     ensure_ai_current(state, &settings, token)?;
@@ -916,6 +1075,7 @@ async fn ask_inner(
                 title: n.title.clone(),
                 date: date.format("%Y-%m-%d").to_string(),
                 time: date.format("%H:%M").to_string(),
+                people: note_people(n),
                 notes: n.body.clone(),
                 my_notes: n.my_notes.clone(),
                 transcript: n.transcript(),
@@ -937,13 +1097,17 @@ async fn ask_inner(
     // A deleted meeting must not reappear through a late answer.
     {
         let store = state.store.lock().unwrap();
-        for note in notes {
+        for note in &notes {
             store
                 .note(&note.id)
                 .map_err(|_| "A meeting in this question was deleted".to_string())?;
         }
     }
-    Ok(answer.text)
+    let sources = cited_sources(&answer.text, &notes);
+    Ok(AskReply {
+        text: answer.text,
+        sources,
+    })
 }
 #[tauri::command]
 pub async fn account_status(state: State<'_, Arc<Workspace>>) -> Result<Value, String> {
@@ -1883,7 +2047,8 @@ mod ai_tests {
                 &fixture.workspace
             )
             .await
-            .unwrap(),
+            .unwrap()
+            .text,
             "Ana owns the project."
         );
         assert_eq!(fixture.requests.lock().unwrap().len(), 1);
@@ -1900,6 +2065,71 @@ mod ai_tests {
         fixture.workspace.cancel_note_jobs();
         assert!(task.await.unwrap().is_err());
         assert!(fixture.workspace.jobs.lock().unwrap().is_empty());
+    }
+    #[test]
+    fn ask_reads_dates_from_the_question() {
+        use chrono::TimeZone;
+        // Friday 6 November 2026, 15:00 local time.
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 11, 6, 15, 0, 0)
+            .unwrap();
+        let day = |y, m, d| {
+            chrono::Local
+                .with_ymd_and_hms(y, m, d, 0, 0, 0)
+                .unwrap()
+                .timestamp() as f64
+        };
+        assert_eq!(
+            question_dates("what happened today?", now),
+            Some((day(2026, 11, 6), day(2026, 11, 7)))
+        );
+        assert_eq!(
+            question_dates("Yesterday's call", now),
+            Some((day(2026, 11, 5), day(2026, 11, 6)))
+        );
+        assert_eq!(
+            question_dates("recap last week", now),
+            Some((day(2026, 10, 26), day(2026, 11, 2)))
+        );
+        assert_eq!(
+            question_dates("on Monday", now),
+            Some((day(2026, 11, 2), day(2026, 11, 3)))
+        );
+        assert_eq!(
+            question_dates("in October", now),
+            Some((day(2026, 10, 1), day(2026, 11, 1)))
+        );
+        assert_eq!(
+            question_dates("in December", now),
+            Some((day(2025, 12, 1), day(2026, 1, 1)))
+        );
+        assert_eq!(question_dates("you may want to check", now), None);
+        assert_eq!(question_dates("what did Sam promise?", now), None);
+    }
+    #[test]
+    fn ask_ranks_meetings_by_question_and_cites_sources() {
+        let make = |title: &str, body: &str, kind: &str, at: f64| {
+            let mut n = Note::new(kind);
+            n.title = title.into();
+            n.body = body.into();
+            n.created_at = at;
+            n
+        };
+        let notes = vec![
+            make("Standup", "Nothing about money.", "meeting", 300.),
+            make("Pricing review", "Prices go up in March.", "meeting", 100.),
+            make("Voice memo", "Remember the pricing deck.", "voice", 200.),
+            make("Empty", "", "meeting", 400.),
+        ];
+        let picked = relevant_meetings(notes, "What did we decide on pricing?", &[]);
+        let titles: Vec<_> = picked.iter().map(|n| n.title.as_str()).collect();
+        assert_eq!(titles, ["Pricing review", "Voice memo", "Standup"]);
+        let sources = cited_sources(
+            "Prices rise in March [2]. Also see [1, 2] and [9].",
+            &picked,
+        );
+        let cited: Vec<_> = sources.iter().map(|s| (s.n, s.title.as_str())).collect();
+        assert_eq!(cited, [(2, "Voice memo"), (1, "Pricing review")]);
     }
     #[test]
     fn review_preserves_manual_speaker_names_and_adds_only_new_names() {

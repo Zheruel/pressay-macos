@@ -3,6 +3,8 @@ pub const CLEANUP: &str = include_str!("prompts/cleanup.txt");
 pub const MEETING: &str = include_str!("prompts/meeting.txt");
 pub const USER_NOTES: &str = include_str!("prompts/user-notes.txt");
 pub const ASK: &str = include_str!("prompts/ask.txt");
+/// Desktop-only rules added after the shared Ask prompt.
+pub const ASK_CITATIONS: &str = include_str!("prompts/ask_citations.txt");
 pub fn vocabulary_block(entries: &[Entry]) -> String {
     let mut ordered: Vec<(String, Vec<String>)> = vec![];
     for entry in entries {

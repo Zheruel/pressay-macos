@@ -7,10 +7,7 @@ let selectedNote = null,
   historyEditing = null,
   notesKey = "",
   workspaceReady = false,
-  accountInfo = null,
-  askIds = [],
-  exchanges = [],
-  askBusy = false;
+  accountInfo = null;
 const pendingNotes = new Set();
 const writeUpErrors = new Map();
 let accountChecked = false;
@@ -1052,15 +1049,21 @@ function renderNotes(s) {
   $("notes-placeholder-text").textContent = s.notes.length
     ? "Its summary and transcript open here."
     : "Start Notetaker for a call or an in-person meeting. Your notes appear here.";
-  $("ask-all").hidden =
-    recording ||
-    !s.notes.some((note) => note.lines?.length || note.plainTranscript) ||
-    $("ask-dialog").open;
-  $("ask-all").title = n ? "Ask about this meeting" : "Ask about your meetings";
-  $("ask-all").onclick = () => openAsk(n ? [n.id] : []);
-  if (!recording) setAskContext(n?.id || null);
+  window.pressayAsk.sync({
+    meeting: recording ? null : n,
+    recording,
+    hasNotes: s.notes.some(
+      (note) => note.lines?.length || note.plainTranscript || note.body,
+    ),
+    // Until the first account check finishes, assume Ask works rather than
+    // flashing a setup prompt.
+    canAsk:
+      s.settings.notesUseAI !== false &&
+      (!accountChecked || notesProviderAvailable()),
+  });
+  if (!accountChecked && !document.querySelector('[data-panel="meetings"]').hidden)
+    refreshAccount();
   if (recording) {
-    $("ask-dialog").close();
     $("meeting-title").textContent = n?.title || "Preparing meeting";
     const finishing = ["meeting_finishing", "meeting_speakers"].includes(
       s.stage,
@@ -1742,7 +1745,6 @@ function renderWorkspace(s) {
   syncShortcut(s.settings);
   syncPreferences(s.settings);
   renderGeneralSettings(s);
-  if ($("ask-dialog").open) renderAsk();
 }
 function setting(patch) {
   return call("save_settings", { patch });
@@ -1975,144 +1977,11 @@ async function refreshAccount() {
     }
     accountChecked = true;
     renderNotesSettings(current.view.settings);
-    renderAsk();
     renderNotes(current.view);
   })().finally(() => {
     accountRefresh = null;
   });
   return accountRefresh;
-}
-let askContext = null,
-  askAcrossMeetings = false,
-  askEpoch = 0,
-  askInteraction = 0;
-function resetAsk() {
-  ++askEpoch;
-  if (askBusy) invoke("cancel_note_job", { id: "ask" }).catch(() => {});
-  exchanges = [];
-  $("ask-conversation").replaceChildren();
-  $("ask-question").value = "";
-  renderAsk();
-}
-function setAskContext(id) {
-  if (askContext === id) return;
-  askContext = id;
-  if (!askAcrossMeetings) {
-    askIds = id ? [id] : [];
-    resetAsk();
-  }
-}
-function openAsk(ids) {
-  setAskContext(ids.length === 1 ? ids[0] : null);
-  askIds = askAcrossMeetings || !askContext ? [] : [askContext];
-  if (!$("ask-dialog").open) $("ask-dialog").show();
-  $("ask-all").hidden = true;
-  renderAsk();
-  const epoch = askEpoch,
-    interaction = askInteraction;
-  refreshAccount().then(() => {
-    renderAsk();
-    if (
-      $("ask-dialog").open &&
-      epoch === askEpoch &&
-      interaction === askInteraction &&
-      !$("ask-question").disabled
-    )
-      $("ask-question").focus();
-  });
-  if (!$("ask-question").disabled) $("ask-question").focus();
-}
-function renderAsk() {
-  const available = !!(
-    current?.view.settings.notesUseAI !== false &&
-    (accountInfo?.claudeApiKey || accountInfo?.chatgpt?.signed_in)
-  );
-  $("ask-title").textContent = askIds.length ? "This meeting" : "All meetings";
-  $("ask-scope").hidden = !askContext;
-  $("ask-title").hidden = !!askContext;
-  for (const button of document.querySelectorAll("[data-ask-scope]"))
-    button.setAttribute(
-      "aria-pressed",
-      String((button.dataset.askScope === "all") === askAcrossMeetings),
-    );
-  $("ask-new-chat").disabled = !$("ask-conversation").children.length;
-  $("ask-question").disabled = !available;
-  $("ask-question").placeholder = !available
-    ? current?.view.settings.notesUseAI === false
-      ? "AI is off in Notetaker settings"
-      : "Set up AI in Settings to ask"
-    : exchanges.length
-      ? "Ask a follow-up"
-      : "Ask a question";
-  $("submit-ask").disabled =
-    !available || askBusy || !$("ask-question").value.trim();
-  $("cancel-ask").hidden = !askBusy;
-  const suggestions = $("ask-suggestions");
-  const key = JSON.stringify([askIds, available, askBusy]);
-  suggestions.hidden = $("ask-conversation").children.length > 0;
-  if (suggestions.dataset.key !== key) {
-    suggestions.dataset.key = key;
-    suggestions.replaceChildren(
-      element(
-        "p",
-        askIds.length
-          ? "Ask anything about this meeting."
-          : "Ask anything across your meetings.",
-      ),
-    );
-    for (const prompt of askIds.length
-      ? [
-          "What did we decide?",
-          "What do I need to do?",
-          "Write a follow-up email",
-        ]
-      : [
-          "What do I owe people?",
-          "Summarize this week’s meetings",
-          "What’s still unresolved?",
-        ]) {
-      const suggestion = button(prompt, () => sendAsk(prompt));
-      suggestion.disabled = !available || askBusy;
-      suggestions.append(suggestion);
-    }
-  }
-}
-async function sendAsk(question) {
-  question = question.trim();
-  if (askBusy || !question || $("ask-question").disabled) return;
-  const epoch = askEpoch;
-  askBusy = true;
-  $("ask-question").value = "";
-  $("ask-conversation").append(element("p", question, "question"));
-  const response = element(
-    "div",
-    "Reading your meetings…",
-    "answer markdown pending",
-  );
-  response.setAttribute("role", "status");
-  $("ask-conversation").append(response);
-  renderAsk();
-  response.scrollIntoView({ block: "nearest" });
-  try {
-    const answer = await invoke("ask_notes", {
-      question,
-      ids: [...askIds],
-      history: exchanges.slice(-20),
-    });
-    if (epoch !== askEpoch) return;
-    response.classList.remove("pending");
-    renderMarkdown(answer, response);
-    exchanges.push({ question, answer });
-  } catch (error) {
-    if (epoch !== askEpoch) return;
-    response.classList.remove("pending");
-    response.classList.add("is-error");
-    response.textContent = String(error);
-  } finally {
-    askBusy = false;
-    renderAsk();
-    if (epoch === askEpoch && $("ask-dialog").open) $("ask-question").focus();
-  }
 }
 function setupWorkspace() {
   workspaceReady = true;
@@ -2554,39 +2423,8 @@ function setupWorkspace() {
         await call("install_update");
     } catch {}
   };
-  $("ask-all").onclick = () => openAsk([]);
-  $("close-ask").onclick = () => $("ask-dialog").close();
-  $("ask-dialog").addEventListener("close", () => renderNotes(current.view));
-  $("ask-dialog").addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      $("ask-dialog").close();
-    }
-  });
-  document.addEventListener("pointerdown", () => ++askInteraction, true);
-  document.addEventListener("keydown", () => ++askInteraction, true);
-  $("ask-new-chat").onclick = resetAsk;
-  $("ask-question").oninput = renderAsk;
-  $("ask-question").onkeydown = (event) => {
-    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-      event.preventDefault();
-      sendAsk($("ask-question").value);
-    }
-  };
-  for (const button of document.querySelectorAll("[data-ask-scope]"))
-    button.onclick = () => {
-      const across = button.dataset.askScope === "all";
-      if (across === askAcrossMeetings) return;
-      askAcrossMeetings = across;
-      askIds = across || !askContext ? [] : [askContext];
-      resetAsk();
-    };
-  $("cancel-ask").onclick = () =>
-    invoke("cancel_note_job", { id: "ask" }).catch(() => {});
-  $("ask-form").onsubmit = (event) => {
-    event.preventDefault();
-    sendAsk($("ask-question").value);
-  };
+  window.pressayAsk.setup();
+
   document.addEventListener("keydown", (event) => {
     if (
       !(current.platform === "macos" ? event.metaKey : event.ctrlKey) ||
@@ -2598,9 +2436,9 @@ function setupWorkspace() {
       openSettings();
     }
     if (document.querySelector('[data-panel="meetings"]').hidden) return;
-    if (event.key.toLowerCase() === "j" && !$("ask-all").hidden) {
+    if (event.key.toLowerCase() === "j") {
       event.preventDefault();
-      $("ask-all").click();
+      window.pressayAsk.toggle();
     }
     if (
       event.key === "Enter" &&

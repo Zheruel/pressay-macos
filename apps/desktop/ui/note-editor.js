@@ -247,6 +247,12 @@
     return false;
   }
 
+  // Read-only Markdown rendering for chat answers, using the same rules.
+  window.renderNoteMarkdown = function (source, root) {
+    toDom(source, root);
+    for (const box of root.querySelectorAll("input[type=checkbox]")) box.disabled = true;
+  };
+
   window.createNoteEditor = function ({
     value = "",
     placeholder = "",
