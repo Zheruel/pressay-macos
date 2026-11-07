@@ -596,7 +596,10 @@ function historyIcon(kind) {
 const historyIndex = new Map();
 const HISTORY_PAGE = 100;
 let historyLimit = HISTORY_PAGE,
-  historyQuery = "";
+  historyQuery = "",
+  // What the list shows. It only follows the field after the debounce, so
+  // the background status refresh can't apply a half-typed query early.
+  appliedHistoryQuery = "";
 function foldText(text) {
   return text
     .normalize("NFD")
@@ -645,6 +648,7 @@ function highlightInto(container, text, tokens) {
 }
 function setHistoryQuery(value) {
   $("history-search").value = value;
+  appliedHistoryQuery = value.trim();
   historyLimit = HISTORY_PAGE;
   renderHistory(current.view);
 }
@@ -655,7 +659,7 @@ function renderHistory(s) {
   )
     return;
   historyEditing = null;
-  const query = $("history-search").value.trim();
+  const query = appliedHistoryQuery;
   if (query !== historyQuery) {
     historyQuery = query;
     historyLimit = HISTORY_PAGE;
@@ -2154,19 +2158,30 @@ function setupWorkspace() {
       return;
     await call("clear_history").catch(() => {});
   };
-  let searchFrame = 0;
+  // Wait for a short pause in typing before searching; clearing the field
+  // and pressing Enter apply at once.
+  let searchTimer = 0;
+  const runSearch = () => {
+    clearTimeout(searchTimer);
+    appliedHistoryQuery = $("history-search").value.trim();
+    historyLimit = HISTORY_PAGE;
+    renderHistory(current.view);
+    document.querySelector("main").scrollTop = 0;
+  };
   $("history-search").addEventListener("input", () => {
-    // One render per frame, however fast the person types.
-    cancelAnimationFrame(searchFrame);
-    searchFrame = requestAnimationFrame(() => {
-      historyLimit = HISTORY_PAGE;
-      renderHistory(current.view);
-      document.querySelector("main").scrollTop = 0;
-    });
+    clearTimeout(searchTimer);
+    if (!$("history-search").value.trim()) runSearch();
+    else searchTimer = setTimeout(runSearch, 180);
   });
   $("history-search").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runSearch();
+      return;
+    }
     if (event.key !== "Escape") return;
     event.preventDefault();
+    clearTimeout(searchTimer);
     if ($("history-search").value) setHistoryQuery("");
     else $("history-search").blur();
   });
