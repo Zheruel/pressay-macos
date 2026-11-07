@@ -1861,6 +1861,9 @@ main > .notes-page {
   color: var(--warning);
   font-size: 13px;
 }
+#ask .ask-stopped p {
+  color: var(--muted);
+}
 #ask .ask-empty {
   display: flex;
   flex-direction: column;

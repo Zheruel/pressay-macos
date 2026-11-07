@@ -6,11 +6,13 @@
 (function () {
   const TASK = /^\s*[-*]\s+\[([ xX])\]\s+(.*)$/u;
   const BULLET = /^\s*[-*+]\s+(.*)$/u;
-  const NUMBER = /^\s*\d+[.)]\s+(.*)$/u;
+  const NUMBER = /^\s*(\d+)[.)]\s+(.*)$/u;
   const HEADING = /^(#{1,4})\s+(.*)$/u;
 
   function inline(target, text) {
-    const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/gu);
+    const parts = text.split(
+      /(\*\*[^*]+\*\*|`[^`]+`|(?<![\p{L}\p{N}*])\*[^*\s][^*]*\*(?![\p{L}\p{N}*])|(?<![\p{L}\p{N}_])_[^_\s][^_]*_(?![\p{L}\p{N}_]))/gu,
+    );
     for (const part of parts) {
       if (!part) continue;
       let node;
@@ -23,7 +25,8 @@
         ((part.startsWith("*") && part.endsWith("*")) ||
           (part.startsWith("_") && part.endsWith("_")))
       )
-        (node = document.createElement("em")).textContent = part.slice(1, -1);
+        ((node = document.createElement("em")).textContent = part.slice(1, -1)),
+          (node.dataset.md = part[0]);
       else node = document.createTextNode(part);
       target.append(node);
     }
@@ -59,13 +62,18 @@
       if (line.trimStart().startsWith("```")) {
         close();
         if (code) code = null;
-        else root.append((code = document.createElement("pre")));
+        else {
+          root.append((code = document.createElement("pre")));
+          code.dataset.lang = line.trim().slice(3);
+          code.dataset.lines = "0";
+        }
         continue;
       }
       if (code) {
-        code.append(document.createTextNode((code.textContent ? "\n" : "") + line));
+        code.append(document.createTextNode((code.dataset.lines++ > 0 ? "\n" : "") + line));
         continue;
       }
+      const indent = line.match(/^\s*/u)[0];
       let match;
       if ((match = line.match(TASK))) {
         if (!list || list.tagName !== "UL" || !list.classList.contains("tasks")) {
@@ -73,22 +81,26 @@
           list.className = "tasks";
           root.append(list);
         }
-        list.append(taskItem(match[1] !== " ", match[2]));
+        const item = taskItem(match[1] !== " ", match[2]);
+        if (indent) item.dataset.indent = indent;
+        list.append(item);
         continue;
       }
       if ((match = line.match(BULLET)) || (match = line.match(NUMBER))) {
         const tag = BULLET.test(line) ? "UL" : "OL";
         if (!list || list.tagName !== tag || list.classList.contains("tasks")) {
           list = document.createElement(tag);
+          if (tag === "OL" && match[1] !== "1") list.start = Number(match[1]);
           root.append(list);
         }
         const li = document.createElement("li");
-        inline(li, match[1]);
+        if (indent) li.dataset.indent = indent;
+        inline(li, match[match.length - 1]);
         list.append(li);
         continue;
       }
-      close();
       if (!line.trim()) continue;
+      close();
       if ((match = line.match(HEADING))) {
         const h = document.createElement(`h${match[1].length}`);
         inline(h, match[2]);
@@ -118,12 +130,15 @@
       if (child.nodeType === Node.TEXT_NODE) out += child.nodeValue;
       else if (child.nodeType !== Node.ELEMENT_NODE) continue;
       else if (child.tagName === "INPUT") continue;
-      else if (child.tagName === "BR") out += "";
+      else if (child.tagName === "BR") out += child.nextSibling ? "\n" : "";
       else {
         const text = inlineMd(child);
         if (!text.trim()) out += text;
         else if (["STRONG", "B"].includes(child.tagName)) out += `**${text}**`;
-        else if (["EM", "I"].includes(child.tagName)) out += `*${text}*`;
+        else if (["EM", "I"].includes(child.tagName)) {
+          const mark = child.dataset.md || "*";
+          out += `${mark}${text}${mark}`;
+        }
         else if (child.tagName === "CODE") out += `\`${text}\``;
         else out += text;
       }
@@ -142,19 +157,21 @@
       if (node.nodeType !== Node.ELEMENT_NODE) continue;
       const tag = node.tagName;
       if (/^H[1-6]$/u.test(tag)) {
-        const text = inlineMd(node).trim();
+        const text = inlineMd(node).trim().replace(/\s*\n\s*/gu, " ");
         if (text) push(`${"#".repeat(Math.min(4, Number(tag[1])))} ${text}`, true);
       } else if (tag === "UL" || tag === "OL") {
         const lines = [];
-        let n = 1;
+        let n = tag === "OL" ? node.start || 1 : 1;
         for (const li of node.children) {
-          const text = inlineMd(li).trim();
+          const text = inlineMd(li).trim().replace(/\s*\n\s*/gu, " ");
+          const indent = li.dataset.indent || "";
           const box = li.querySelector(":scope > input[type=checkbox]");
-          if (box) lines.push(`- [${box.checked ? "x" : " "}] ${text}`);
-          else if (text) lines.push(tag === "OL" ? `${n++}. ${text}` : `- ${text}`);
+          if (box) lines.push(`${indent}- [${box.checked ? "x" : " "}] ${text}`);
+          else if (text) lines.push(`${indent}${tag === "OL" ? `${n++}.` : "-"} ${text}`);
         }
         if (lines.length) push(lines.join("\n"));
-      } else if (tag === "PRE") push("```\n" + node.textContent + "\n```");
+      } else if (tag === "PRE")
+        push("```" + (node.dataset.lang || "") + "\n" + node.textContent + "\n```");
       else if (tag === "BLOCKQUOTE") {
         const text = inlineMd(node).trim();
         if (text) push(`> ${text}`);
@@ -270,6 +287,8 @@
     root.setAttribute("aria-label", label);
     root.dataset.placeholder = placeholder;
     toDom(value, root);
+    if (readOnly)
+      for (const box of root.querySelectorAll("input[type=checkbox]")) box.disabled = true;
     let last = toMarkdown(root);
     const empty = () =>
       root.classList.toggle("is-empty", !root.textContent.trim() && !root.querySelector("input"));
@@ -344,6 +363,17 @@
       event.preventDefault();
       const text = event.clipboardData.getData("text/plain");
       document.execCommand("insertText", false, text);
+      if (!text.includes("\n")) return;
+      // Pasted Markdown (lists, headings, tasks) becomes real blocks. Blocks
+      // below the paste are untouched, so the caret lands after the paste.
+      let block = currentBlock(root);
+      if (block?.tagName === "LI") block = block.parentNode;
+      let below = 0;
+      for (let next = block?.nextSibling; next; next = next.nextSibling) below++;
+      toDom(toMarkdown(root), root);
+      const target = root.childNodes[root.childNodes.length - 1 - below];
+      if (target) caretToEnd(target.tagName === "UL" || target.tagName === "OL" ? target.lastChild : target);
+      changed();
     });
     root.addEventListener("change", (event) => {
       if (event.target.matches("input[type=checkbox]")) {
@@ -362,6 +392,7 @@
       },
       setReadOnly(flag) {
         root.contentEditable = flag ? "false" : "true";
+        for (const box of root.querySelectorAll("input[type=checkbox]")) box.disabled = flag;
       },
     };
   };

@@ -632,16 +632,34 @@ function highlightInto(container, text, tokens) {
     container.textContent = text;
     return;
   }
+  // Match on folded text (so "cafe" finds "café"), then mark the original.
+  let folded = "";
+  const start = [];
+  for (let i = 0; i < text.length; ) {
+    const char = String.fromCodePoint(text.codePointAt(i));
+    const piece = foldText(char);
+    for (let k = 0; k < piece.length; k++) start.push(i);
+    folded += piece;
+    i += char.length;
+  }
+  start.push(text.length);
   const escaped = tokens
     .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
     .sort((a, b) => b.length - a.length);
-  const pattern = new RegExp(`(${escaped.join("|")})`, "giu");
-  const parts = text.split(pattern);
-  container.replaceChildren(
-    ...parts.map((part, index) =>
-      index % 2 ? element("mark", part) : document.createTextNode(part),
-    ),
-  );
+  const pattern = new RegExp(escaped.join("|"), "gu");
+  const nodes = [];
+  let last = 0;
+  for (const match of folded.matchAll(pattern)) {
+    if (!match[0]) continue;
+    const from = start[match.index],
+      to = start[match.index + match[0].length];
+    if (from < last) continue;
+    if (from > last) nodes.push(document.createTextNode(text.slice(last, from)));
+    nodes.push(element("mark", text.slice(from, to)));
+    last = to;
+  }
+  if (last < text.length) nodes.push(document.createTextNode(text.slice(last)));
+  container.replaceChildren(...nodes);
 }
 function setHistoryQuery(value) {
   $("history-search").value = value;
@@ -1267,14 +1285,18 @@ function renderNotes(s) {
   title.spellcheck = false;
   title.setAttribute("aria-label", "Meeting title");
   title.onfocus = () => (noteEditing = true);
+  const revertTitle = () => {
+    title.textContent = n.title || "Untitled";
+    dropQueuedNoteField(n.id, "title");
+  };
   title.onblur = () => {
-    if (!title.textContent.trim()) title.textContent = n.title || "Untitled";
+    if (!title.textContent.trim()) revertTitle();
     finishNoteEditing();
   };
   title.onkeydown = (event) => {
     if (event.key === "Enter" || event.key === "Escape") {
       event.preventDefault();
-      if (event.key === "Escape") title.textContent = n.title || "Untitled";
+      if (event.key === "Escape") revertTitle();
       title.blur();
     }
   };
@@ -1388,7 +1410,7 @@ function renderNotes(s) {
               ? "Connect AI Cleanup to get a summary, decisions and action items. The full transcript is in the Transcript tab."
               : aiOff
                 ? "AI notes are off. The full transcript is in the Transcript tab."
-                : "This meeting hasn’t been written up yet.",
+                : `This ${n.kind === "voice" ? "voice note" : "meeting"} hasn’t been written up yet.`,
         ),
       );
       if (!building)
@@ -1551,6 +1573,14 @@ function queueNoteSave(id, patch) {
   setNoteStatus("Editing");
   noteSave.timer = setTimeout(flushNoteSave, 700);
 }
+function dropQueuedNoteField(id, field) {
+  if (noteSave?.id !== id) return;
+  delete noteSave.patch[field];
+  if (Object.keys(noteSave.patch).length) return;
+  clearTimeout(noteSave.timer);
+  noteSave = null;
+  setNoteStatus("");
+}
 async function flushNoteSave() {
   const pending = noteSave;
   if (!pending) return;
@@ -1559,6 +1589,12 @@ async function flushNoteSave() {
   setNoteStatus("Saving…");
   try {
     await call("edit_note", { id: pending.id, patch: pending.patch });
+    // Keep the shown state current until the next refresh arrives.
+    const saved = current?.view?.notes?.find((note) => note.id === pending.id);
+    if (saved) {
+      Object.assign(saved, pending.patch);
+      if ("body" in pending.patch) saved.edited = true;
+    }
     setNoteStatus("Saved");
     setTimeout(() => {
       if ($("note-save-status")?.textContent === "Saved") setNoteStatus("");
@@ -1578,6 +1614,9 @@ function notesProviderAvailable() {
 }
 async function writeUp(n, confirmed = false) {
   if (pendingNotes.has(n.id)) return;
+  // Save any typing first, so the write-up sees it and asks before replacing it.
+  await flushNoteSave();
+  n = current.view.notes.find((note) => note.id === n.id) || n;
   if (
     n.edited &&
     !confirmed &&

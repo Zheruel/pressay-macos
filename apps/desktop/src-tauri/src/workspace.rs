@@ -835,6 +835,12 @@ fn question_dates(text: &str, now: chrono::DateTime<chrono::Local>) -> Option<(f
         chrono::Local
             .from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap())
             .earliest()
+            // Where midnight is skipped for daylight saving, the day starts at 1am.
+            .or_else(|| {
+                chrono::Local
+                    .from_local_datetime(&d.and_hms_opt(1, 0, 0).unwrap())
+                    .earliest()
+            })
             .map(|t| t.timestamp() as f64)
             .unwrap_or(0.)
     };
@@ -878,8 +884,16 @@ fn question_dates(text: &str, now: chrono::DateTime<chrono::Local>) -> Option<(f
         "sunday",
     ];
     for (index, day) in DAYS.iter().enumerate() {
+        if has(&format!("next {day}")) {
+            return None;
+        }
         if has(day) {
-            let back = (today.weekday().num_days_from_monday() as i64 - index as i64).rem_euclid(7);
+            let mut back =
+                (today.weekday().num_days_from_monday() as i64 - index as i64).rem_euclid(7);
+            // "Last Friday" asked on a Friday means a week ago.
+            if back == 0 && (has(&format!("last {day}")) || has(&format!("previous {day}"))) {
+                back = 7;
+            }
             return Some(span(today - Duration::days(back), 1));
         }
     }
@@ -1033,28 +1047,33 @@ async fn ask_inner(
     }
     let job = NoteJob::start(state, "ask", &CancellationToken::new())?;
     let token = &job.token;
-    let (notes, settings) = {
+    let (all, notes, settings) = {
         let store = state.store.lock().unwrap();
-        let notes = if ids.is_empty() {
-            relevant_meetings(
-                store
-                    .notes()
-                    .map_err(|e| e.to_string())?
-                    .into_iter()
-                    .map(serde_json::from_value::<Note>)
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|e| e.to_string())?,
-                &question,
-                &history,
-            )
+        let mut seen = std::collections::HashSet::new();
+        let picked = ids
+            .into_iter()
+            .filter(|id| seen.insert(id.clone()))
+            .map(|id| store.note(&id).map_err(|e| e.to_string()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let all = if picked.is_empty() {
+            store.notes().map_err(|e| e.to_string())?
         } else {
-            let mut seen = std::collections::HashSet::new();
-            ids.into_iter()
-                .filter(|id| seen.insert(id.clone()))
-                .map(|id| store.note(&id).map_err(|e| e.to_string()))
-                .collect::<Result<Vec<_>, _>>()?
+            vec![]
         };
-        (notes, store.settings().map_err(|e| e.to_string())?)
+        (all, picked, store.settings().map_err(|e| e.to_string())?)
+    };
+    // Rank outside the store lock: it reads every transcript.
+    let notes = if notes.is_empty() {
+        relevant_meetings(
+            all.into_iter()
+                .map(serde_json::from_value::<Note>)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?,
+            &question,
+            &history,
+        )
+    } else {
+        notes
     };
     check_notes_enabled(&settings)?;
     if notes.is_empty() {
@@ -2095,6 +2114,11 @@ mod ai_tests {
             question_dates("on Monday", now),
             Some((day(2026, 11, 2), day(2026, 11, 3)))
         );
+        assert_eq!(
+            question_dates("what did we decide last Friday?", now),
+            Some((day(2026, 10, 30), day(2026, 10, 31)))
+        );
+        assert_eq!(question_dates("plans for next Monday", now), None);
         assert_eq!(
             question_dates("in October", now),
             Some((day(2026, 10, 1), day(2026, 11, 1)))

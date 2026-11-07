@@ -140,12 +140,18 @@
       return nodes;
     }
     if (item.error) {
-      const failure = el("div", undefined, "ask-msg ask-answer ask-error");
+      const failure = el(
+        "div",
+        undefined,
+        `ask-msg ask-answer ask-error${item.stopped ? " ask-stopped" : ""}`,
+      );
       failure.append(el("p", item.error));
       if (index === list.length - 1) {
         const retry = el("button", "Try again", "ask-chip");
         retry.type = "button";
+        retry.disabled = !available || !!busy;
         retry.onclick = () => {
+          if (!available || busy) return;
           list.splice(index, 1);
           send(item.question);
         };
@@ -196,19 +202,24 @@
       keep.append(el("span", item.kept ? "Added to My notes" : "Add to My notes"));
       keep.disabled = !!item.kept;
       keep.onclick = async () => {
-        const target = note;
-        const existing = (target.myNotes || "").trim();
-        const addition = plainAnswer(item.answer).trim();
+        const id = note.id;
+        keep.disabled = true;
         try {
-          await window.__TAURI__.core.invoke("edit_note", {
-            id: target.id,
-            patch: { myNotes: existing ? `${existing}\n\n${addition}` : addition },
-          });
+          // Save anything still being typed, then add to the latest My notes.
+          await flushNoteSave();
+          const target = current.view.notes.find((n) => n.id === id) || note;
+          const existing = (target.myNotes || "").trim();
+          const addition = plainAnswer(item.answer).trim();
+          const myNotes = existing ? `${existing}\n\n${addition}` : addition;
+          await window.__TAURI__.core.invoke("edit_note", { id, patch: { myNotes } });
+          target.myNotes = myNotes;
+          noteVersion = "";
+          renderNotes(current.view);
           item.kept = true;
-          keep.disabled = true;
           keep.firstChild.textContent = "Added to My notes";
         } catch (error) {
-          keep.firstChild.textContent = "Couldn’t add";
+          keep.disabled = false;
+          keep.firstChild.textContent = "Couldn’t add. Try again";
         }
       };
       actions.append(keep);
@@ -279,6 +290,7 @@
   async function send(question) {
     question = question.trim();
     if (!question || !available || busy) return;
+    if (!note) scope = "all";
     const k = key(),
       list = thread(),
       ids = k === "all" ? [] : [k];
@@ -303,10 +315,8 @@
       item.answer = reply.text;
       item.sources = reply.sources || [];
     } catch (error) {
-      item.error =
-        busy?.epoch === mine.epoch && String(error) === "Cancelled"
-          ? "Stopped."
-          : String(error);
+      item.stopped = busy?.epoch === mine.epoch && String(error) === "Cancelled";
+      item.error = item.stopped ? "Stopped." : String(error);
     } finally {
       item.pending = false;
       if (busy?.epoch === mine.epoch) busy = null;
