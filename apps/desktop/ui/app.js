@@ -560,6 +560,7 @@ function setHeroMeta(record, timer, text) {
     text,
     Math.floor(Date.now() / 60000),
     appMetadata[record?.target]?.icon?.length,
+    appMetadata[record?.target]?.name,
   ]);
   if (key === heroKey) return;
   heroKey = key;

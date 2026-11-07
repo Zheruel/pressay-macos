@@ -68,7 +68,7 @@
     const waiting = busy && busy.key === key();
     $("ask-input").disabled = !available;
     $("ask-input").placeholder = !available
-      ? "Set up AI Cleanup to ask about your meetings"
+      ? "Connect Claude or OpenAI in Settings to ask about your meetings"
       : thread().length
         ? "Ask a follow-up…"
         : meeting

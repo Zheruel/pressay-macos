@@ -1410,7 +1410,7 @@ function renderNotes(s) {
           building
             ? "Your transcript is building. Notes will be ready after the recording ends."
             : noProvider
-              ? "Connect AI Cleanup to get a summary, decisions and action items. The full transcript is in the Transcript tab."
+              ? "Connect Claude or OpenAI to get a summary, decisions and action items. The full transcript is in the Transcript tab."
               : aiOff
                 ? "AI notes are off. The full transcript is in the Transcript tab."
                 : `This ${n.kind === "voice" ? "voice note" : "meeting"} hasn’t been written up yet.`,
@@ -1419,7 +1419,7 @@ function renderNotes(s) {
       if (!building)
         empty.append(
           noProvider
-            ? button("Set up AI Cleanup", () => openSettings("ai"), "primary")
+            ? button("Connect AI", () => openSettings("ai"), "primary")
             : aiOff
               ? button(
                   "Turn on AI notes",
@@ -2065,7 +2065,7 @@ function setupWorkspace() {
   $("clear-history").onclick = async () => {
     if (
       !confirm(
-        "Clear dictation history? All dictations, including pinned and corrected entries, and their audio recordings will be deleted. This can’t be undone.",
+        "Delete every dictation and its audio, including corrected ones? Meeting notes stay. You can’t undo this.",
       )
     )
       return;

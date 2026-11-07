@@ -16,7 +16,7 @@
     advanceTimer = null,
     completed = false;
   // Accessibility: asked, and whether the person left for System Settings and
-  // came back still untrusted ("Still grey? Fix it").
+  // came back still untrusted ("Reset Accessibility access").
   const access = { asked: false, left: false, returnedAt: 0, grantedAt: 0 };
   const failure = (e) => ($("setup-error").textContent = String(e));
   const clearFailure = () => ($("setup-error").textContent = "");
@@ -248,7 +248,7 @@
         state === "denied"
           ? "Open System Settings"
           : state === "stale"
-            ? "Still grey? Fix it"
+            ? "Reset Accessibility access"
             : !mac()
               ? "Enable"
               : "Allow";

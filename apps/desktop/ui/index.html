@@ -384,7 +384,7 @@
                 ></textarea>
                 <kbd class="ask-kbd" aria-hidden="true">⌘J</kbd>
                 <button id="ask-setup" class="ask-setup" type="button" hidden>
-                  Set up
+                  Connect AI
                 </button>
                 <button
                   id="ask-send"
@@ -701,14 +701,18 @@
                   <label for="ai-enabled">Clean up with AI</label>
                   <p>Fix filler words, punctuation, and misheard names.</p>
                 </div>
-                <input id="ai-enabled" type="checkbox" role="switch" />
+                <input
+                  id="ai-enabled"
+                  class="settings-switch"
+                  type="checkbox"
+                />
               </div>
               <div class="secondary-setting">
                 <div>
                   <span class="secondary-label" id="provider-label"
                     >Provider</span
                   >
-                  <p>Choose how Pressay polishes your words.</p>
+                  <p>Which AI service cleans up your text.</p>
                 </div>
                 <div
                   class="secondary-segments"
@@ -969,8 +973,8 @@
                 <div class="setting-copy">
                   <label for="migration">Import a copy</label>
                   <p>
-                    Settings, all saved dictations and meeting notes. Original
-                    Mac files are kept.
+                    Settings, dictations and meeting notes. Your original Mac
+                    files are not changed.
                   </p>
                   <p role="status" id="migration-result"></p>
                 </div>
@@ -986,10 +990,11 @@
                 <div class="setting-copy">
                   <span>Export a copy</span>
                   <p>
-                    Settings, history and notes. Audio stays on this device.
+                    Settings, dictations and meeting notes. Audio stays on this
+                    device.
                   </p>
                 </div>
-                <button id="export-backup">Export notes and history</button>
+                <button id="export-backup">Export…</button>
               </div>
               <div class="setting-row" id="original-audio-row">
                 <div class="setting-copy">
@@ -1015,9 +1020,9 @@
               </div>
             </div>
             <p class="settings-footnote">
-              Unpinned dictations are kept for 30 days and audio for seven days.
-              Pinned and corrected entries are kept. Meeting notes stay until
-              you delete them.
+              Dictations are kept for 30 days and their audio for seven.
+              Corrected dictations stay. Meeting notes stay until you delete
+              them.
             </p>
           </section>
           <section
