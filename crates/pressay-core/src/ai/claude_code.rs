@@ -493,11 +493,12 @@ impl Pending {
         })
     }
     async fn stop(&mut self) {
-        self.stdin.take();
+        // EOF submits the prepared prompt. Keep stdin open until the child is dead.
         if let Some(child) = self.child.as_mut() {
             let _ = child.kill().await;
             let _ = child.wait().await;
         }
+        self.stdin.take();
         self.child.take();
         if let Some(task) = self.stdout.take() {
             task.abort();
@@ -557,7 +558,6 @@ impl Pending {
 // Kill synchronously on drop and retain ownership until the OS child is reaped.
 impl Drop for Pending {
     fn drop(&mut self) {
-        self.stdin.take();
         if let Some(task) = self.stdout.take() {
             task.abort();
         }
@@ -569,8 +569,10 @@ impl Drop for Pending {
                 let _ = child.start_kill();
                 if let Ok(runtime) = tokio::runtime::Handle::try_current() {
                     let lease = self.lease.take();
+                    let stdin = self.stdin.take();
                     runtime.spawn(async move {
                         let _lease = lease;
+                        let _stdin = stdin;
                         let _ = child.wait().await;
                     });
                 }
