@@ -1009,7 +1009,8 @@ function noteGlyph() {
   return span;
 }
 function selectNote(id) {
-  if (noteEditing && !window.confirm("Discard your unsaved edit?")) return;
+  // Edits save as you type, so switching meetings just sends what's pending.
+  flushNoteSave();
   selectedNote = id;
   notesActionMode = false;
   noteEditing = false;
@@ -1198,20 +1199,120 @@ function renderNotes(s) {
   noteVersion = version;
   const detail = $("note-detail");
   detail.replaceChildren();
-  const toolbar = element("div", undefined, "native-note-toolbar");
-  const back = button("←", () => selectNote(null), "note-back");
-  back.setAttribute("aria-label", "Back to Notetaker");
-  toolbar.append(back, element("span", undefined, "note-toolbar-divider"));
+  const writing = pendingNotes.has(n.id) || current.jobs?.includes(n.id);
+  const head = element("header", undefined, "note-head");
+  const actions = element("div", undefined, "note-head-actions");
+  const status = element("span", "", "note-save-status");
+  status.id = "note-save-status";
+  status.setAttribute("role", "status");
+  actions.append(status);
+  const myOpen = n.actions?.some(
+    (a) => a.owner?.toLowerCase() === "me" && !a.done,
+  );
+  if (myOpen && current.platform === "macos")
+    actions.append(
+      button(
+        "Add to Reminders",
+        () => call("export_reminders", { id: n.id }),
+        "note-head-button",
+      ),
+    );
+  const copy = button(
+    "",
+    async () => {
+      await call("copy_text", {
+        text:
+          noteTab === "transcript"
+            ? n.plainTranscript || ""
+            : noteTab === "personal"
+              ? n.myNotes || ""
+              : `# ${n.title}\n\n${n.body || ""}`,
+      });
+      copy.lastChild.textContent = "Copied";
+      setTimeout(() => (copy.lastChild.textContent = "Copy"), 1400);
+    },
+    "note-head-button",
+  );
+  copy.append(historyIcon("copy"), element("span", "Copy"));
+  copy.title =
+    noteTab === "transcript" ? "Copy the transcript" : "Copy as Markdown";
+  const exportButton = button(
+    "Export",
+    () => call("export_data", { kind: "note", id: n.id }),
+    "note-head-button",
+  );
+  exportButton.title = "Save as a Markdown file";
+  const remove = button(
+    "",
+    async () => {
+      if (
+        confirm(
+          `Delete “${n.title}”? Its notes and transcript are deleted. You can’t undo this.`,
+        )
+      )
+        await call("delete_note", { id: n.id });
+    },
+    "note-head-button icon-only",
+  );
+  remove.innerHTML =
+    '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 10h6.6L14 6"/></svg>';
+  remove.setAttribute("aria-label", "Delete meeting");
+  remove.title = "Delete meeting";
+  actions.append(copy, exportButton, remove);
+  const title = element("h1", n.title || "Untitled", "note-title");
+  title.contentEditable = "plaintext-only";
+  title.spellcheck = false;
+  title.setAttribute("aria-label", "Meeting title");
+  title.onfocus = () => (noteEditing = true);
+  title.onblur = () => {
+    if (!title.textContent.trim()) title.textContent = n.title || "Untitled";
+    finishNoteEditing();
+  };
+  title.onkeydown = (event) => {
+    if (event.key === "Enter" || event.key === "Escape") {
+      event.preventDefault();
+      if (event.key === "Escape") title.textContent = n.title || "Untitled";
+      title.blur();
+    }
+  };
+  title.oninput = () => {
+    const value = title.textContent.trim();
+    if (value) queueNoteSave(n.id, { title: value.slice(0, 200) });
+  };
+  const meta = element("div", undefined, "note-meta");
+  meta.append(
+    element(
+      "span",
+      [
+        noteDate(n),
+        n.duration >= 60 ? noteDuration(n.duration) : "",
+        n.kind === "meeting" ? notePeople(n) : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    ),
+  );
+  if (n.kind === "meeting")
+    meta.append(
+      button(
+        n.participants?.length || n.speakerNames?.some(Boolean)
+          ? "Edit names"
+          : "Add names",
+        () => editNoteNames(n),
+        "note-link",
+      ),
+    );
   const tabs = element("div", undefined, "note-tabs");
-  for (const [id, title] of [
+  tabs.setAttribute("role", "tablist");
+  for (const [id, label] of [
     ["summary", "Summary"],
+    ["personal", "My notes"],
     ["transcript", "Transcript"],
-    ["personal", "My Notes"],
   ]) {
-    const b = button(
-      title,
-      () => {
-        if (noteEditing && !confirm("Discard your unsaved edit?")) return;
+    const tab = button(
+      label,
+      async () => {
+        await flushNoteSave();
         noteEditing = false;
         noteTab = id;
         noteVersion = "";
@@ -1219,171 +1320,90 @@ function renderNotes(s) {
       },
       noteTab === id ? "active" : "",
     );
-    b.setAttribute("aria-pressed", String(noteTab === id));
-    tabs.append(b);
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", String(noteTab === id));
+    tabs.append(tab);
   }
-  toolbar.append(tabs);
-  const tools = element("div", undefined, "note-actions");
-  const edit = button("Edit", () => editNoteField(n, "body", true));
-  edit.disabled =
-    noteTab !== "summary" ||
-    pendingNotes.has(n.id) ||
-    current.jobs?.includes(n.id);
-  tools.append(edit);
-  const share = button(
-    "↑",
-    () => call("export_data", { kind: "note", id: n.id }),
-    "note-icon-button",
-  );
-  share.setAttribute("aria-label", "Share meeting");
-  share.title = "Share meeting";
-  tools.append(share);
-  const menu = element("details", undefined, "notes-menu");
-  const trigger = element("summary", "•••");
-  trigger.setAttribute("aria-label", "More meeting actions");
-  const menuItems = element("div", undefined, "notes-menu-items");
-  menuItems.append(
-    button("Rename", () => editNoteField(n, "title", false)),
-    button("Copy as Markdown", () =>
-      call("copy_text", { text: `${n.title}\n\n${n.body || ""}` }),
-    ),
-    button("Copy Transcript", () =>
-      call("copy_text", { text: n.plainTranscript || "" }),
-    ),
-    button("Ask this meeting", () => openAsk([n.id])),
-    button(
-      "Delete…",
-      async () => {
-        if (
-          confirm(
-            `Delete “${n.title}”? Its notes and transcript are deleted. You can’t undo this.`,
-          )
-        )
-          await call("delete_note", { id: n.id });
-      },
-      "danger",
-    ),
-  );
-  menu.append(trigger, menuItems);
-  tools.append(menu);
-  toolbar.append(tools);
-  detail.append(toolbar);
+  head.append(actions, title, meta, tabs);
+  detail.append(head);
   const body = element("div", undefined, "note-body note-tab-" + noteTab);
   detail.append(body);
   if (noteTab === "summary") {
-    const top = element("div", undefined, "note-top");
-    const metadata = element("div", undefined, "note-metadata");
-    metadata.append(
-      element(
-        "span",
-        [
-          noteDate(n),
-          n.duration >= 60 ? noteDuration(n.duration) : "",
-          n.kind === "meeting" ? notePeople(n) : "",
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      ),
-    );
-    if (n.kind === "meeting")
-      metadata.append(
-        button(
-          n.participants?.length || n.speakerNames?.some(Boolean)
-            ? "Edit names"
-            : "Add names",
-          () => editNoteNames(n),
-          "note-link",
-        ),
-      );
-    top.append(element("h2", n.title), metadata);
-    body.append(top);
     if (n.notice) body.append(element("p", n.notice, "notice"));
-    const row = element("div", undefined, "row");
-    const writing = pendingNotes.has(n.id) || current.jobs?.includes(n.id);
     const failure = !writing && writeUpErrors.get(n.id);
     if (failure) {
       const banner = element("div", undefined, "notice row");
       banner.append(
         element("span", failure),
-        button("Try Again", () => writeUp(n, true)),
+        button("Try again", () => writeUp(n, true)),
       );
       body.append(banner);
     }
-    row.append(
-      button(
-        writing ? "Writing up…" : n.body ? "Write Up Again" : "Write Up Notes",
-        () => {
-          if (!writing) writeUp(n);
-        },
-        "primary",
-      ),
-    );
-    if (writing)
-      row.append(button("Cancel", () => call("cancel_note_job", { id: n.id })));
-    if (n.body && !writing) {
-      menuItems.append(row.firstElementChild);
-      row.hidden = true;
-    }
-    body.append(row);
-    const markdown = element("div", undefined, "markdown");
-    if (n.body) {
-      renderMarkdown(n.body, markdown, n);
-      for (const line of markdown.querySelectorAll(".markdown-list")) {
-        if (line.firstChild?.nodeType === Node.TEXT_NODE)
-          line.firstChild.nodeValue = line.firstChild.nodeValue.replace(
-            /^[-*]\s/u,
-            "",
-          );
+    if (n.body || writing) {
+      const editor = createNoteEditor({
+        value: n.body || "",
+        label: "Meeting notes",
+        placeholder: "Write your notes…",
+        readOnly: writing,
+        onChange: (markdown) => queueNoteSave(n.id, { body: markdown }),
+        onFocusChange: (focused) =>
+          focused ? (noteEditing = true) : finishNoteEditing(),
+      });
+      body.append(editor.element);
+      if (writing) {
+        const row = element("div", undefined, "note-writing");
+        row.append(
+          element("span", "Writing up your notes…"),
+          button("Cancel", () => call("cancel_note_job", { id: n.id })),
+        );
+        body.prepend(row);
+      } else if (
+        n.kind === "meeting" &&
+        s.settings.notesUseAI !== false &&
+        notesProviderAvailable()
+      ) {
+        const again = button("", () => writeUp(n), "note-rewrite");
+        again.innerHTML =
+          '<svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="m10 3 1.7 4.6L16.5 9l-4.8 1.6L10 15.5l-1.7-4.9L3.5 9l4.8-1.4L10 3Z" fill="currentColor"/></svg>';
+        again.append(element("span", "Write up again"));
+        again.title = n.edited
+          ? "Replaces your edits with a fresh write-up"
+          : "Write a fresh summary from the transcript";
+        body.append(again);
       }
     } else {
       const building = s.active_note === n.id;
       const aiOff = s.settings.notesUseAI === false;
       const noProvider = accountInfo && !notesProviderAvailable();
-      markdown.append(
+      const empty = element("div", undefined, "note-empty");
+      empty.append(
         element(
-          "div",
+          "p",
           building
             ? "Your transcript is building. Notes will be ready after the recording ends."
             : noProvider
-              ? "Connect an Anthropic API key or a ChatGPT subscription to write a summary, decisions and action items. The full transcript is in the Transcript tab."
+              ? "Connect AI Cleanup to get a summary, decisions and action items. The full transcript is in the Transcript tab."
               : aiOff
                 ? "AI notes are off. The full transcript is in the Transcript tab."
-                : "This meeting hasn’t been written up yet. The full transcript is in the Transcript tab.",
-          "empty",
+                : "This meeting hasn’t been written up yet.",
         ),
       );
-      if (!building && noProvider) {
-        row.replaceChildren(
-          button("Set Up AI…", () => navigate("ai"), "primary"),
+      if (!building)
+        empty.append(
+          noProvider
+            ? button("Set up AI Cleanup", () => openSettings("ai"), "primary")
+            : aiOff
+              ? button(
+                  "Turn on AI notes",
+                  async () => {
+                    await setting({ notesUseAI: true });
+                    writeUp(n);
+                  },
+                  "primary",
+                )
+              : button("Write up notes", () => writeUp(n), "primary"),
         );
-      } else if (!building && aiOff) {
-        row.replaceChildren(
-          button(
-            "Turn On AI Notes",
-            async () => {
-              await setting({ notesUseAI: true });
-              writeUp(n);
-            },
-            "primary",
-          ),
-        );
-      }
-    }
-    body.append(markdown);
-    if (n.actions?.some((a) => a.owner?.toLowerCase() === "me" && !a.done)) {
-      menuItems.append(
-        button("Export my action items", () =>
-          call("export_data", { kind: "tasks", id: n.id }),
-        ),
-      );
-      if (current.platform === "macos")
-        tools.prepend(
-          button(
-            "Add to Reminders",
-            () => call("export_reminders", { id: n.id }),
-            "note-link",
-          ),
-        );
+      body.append(empty);
     }
   } else if (noteTab === "transcript") {
     const transcriptTools = element(
@@ -1475,54 +1495,80 @@ function renderNotes(s) {
     draw();
     body.append(transcript);
   } else if (noteTab === "personal") {
-    body.append(
-      element(
-        "p",
-        "Your private notes. Pressay works them into the summary.",
-        "muted",
-      ),
-    );
-    const area = element("textarea");
-    area.value = n.myNotes || "";
-    area.rows = 12;
-    area.setAttribute("aria-label", "My meeting notes");
-    area.oninput = () => {
-      noteEditing = true;
-    };
-    const actions = element("div", undefined, "row");
-    actions.append(
-      button(
-        "Save my notes",
-        async () => {
-          await call("edit_note", { id: n.id, patch: { myNotes: area.value } });
-          noteEditing = false;
-          noteVersion = "";
-          renderNotes(current.view);
-        },
-        "primary",
-      ),
-    );
+    let update = null;
+    const editor = createNoteEditor({
+      value: n.myNotes || "",
+      label: "My notes",
+      placeholder:
+        "Jot down anything. Pressay works your notes into the summary.",
+      onChange: (markdown) => {
+        queueNoteSave(n.id, { myNotes: markdown });
+        if (update) update.hidden = markdown === (n.myNotes || "");
+      },
+      onFocusChange: (focused) =>
+        focused ? (noteEditing = true) : finishNoteEditing(),
+    });
+    body.append(editor.element);
     if (
       n.kind === "meeting" &&
       n.body &&
-      !n.edited &&
       s.settings.notesUseAI !== false &&
       notesProviderAvailable()
     ) {
-      const update = button("Update Summary", async () => {
-        await call("edit_note", { id: n.id, patch: { myNotes: area.value } });
-        noteEditing = false;
-        noteTab = "summary";
-        writeUp(n);
-      });
+      update = button(
+        "",
+        async () => {
+          await flushNoteSave();
+          noteEditing = false;
+          noteTab = "summary";
+          writeUp(n);
+        },
+        "note-rewrite",
+      );
+      update.innerHTML =
+        '<svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="m10 3 1.7 4.6L16.5 9l-4.8 1.6L10 15.5l-1.7-4.9L3.5 9l4.8-1.4L10 3Z" fill="currentColor"/></svg>';
+      update.append(element("span", "Update the summary with my notes"));
       update.hidden = true;
-      area.addEventListener("input", () => {
-        update.hidden = area.value === (n.myNotes || "");
-      });
-      actions.append(update);
+      body.append(update);
     }
-    body.append(area, actions);
   }
+}
+// Notes save as you type: edits collect for a moment, then go out together.
+let noteSave = null;
+function setNoteStatus(text) {
+  const status = $("note-save-status");
+  if (status) status.textContent = text;
+}
+function queueNoteSave(id, patch) {
+  if (noteSave && noteSave.id !== id) flushNoteSave();
+  noteEditing = true;
+  noteSave ||= { id, patch: {} };
+  Object.assign(noteSave.patch, patch);
+  clearTimeout(noteSave.timer);
+  setNoteStatus("Editing");
+  noteSave.timer = setTimeout(flushNoteSave, 700);
+}
+async function flushNoteSave() {
+  const pending = noteSave;
+  if (!pending) return;
+  noteSave = null;
+  clearTimeout(pending.timer);
+  setNoteStatus("Saving…");
+  try {
+    await call("edit_note", { id: pending.id, patch: pending.patch });
+    setNoteStatus("Saved");
+    setTimeout(() => {
+      if ($("note-save-status")?.textContent === "Saved") setNoteStatus("");
+    }, 1600);
+  } catch {
+    setNoteStatus("Not saved");
+  }
+}
+function finishNoteEditing() {
+  flushNoteSave().finally(() => {
+    const active = document.activeElement;
+    if (!active?.closest?.(".note-editor-doc, .note-title")) noteEditing = false;
+  });
 }
 function notesProviderAvailable() {
   return !!(accountInfo?.claudeApiKey || accountInfo?.chatgpt?.signed_in);
@@ -1650,51 +1696,6 @@ function renderNotesActions(s) {
   }
   if (!count) content.append(element("p", "You’re all caught up.", "muted"));
   detail.append(content);
-}
-function editNoteField(note, field, multiline) {
-  noteEditing = true;
-  const body = $("note-detail").querySelector(".note-body");
-  body.replaceChildren();
-  body.className = "note-body note-tab-summary note-editor";
-  const title = element("input");
-  title.className = "note-editor-title";
-  title.value = note.title || "";
-  title.setAttribute("aria-label", "Note title");
-  const input = multiline ? element("textarea") : title;
-  if (multiline) {
-    input.value = note.body || "";
-    input.rows = 18;
-    input.setAttribute("aria-label", "Note body");
-  }
-  body.append(title);
-  if (multiline) body.append(input);
-  const tools = $("note-detail").querySelector(".note-actions");
-  tools.replaceChildren();
-  $("note-detail")
-    .querySelectorAll(".note-tabs button")
-    .forEach((b) => (b.disabled = true));
-  const finish = () => {
-    noteEditing = false;
-    noteVersion = "";
-    renderNotes(current.view);
-  };
-  tools.append(
-    button("Cancel", finish),
-    button(
-      "Done",
-      async () => {
-        await call("edit_note", {
-          id: note.id,
-          patch: multiline
-            ? { title: title.value, body: input.value }
-            : { [field]: input.value },
-        });
-        finish();
-      },
-      "primary",
-    ),
-  );
-  input.focus();
 }
 function renderWorkspace(s) {
   if (!workspaceReady) setupWorkspace();
@@ -2208,18 +2209,6 @@ function setupWorkspace() {
     }
   });
   $("notes-search").oninput = () => renderNotes(current.view);
-  $("notes-extra-actions").onkeydown = (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      $("notes-extra-actions").open = false;
-      $("notes-extra-actions").querySelector("summary").focus();
-    }
-  };
-  $("notes-settings").onclick = () => openSettings("notetaker");
-  $("find-meeting").onclick = () => {
-    $("notes-search").focus();
-    $("find-meeting").closest("details").open = false;
-  };
   $("detect-calls-quick").onchange = () =>
     setting({ detectCalls: $("detect-calls-quick").checked }).catch(() => {});
   document.addEventListener("pointerdown", (event) => {
@@ -2258,7 +2247,6 @@ function setupWorkspace() {
     ["start-voice", "voice"],
   ])
     $(id).onclick = () => {
-      $("notes-extra-actions").open = false;
       selectedNote = null;
       notesActionMode = false;
       call("start_meeting", { kind }).catch(() => {});
