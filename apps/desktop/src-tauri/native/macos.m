@@ -18,7 +18,6 @@ int pressay_microphone_status(void) {
     }
 }
 int pressay_accessibility_status(void) { return AXIsProcessTrusted() ? 1 : 2; }
-int pressay_input_status(void) { return CGPreflightListenEventAccess() ? 1 : 2; }
 
 @interface PressayPanel : NSPanel @end
 @implementation PressayPanel
@@ -110,6 +109,12 @@ static BOOL keyIsDown(uint16_t key) {
     if (key == 63) return (CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) & kCGEventFlagMaskSecondaryFn) != 0;
     return CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, key);
 }
+static BOOL modifierDown(CGEventRef event, uint16_t key) {
+    CGEventFlags flags = CGEventGetFlags(event);
+    uint64_t mask = deviceMask(key);
+    if (mask) return (flags & mask) != 0;
+    return key == 63 && (flags & kCGEventFlagMaskSecondaryFn) != 0;
+}
 static CGEventRef inputEvent(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *context) {
     (void)proxy;
     PressayNative *owner = (__bridge PressayNative *)context;
@@ -152,7 +157,10 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
 }
 - (BOOL)createTap {
     if (self.tap) return CGEventTapIsEnabled(self.tap);
-    if (!CGPreflightListenEventAccess() || !AXIsProcessTrusted()) return NO;
+    // An active (filtering) tap needs only Accessibility, which applies to the
+    // running process. Input Monitoring is never asked for: its preflight
+    // answer is fixed at launch, so requiring it stranded fresh grants.
+    if (!AXIsProcessTrusted()) return NO;
     CGEventMask mask = CGEventMaskBit(kCGEventFlagsChanged) | CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventKeyUp);
     self.tap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault,
                                mask, inputEvent, (__bridge void *)self);
@@ -178,7 +186,11 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
         return YES;
     }
     if (key != self.key) return NO;
-    BOOL down = modifier(key) ? keyIsDown(key) : type == kCGEventKeyDown;
+    // A modifier's state comes from the event's own flags, as in Hex. The
+    // tap sees the event before the session state updates, so reading
+    // CGEventSourceFlagsState here inverted press and release: recording
+    // started on release and the next poll stopped it.
+    BOOL down = modifier(key) ? modifierDown(event, key) : type == kCGEventKeyDown;
     if (modifier(key) && type != kCGEventFlagsChanged) return NO;
     if (!modifier(key) && type != kCGEventKeyDown && type != kCGEventKeyUp) return NO;
     if (!down) {
@@ -195,7 +207,7 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
     return !modifier(key);
 }
 - (void)poll {
-    BOOL allowed = CGPreflightListenEventAccess() && AXIsProcessTrusted();
+    BOOL allowed = AXIsProcessTrusted();
     if (!allowed && self.tap) {
         CGEventTapEnable(self.tap, false);
         CFRunLoopRemoveSource(CFRunLoopGetMain(), self.source, kCFRunLoopCommonModes);
@@ -211,7 +223,7 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
     if (self.pressed && !keyIsDown(self.key)) { self.pressed = NO; [self notify:2 detail:0]; }
     if (self.blockedUntilRelease && !keyIsDown(self.key)) self.blockedUntilRelease = NO;
     if (self.guide.isVisible) {
-        BOOL granted = self.guideKind == 0 ? pressay_microphone_status() == 1 : self.guideKind == 1 ? AXIsProcessTrusted() : CGPreflightListenEventAccess();
+        BOOL granted = self.guideKind == 0 ? pressay_microphone_status() == 1 : AXIsProcessTrusted();
         if (granted) [self.guide orderOut:nil]; else [self positionGuide];
     }
 }
@@ -232,10 +244,9 @@ void pressay_set_stop_callback(PressayStopCallback callback) { onMain(^{ stopMee
         self.guide.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace | NSWindowCollectionBehaviorFullScreenAuxiliary;
     }
     NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 310, 330)];
-    NSString *title = kind == 0 ? @"Allow Microphone" : kind == 1 ? @"Allow Accessibility" : @"Allow Input Monitoring";
+    NSString *title = kind == 0 ? @"Allow Microphone" : @"Allow Accessibility";
     NSString *detail = kind == 0 ? @"Enable the existing Pressay entry to hear your voice. Microphone access requires macOS’s permission prompt; dragging an app does not grant it."
-        : kind == 1 ? @"Pressay needs permission to insert your words. Drag the actual app below into the Accessibility list, then enable its switch."
-        : @"Enable Pressay so your hold-to-talk key works while another app is focused. If macOS asks, quit and reopen Pressay after enabling it.";
+        : @"Pressay needs this to notice your talk key and type your words. Drag the app below into the Accessibility list, then switch it on.";
     [content addSubview:textLabel(title, NSMakeRect(22, 264, 266, 34), 20, NSFontWeightSemibold)];
     [content addSubview:textLabel(detail, NSMakeRect(22, 160, 266, 92), 13, NSFontWeightRegular)];
     if (kind == 1 && [NSBundle.mainBundle.bundleURL.pathExtension isEqualToString:@"app"]) {
@@ -306,11 +317,51 @@ void pressay_open_permission(int kind) {
             }];
             return;
         }
-        NSString *anchor = kind == 0 ? @"Privacy_Microphone" : kind == 1 ? @"Privacy_Accessibility" : @"Privacy_ListenEvent";
+        NSString *anchor = kind == 0 ? @"Privacy_Microphone" : @"Privacy_Accessibility";
         if (kind == 1) AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)@{(__bridge NSString *)kAXTrustedCheckOptionPrompt:@YES});
-        if (kind == 2) CGRequestListenEventAccess();
         [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:[@"x-apple.systempreferences:com.apple.preference.security?" stringByAppendingString:anchor]]];
         [instance() showGuide:kind];
+    });
+}
+// Menu bar panel backdrop: macOS 26's Liquid Glass (NSGlassEffectView), the
+// material native menu bar extras use; the older menu blur where it is absent.
+// It sits behind the transparent web content, in the window's frame view.
+void pressay_apply_glass(void *nsWindow, double radius) {
+    onMain(^{
+        NSWindow *window = (__bridge NSWindow *)nsWindow;
+        NSView *content = window.contentView;
+        NSView *frame = content.superview;
+        if (!content || !frame) return;
+        Class glass = NSClassFromString(@"NSGlassEffectView");
+        NSView *backdrop;
+        if (glass) {
+            backdrop = [[glass alloc] initWithFrame:content.frame];
+            if ([backdrop respondsToSelector:NSSelectorFromString(@"setCornerRadius:")])
+                [backdrop setValue:@(radius) forKey:@"cornerRadius"];
+        } else {
+            NSVisualEffectView *blur = [[NSVisualEffectView alloc] initWithFrame:content.frame];
+            blur.material = NSVisualEffectMaterialMenu;
+            blur.state = NSVisualEffectStateActive;
+            blur.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+            blur.wantsLayer = YES;
+            blur.layer.cornerRadius = radius;
+            blur.layer.masksToBounds = YES;
+            backdrop = blur;
+        }
+        backdrop.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+        [frame addSubview:backdrop positioned:NSWindowBelow relativeTo:content];
+        window.opaque = NO;
+        window.backgroundColor = NSColor.clearColor;
+        // Clip the whole frame to the glass's corners, so no square backing
+        // shows at the edges, and recompute the shadow from that shape.
+        for (NSView *view in @[frame, content]) {
+            view.wantsLayer = YES;
+            view.layer.cornerRadius = radius;
+            view.layer.cornerCurve = @"continuous";
+            view.layer.masksToBounds = YES;
+        }
+        window.hasShadow = YES;
+        [window invalidateShadow];
     });
 }
 void pressay_overlay(const char *stage, const char *detail, const float *levels) {
@@ -343,26 +394,37 @@ static AXUIElementRef focusedElement(void) {
     if (CFGetTypeID(element) != AXUIElementGetTypeID()) { CFRelease(element); return NULL; }
     return (AXUIElementRef)element;
 }
-static BOOL selectedRange(AXUIElementRef element, CFRange *range) {
-    CFTypeRef value = NULL;
-    if (AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute, &value) != kAXErrorSuccess || !value) return NO;
-    BOOL ok = CFGetTypeID(value) == AXValueGetTypeID() && AXValueGetValue((AXValueRef)value, kAXValueCFRangeType, range);
-    CFRelease(value); return ok;
-}
 static BOOL secureElement(AXUIElementRef element) {
     CFTypeRef subrole = NULL;
     if (AXUIElementCopyAttributeValue(element, kAXSubroleAttribute, &subrole) != kAXErrorSuccess || !subrole) return NO;
     BOOL secure = CFEqual(subrole, kAXSecureTextFieldSubrole); CFRelease(subrole); return secure;
 }
+static pid_t frontmostPid(void) {
+    return NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
+}
+// The target is the frontmost app, as in the Swift app and Hex. Its focused AX
+// element is kept only as an extra: Electron apps often expose none, or swap it
+// while a dictation runs, so requiring that exact element refused every paste.
 uint64_t pressay_focused_process(void) {
+    pid_t pid = frontmostPid();
+    if (pid <= 0 || pid == NSProcessInfo.processInfo.processIdentifier) {
+        // Pressay's own window (practice) still has an AX focus to target.
+        AXUIElementRef own = focusedElement();
+        pid_t ownPid = 0;
+        if (!own) return 0;
+        if (AXUIElementGetPid(own, &ownPid) != kAXErrorSuccess) { CFRelease(own); return 0; }
+        CFRelease(own);
+        pid = ownPid;
+    }
     AXUIElementRef element = focusedElement();
-    if (!element) return 0;
-    if (secureElement(element)) { CFRelease(element); return 0; }
+    pid_t elementPid = 0;
+    if (element && (AXUIElementGetPid(element, &elementPid) != kAXErrorSuccess || elementPid != pid)) {
+        CFRelease(element); element = NULL;
+    }
+    if (element && secureElement(element)) { CFRelease(element); return 0; }
     PressayFocus *focus = [PressayFocus new]; focus.element = element;
-    pid_t pid = 0;
-    if (AXUIElementGetPid(element, &pid) != kAXErrorSuccess) return 0;
     focus.pid = pid;
-    CFRange range; focus.hasRange = selectedRange(element, &range); if (focus.hasRange) focus.range = range;
+    focus.hasRange = NO;
     focus.created = NSDate.date;
     @synchronized(PressayFocus.class) {
         if (!targets) targets = [NSMutableDictionary new];
@@ -373,24 +435,28 @@ uint64_t pressay_focused_process(void) {
 static PressayFocus *checkedTarget(uint64_t token, BOOL checkRange) {
     PressayFocus *saved;
     @synchronized(PressayFocus.class) { saved = targets[@(token)]; }
+    (void)checkRange;
     if (!saved || saved.invalidated || [saved.created timeIntervalSinceNow] < -600) return nil;
+    // Same app still in front is the rule; a password field never gets text.
     AXUIElementRef current = focusedElement();
-    if (!current) return nil;
-    BOOL matches = !secureElement(current) && CFEqual(current, saved.element);
-    CFRange range;
-    if (matches && checkRange && saved.hasRange) matches = selectedRange(current, &range) && range.location == saved.range.location && range.length == saved.range.length;
-    CFRelease(current); return matches ? saved : nil;
+    BOOL secure = current && secureElement(current);
+    pid_t currentPid = 0;
+    BOOL samePid = current && AXUIElementGetPid(current, &currentPid) == kAXErrorSuccess && currentPid == saved.pid;
+    if (current) CFRelease(current);
+    if (secure) return nil;
+    return (frontmostPid() == saved.pid || samePid) ? saved : nil;
 }
 bool pressay_refresh_target(uint64_t token) {
     PressayFocus *saved;
     @synchronized(PressayFocus.class) { saved = targets[@(token)]; }
     if (!saved || saved.invalidated) return false;
     AXUIElementRef element = focusedElement(); pid_t pid = 0;
-    BOOL valid = element && !secureElement(element) && AXUIElementGetPid(element, &pid) == kAXErrorSuccess
-        && pid == saved.pid && [saved.created timeIntervalSinceNow] >= -600;
+    if (element && (AXUIElementGetPid(element, &pid) != kAXErrorSuccess || pid != saved.pid)) { CFRelease(element); element = NULL; }
+    BOOL valid = (frontmostPid() == saved.pid || element) && !(element && secureElement(element))
+        && [saved.created timeIntervalSinceNow] >= -600;
     if (valid) {
-        PressayFocus *fresh = [PressayFocus new]; fresh.element = element; fresh.pid = pid; fresh.created = NSDate.date;
-        CFRange range; fresh.hasRange = selectedRange(element, &range); if (fresh.hasRange) fresh.range = range;
+        PressayFocus *fresh = [PressayFocus new]; fresh.element = element; fresh.pid = saved.pid; fresh.created = NSDate.date;
+        fresh.hasRange = NO;
         @synchronized(PressayFocus.class) { if (targets[@(token)] == saved) targets[@(token)] = fresh; else valid = NO; }
     } else {
         if (element) CFRelease(element);
@@ -486,7 +552,7 @@ int pressay_insert_text(const char *utf8, uint64_t token) {
         if (!text || text.length == 0 || text.length > 65536) return 2;
         if (pasteText(text)) return 0;
         Boolean settable = false;
-        if (AXUIElementIsAttributeSettable(target.element, kAXSelectedTextAttribute, &settable) == kAXErrorSuccess && settable
+        if (target.element && AXUIElementIsAttributeSettable(target.element, kAXSelectedTextAttribute, &settable) == kAXErrorSuccess && settable
             && AXUIElementSetAttributeValue(target.element, kAXSelectedTextAttribute, (__bridge CFStringRef)text) == kAXErrorSuccess) return 0;
         CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
         if (!source) return 2;

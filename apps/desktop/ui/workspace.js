@@ -7,10 +7,7 @@ let selectedNote = null,
   historyEditing = null,
   notesKey = "",
   workspaceReady = false,
-  accountInfo = null,
-  askIds = [],
-  exchanges = [],
-  askBusy = false;
+  accountInfo = null;
 const pendingNotes = new Set();
 const writeUpErrors = new Map();
 let accountChecked = false;
@@ -265,17 +262,25 @@ async function refreshInputDevices() {
 let generalTab = "dictation",
   generalPermissionKey = null,
   accountRefresh = null;
+const settingsTabs = ["dictation", "ai", "notetaker", "general"];
 function showGeneralTab(tab) {
-  if (!["dictation", "notetaker"].includes(tab)) return;
+  if (!settingsTabs.includes(tab)) return;
+  if (generalTab !== tab) stopShortcutCapture();
   generalTab = tab;
-  stopShortcutCapture();
-  for (const button of document.querySelectorAll("[data-general-tab]")) {
-    const selected = button.dataset.generalTab === tab;
+  for (const button of document.querySelectorAll("[data-settings-tab]")) {
+    const selected = button.dataset.settingsTab === tab;
     button.setAttribute("aria-selected", String(selected));
     button.tabIndex = selected ? 0 : -1;
-    $("general-" + button.dataset.generalTab).hidden = !selected;
   }
-  if (tab === "notetaker") refreshAccount();
+  for (const pane of document.querySelectorAll("[data-settings-pane]"))
+    pane.hidden = pane.dataset.settingsPane !== tab;
+  if (tab === "ai" || tab === "notetaker") refreshAccount();
+}
+function openSettings(tab = generalTab) {
+  showGeneralTab(tab);
+  const dialog = $("settings-dialog");
+  if (!dialog.open) dialog.showModal();
+  dialog.querySelector(".settings-body").scrollTop = 0;
 }
 function renderGeneralPermissions() {
   const permissions = current.permissions,
@@ -285,18 +290,32 @@ function renderGeneralPermissions() {
   generalPermissionKey = key;
   const group = $("general-permissions");
   group.replaceChildren();
+  // On Mac the talk-key tap needs only Accessibility (as in Hex), so there
+  // is no Input Monitoring row; the shortcut is its result, not a grant.
   const kinds = [
     ["microphone", "microphone", "Microphone"],
     ["accessibility", "insertion", mac ? "Accessibility" : "Text insertion"],
-    ["shortcut", "shortcut", mac ? "Input Monitoring" : "Global shortcut"],
+    ...(mac ? [] : [["shortcut", "shortcut", "Global shortcut"]]),
   ];
+  if (
+    mac &&
+    permissions.insertion === "granted" &&
+    permissions.shortcut !== "granted"
+  ) {
+    const row = element("div", undefined, "setting-row");
+    row.append(
+      element("span", "Talk key needs a restart"),
+      button("Restart Pressay", () => call("restart_app")),
+    );
+    group.append(row);
+  }
   if (kinds.every(([, field]) => permissions[field] === "granted")) {
     const row = element("div", undefined, "setting-row");
     row.append(
       element(
         "span",
         mac
-          ? "Microphone, Accessibility & Input Monitoring"
+          ? "Microphone & Accessibility"
           : "Microphone, text insertion & global shortcut",
       ),
       element("span", "Allowed", "settings-allowed"),
@@ -457,12 +476,16 @@ function renderStats(history) {
       speaking += r.duration;
     }
   }
+  $("week").hidden = !history.length;
   $("weekly-words").textContent = words.toLocaleString();
-  $("wpm").textContent =
-    speaking >= 30 ? Math.round((words * 60) / speaking) : "—";
-  $("wpm-unit").hidden = speaking < 30;
-  $("saved-time").textContent =
-    `${Math.max(0, Math.round(words / 40 - speaking / 60))} min`;
+  const unit = (value, label) => {
+    const small = element("small", label);
+    return [String(value), small];
+  };
+  $("saved-time").replaceChildren(
+    ...unit(Math.max(0, Math.round(words / 40 - speaking / 60)), "min"),
+  );
+  renderWeekChart(history);
   let cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate()),
     streak = 0;
   if (!days.has(localDay(cursor))) cursor.setDate(cursor.getDate() - 1);
@@ -470,7 +493,49 @@ function renderStats(history) {
     streak++;
     cursor.setDate(cursor.getDate() - 1);
   }
-  $("streak").textContent = `${streak} ${streak === 1 ? "day" : "days"}`;
+  $("streak").replaceChildren(...unit(streak, streak === 1 ? "day" : "days"));
+}
+let weekChartKey = "";
+function renderWeekChart(history) {
+  const today = new Date(),
+    start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  // Monday-first week, so the chart reads like a calendar row.
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const counts = Array(7).fill(0);
+  for (const r of history) {
+    const day = Math.floor(
+      (localDay(new Date(r.created_at * 1000)) - start.getTime()) / 864e5,
+    );
+    if (day >= 0 && day < 7)
+      counts[day] += (r.correction || r.text)
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean).length;
+  }
+  const todayIndex = (today.getDay() + 6) % 7,
+    key = JSON.stringify([counts, todayIndex]);
+  if (key === weekChartKey) return;
+  weekChartKey = key;
+  const peak = Math.max(1, ...counts),
+    formatter = new Intl.DateTimeFormat(formattingLocale(), {
+      weekday: "narrow",
+    });
+  $("week-chart").replaceChildren(
+    ...counts.map((count, index) => {
+      const day = new Date(start);
+      day.setDate(start.getDate() + index);
+      const column = element(
+        "div",
+        undefined,
+        index === todayIndex ? "today" : index > todayIndex ? "future" : "",
+      );
+      const bar = element("i");
+      bar.style.height = `${Math.max(3, Math.round((count / peak) * 48))}px`;
+      column.title = `${count.toLocaleString()} words`;
+      column.append(bar, element("span", formatter.format(day)));
+      return column;
+    }),
+  );
 }
 function historyAppName(record) {
   const metadata =
@@ -520,6 +585,84 @@ function historyIcon(kind) {
   svg.append(path);
   return svg;
 }
+// Search folds case and accents, and every word must match somewhere in the
+// text or the app name. The folded text is cached per record, so typing only
+// scans strings, and the list renders in pages so long histories stay fast.
+const historyIndex = new Map();
+const HISTORY_PAGE = 100;
+let historyLimit = HISTORY_PAGE,
+  historyQuery = "",
+  // What the list shows. It only follows the field after the debounce, so
+  // the background status refresh can't apply a half-typed query early.
+  appliedHistoryQuery = "";
+function foldText(text) {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase();
+}
+function searchTokens(query) {
+  return foldText(query).split(/\s+/u).filter(Boolean);
+}
+function historyHaystack(record) {
+  const app = historyAppName(record),
+    source = `${record.correction || ""}\u0000${record.text}\u0000${app}`;
+  let entry = historyIndex.get(record.id);
+  if (!entry || entry.source !== source) {
+    entry = {
+      source,
+      folded: foldText(
+        `${record.correction || record.text} ${record.raw} ${app}`,
+      ),
+    };
+    historyIndex.set(record.id, entry);
+  }
+  return entry.folded;
+}
+function historySignature(history) {
+  let signature = String(history.length);
+  for (const r of history)
+    signature += `|${r.id}:${(r.correction || "").length}:${r.legacy?.warning ? 1 : 0}`;
+  return signature;
+}
+function highlightInto(container, text, tokens) {
+  if (!tokens.length) {
+    container.textContent = text;
+    return;
+  }
+  // Match on folded text (so "cafe" finds "café"), then mark the original.
+  let folded = "";
+  const start = [];
+  for (let i = 0; i < text.length;) {
+    const char = String.fromCodePoint(text.codePointAt(i));
+    const piece = foldText(char);
+    for (let k = 0; k < piece.length; k++) start.push(i);
+    folded += piece;
+    i += char.length;
+  }
+  start.push(text.length);
+  const escaped = tokens
+    .map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(escaped.join("|"), "gu");
+  const nodes = [];
+  let last = 0;
+  for (const match of folded.matchAll(pattern)) {
+    if (!match[0]) continue;
+    const from = start[match.index],
+      to = start[match.index + match[0].length];
+    if (from < last) continue;
+    if (from > last)
+      nodes.push(document.createTextNode(text.slice(last, from)));
+    nodes.push(element("mark", text.slice(from, to)));
+    last = to;
+  }
+  if (last < text.length) nodes.push(document.createTextNode(text.slice(last)));
+  container.replaceChildren(...nodes);
+}
+function setHistoryQuery(value) {
+  $("history-search").value = value;
+  appliedHistoryQuery = value.trim();
+  historyLimit = HISTORY_PAGE;
+  renderHistory(current.view);
+}
 function renderHistory(s) {
   if (
     historyEditing &&
@@ -527,45 +670,61 @@ function renderHistory(s) {
   )
     return;
   historyEditing = null;
-  const query = $("history-search").value.toLocaleLowerCase();
-  const pinned = $("history-pinned").checked;
-  const key = JSON.stringify([
-    s.history,
+  const query = appliedHistoryQuery;
+  if (query !== historyQuery) {
+    historyQuery = query;
+    historyLimit = HISTORY_PAGE;
+  }
+  const key = [
+    historySignature(s.history),
     query,
-    pinned,
+    historyLimit,
     localDay(new Date()),
-    typeof appMetadata === "undefined" ? null : appMetadata,
-  ]);
+    typeof appMetadata === "undefined" ? 0 : Object.keys(appMetadata).length,
+  ].join("\u0001");
   if (key === historyKey) return;
   historyKey = key;
-  $("history").replaceChildren();
+  const searching = !!query,
+    tokens = searchTokens(query);
   $("clear-history").disabled = !s.history.length;
-  document.querySelector(".history-filters").hidden = !s.history.length;
-  $("history-retention").hidden = !s.history.length;
-  const records = s.history.filter(
-    (r) =>
-      (!pinned || r.pinned) &&
-      `${r.text} ${r.correction || ""} ${r.raw} ${historyAppName(r)}`
-        .toLocaleLowerCase()
-        .includes(query),
-  );
-  if (!records.length) {
+  $("clear-history-search").hidden = !searching;
+  document
+    .querySelector('[data-panel="dictation"]')
+    .classList.toggle("searching", searching);
+  // The newest dictation is the Home hero; the list starts after it unless
+  // the person is searching.
+  document.querySelector(".history-filters").hidden =
+    !searching && s.history.length < 2;
+  $("history-retention").hidden = searching || s.history.length < 2;
+  const matches = searching
+    ? s.history.filter((r) => {
+        const haystack = historyHaystack(r);
+        return tokens.every((token) => haystack.includes(token));
+      })
+    : s.history.slice(1);
+  const records = matches.slice(0, historyLimit);
+  $("history-heading").textContent = searching
+    ? matches.length
+      ? `${matches.length.toLocaleString()} ${matches.length === 1 ? "result" : "results"}`
+      : "No results"
+    : records.length
+      ? historyDay(records[0].created_at)
+      : "Earlier";
+  $("history").replaceChildren();
+  if (!matches.length && (searching || !s.history.length)) {
     const empty = element("div", undefined, "native-history-empty");
     empty.append(
-      historyIcon("clock"),
       element(
         "h2",
-        s.history.length ? "No matching dictations." : "No dictations yet",
+        searching ? `Nothing matches “${query}”` : "No dictations yet",
       ),
       element(
         "p",
-        s.history.length
-          ? "Try another word or an app name."
-          : `Your dictations stay here for 30 days. Hold ${current.shortcut || "your shortcut"} in any app to get started.`,
+        searching
+          ? "Try fewer words, or search for an app name."
+          : `Hold ${current.shortcut || "your talk key"} in any app to get started.`,
       ),
     );
-    if (!s.history.length)
-      empty.append(element("kbd", current.shortcut || "Hold to dictate"));
     $("history").append(empty);
   }
   let groupTitle = null,
@@ -573,17 +732,32 @@ function renderHistory(s) {
   for (const r of records) {
     const title = historyDay(r.created_at);
     if (title !== groupTitle) {
-      const section = element("section", undefined, "secondary-section");
-      group = element("div", undefined, "secondary-group native-history-group");
-      section.append(element("h2", title), group);
+      const section = element("section", undefined, "history-day");
+      group = element("div", undefined, "history-day-rows");
+      // The first day's title sits in the header row beside search.
+      if (groupTitle !== null || searching)
+        section.append(element("h3", title));
+      section.append(group);
       $("history").append(section);
       groupTitle = title;
     }
     const article = element("article", undefined, "native-history-row");
+    const time = element(
+      "time",
+      new Date(r.created_at * 1000).toLocaleTimeString(formattingLocale(), {
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+      "history-time",
+    );
     const appName = historyAppName(r);
     const icon = element("div", undefined, "history-app-icon");
     icon.setAttribute("aria-hidden", "true");
-    icon.append(historyIcon("app"));
+    if (appName)
+      icon.append(
+        element("span", appName.trim()[0].toLocaleUpperCase(), "app-initial"),
+      );
+    else icon.append(historyIcon("app"));
     const appIcon =
       typeof appMetadata === "undefined" ? null : appMetadata[r.target]?.icon;
     if (appIcon?.startsWith("data:image/")) {
@@ -593,23 +767,16 @@ function renderHistory(s) {
       icon.replaceChildren(image);
     }
     const content = element("div", undefined, "history-row-content");
-    const text = element("p", r.correction || r.text, "history-row-text");
-    const meta = [
-      appName,
-      new Date(r.created_at * 1000).toLocaleTimeString(formattingLocale(), {
-        hour: "numeric",
-        minute: "2-digit",
-      }),
-      `${Math.round(r.duration)} sec`,
-      r.pinned ? "Pinned" : "",
-      r.correction ? "Corrected" : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    content.append(text, element("p", meta, "history-row-meta"));
-    const pasteStatus = element("small", "", "history-row-status");
-    pasteStatus.setAttribute("role", "status");
-    content.append(pasteStatus);
+    const text = element("p", undefined, "history-row-text");
+    highlightInto(text, r.correction || r.text, tokens);
+    content.append(text);
+    if (searching) {
+      const meta = element("p", undefined, "history-row-meta");
+      highlightInto(meta, appName, tokens);
+      content.append(meta);
+    }
+    const warning = dictationWarning(r);
+    if (warning) content.append(warningNote(warning));
     const copy = button(
       "",
       async () => {
@@ -634,21 +801,6 @@ function renderHistory(s) {
       });
     actions.append(
       act("Copy", () => call("copy_text", { text: r.correction || r.text })),
-      act("Paste again", async () => {
-        pasteStatus.textContent = "Returning to the original application…";
-        try {
-          pasteStatus.textContent = await call("retry_dictation", { id: r.id });
-        } catch (e) {
-          pasteStatus.textContent = String(e);
-        }
-      }),
-      act(r.pinned ? "Unpin" : "Pin", () =>
-        call("edit_dictation", {
-          id: r.id,
-          pinned: !r.pinned,
-          correction: null,
-        }),
-      ),
       act("Correct", () => {
         if (historyEditing) return;
         historyEditing = r.id;
@@ -736,9 +888,32 @@ function renderHistory(s) {
       menu.open = true;
       summary.focus();
     };
-    article.append(icon, content, copy, menu);
+    if (!searching) icon.title = appName;
+    article.append(time, icon, content, copy, menu);
     group.append(article);
   }
+  if (matches.length > records.length) {
+    const more = button(
+      `Show ${Math.min(HISTORY_PAGE, matches.length - records.length)} more`,
+      () => {
+        historyLimit += HISTORY_PAGE;
+        renderHistory(current.view);
+      },
+      "history-more",
+    );
+    $("history").append(more);
+  }
+}
+function dictationWarning(record) {
+  const warning = record.legacy?.warning;
+  return typeof warning === "string" ? warning.replace(/\.$/u, "") : "";
+}
+function warningNote(text) {
+  const note = element("p", undefined, "history-row-note");
+  note.innerHTML =
+    '<svg viewBox="0 0 20 20" width="12" height="12" aria-hidden="true"><path d="M10 3 18 16.5H2L10 3Z" fill="currentColor"/><path d="M10 8v4" stroke="var(--base)" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="14.3" r="1" fill="var(--base)"/></svg>';
+  note.append(element("span", text + "."));
+  return note;
 }
 function renderMarkdown(source, container, note) {
   container.replaceChildren();
@@ -847,7 +1022,8 @@ function noteGlyph() {
   return span;
 }
 function selectNote(id) {
-  if (noteEditing && !window.confirm("Discard your unsaved edit?")) return;
+  // Edits save as you type, so switching meetings just sends what's pending.
+  flushNoteSave();
   selectedNote = id;
   notesActionMode = false;
   noteEditing = false;
@@ -860,25 +1036,53 @@ function selectNote(id) {
 function renderNotes(s) {
   const recording = s.stage.startsWith("meeting");
   if (s.active_note && recording) selectedNote = s.active_note;
-  const n = s.notes.find((n) => n.id === selectedNote);
+  let n = s.notes.find((n) => n.id === selectedNote);
   if (!n && selectedNote) selectedNote = null;
+  // Split view: with nothing chosen, open the newest meeting on the right.
+  if (!n && !recording && !notesActionMode && !$("notes-search").value) {
+    n = s.notes.reduce(
+      (newest, note) =>
+        !newest || note.created_at > newest.created_at ? note : newest,
+      null,
+    );
+    if (n) {
+      selectedNote = n.id;
+      noteVersion = "";
+      notesKey = "";
+    }
+  }
   const panel = document.querySelector('[data-panel="meetings"]');
   panel.dataset.noteView = recording
     ? "live"
     : n || notesActionMode
       ? "detail"
       : "home";
-  $("notes-home").hidden = recording || !!n || notesActionMode;
   $("note-detail").hidden = recording || (!n && !notesActionMode);
-  $("ask-all").hidden =
-    recording ||
-    !s.notes.some((note) => note.lines?.length || note.plainTranscript) ||
-    $("ask-dialog").open;
-  $("ask-all").title = n ? "Ask about this meeting" : "Ask about your meetings";
-  $("ask-all").onclick = () => openAsk(n ? [n.id] : []);
-  if (!recording) setAskContext(n?.id || null);
+  $("notes-placeholder").hidden = recording || !!n || notesActionMode;
+  $("notes-placeholder-title").textContent = s.notes.length
+    ? "Pick a meeting"
+    : "No meetings yet";
+  $("notes-placeholder-text").textContent = s.notes.length
+    ? "Its summary and transcript open here."
+    : "Start Notetaker for a call or an in-person meeting. Your notes appear here.";
+  window.pressayAsk.sync({
+    meeting: recording ? null : n,
+    recording,
+    hasNotes: s.notes.some(
+      (note) => note.lines?.length || note.plainTranscript || note.body,
+    ),
+    // Until the first account check finishes, assume Ask works rather than
+    // flashing a setup prompt.
+    canAsk:
+      s.settings.notesUseAI !== false &&
+      (!accountChecked || notesProviderAvailable()),
+  });
+  if (
+    !accountChecked &&
+    !document.querySelector('[data-panel="meetings"]').hidden
+  )
+    refreshAccount();
   if (recording) {
-    $("ask-dialog").close();
     $("meeting-title").textContent = n?.title || "Preparing meeting";
     const finishing = ["meeting_finishing", "meeting_speakers"].includes(
       s.stage,
@@ -900,7 +1104,6 @@ function renderNotes(s) {
     $("live-meeting-menu").hidden = finishing || !s.active_note;
     $("live-meeting-notice").hidden = !n?.notice || n.interrupted;
     $("live-meeting-notice").textContent = n?.notice || "";
-    return;
   }
   const query = $("notes-search").value.toLocaleLowerCase();
   const key = JSON.stringify([
@@ -929,27 +1132,38 @@ function renderNotes(s) {
         element("h2", query ? "No matching meetings" : "No meetings yet"),
         element(
           "p",
-          query
-            ? "Try another search."
-            : "Start Notetaker for a call or an in-person meeting. Your meetings will appear here.",
+          query ? "Try another search." : "Your meetings will appear here.",
         ),
       );
       $("meetings").append(empty);
     }
+    let groupTitle = null;
     for (const note of notes) {
-      const row = button("", () => selectNote(note.id), "note-card");
+      const title = historyDay(note.created_at);
+      if (title !== groupTitle) {
+        $("meetings").append(element("h3", title, "notes-day"));
+        groupTitle = title;
+      }
+      const row = button(
+        "",
+        () => selectNote(note.id),
+        "note-card" + (note.id === selectedNote ? " active" : ""),
+      );
+      if (note.id === selectedNote) row.setAttribute("aria-current", "true");
       const copy = element("span", undefined, "note-row-copy");
       copy.append(
         element("strong", note.title || "Untitled"),
         element(
           "small",
           [
-            noteDate(note),
+            new Date((note.created_at || 0) * 1000).toLocaleTimeString(
+              formattingLocale(),
+              { hour: "numeric", minute: "2-digit" },
+            ),
             noteDuration(note.duration),
-            (note.participants || []).join(", "),
           ]
             .filter(Boolean)
-            .join(" · "),
+            .join(", "),
         ),
       );
       const writing =
@@ -959,11 +1173,7 @@ function renderNotes(s) {
         copy,
         element(
           "span",
-          writing
-            ? "Writing up…"
-            : note.body
-              ? "Written up"
-              : "Transcript only",
+          writing ? "Writing up…" : note.body ? "" : "Transcript only",
           "note-write-status" + (note.body ? " written" : ""),
         ),
       );
@@ -990,6 +1200,7 @@ function renderNotes(s) {
       chevron,
     );
   }
+  if (recording) return;
   if (notesActionMode) {
     renderNotesActions(s);
     return;
@@ -1008,20 +1219,141 @@ function renderNotes(s) {
   noteVersion = version;
   const detail = $("note-detail");
   detail.replaceChildren();
-  const toolbar = element("div", undefined, "native-note-toolbar");
-  const back = button("←", () => selectNote(null), "note-back");
-  back.setAttribute("aria-label", "Back to Notetaker");
-  toolbar.append(back, element("span", undefined, "note-toolbar-divider"));
+  const writing = pendingNotes.has(n.id) || current.jobs?.includes(n.id);
+  const head = element("header", undefined, "note-head");
+  const actions = element("div", undefined, "note-head-actions");
+  const status = element("span", "", "note-save-status");
+  status.id = "note-save-status";
+  status.setAttribute("role", "status");
+  actions.append(status);
+  const myOpen = n.actions?.some(
+    (a) => a.owner?.toLowerCase() === "me" && !a.done,
+  );
+  if (myOpen && current.platform === "macos")
+    actions.append(
+      button(
+        "Add to Reminders",
+        () => call("export_reminders", { id: n.id }),
+        "note-head-button",
+      ),
+    );
+  const copy = button(
+    "",
+    async () => {
+      await call("copy_text", {
+        text:
+          noteTab === "transcript"
+            ? n.plainTranscript || ""
+            : noteTab === "personal"
+              ? n.myNotes || ""
+              : `# ${n.title}\n\n${n.body || ""}`,
+      });
+      copy.lastChild.textContent = "Copied";
+      setTimeout(() => (copy.lastChild.textContent = "Copy"), 1400);
+    },
+    "note-head-button",
+  );
+  copy.append(historyIcon("copy"), element("span", "Copy"));
+  copy.title =
+    noteTab === "transcript" ? "Copy the transcript" : "Copy as Markdown";
+  const exportButton = button(
+    "Export",
+    () => call("export_data", { kind: "note", id: n.id }),
+    "note-head-button",
+  );
+  exportButton.title = "Save as a Markdown file";
+  const remove = button(
+    "",
+    async () => {
+      if (
+        confirm(
+          `Delete “${n.title}”? Its notes and transcript are deleted. You can’t undo this.`,
+        )
+      )
+        await call("delete_note", { id: n.id });
+    },
+    "note-head-button icon-only",
+  );
+  remove.innerHTML =
+    '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 10h6.6L14 6"/></svg>';
+  remove.setAttribute("aria-label", "Delete meeting");
+  remove.title = "Delete meeting";
+  // Rewriting sits with the note's other actions, not under its text.
+  if (
+    n.kind === "meeting" &&
+    n.body &&
+    !writing &&
+    s.settings.notesUseAI !== false &&
+    notesProviderAvailable()
+  ) {
+    const again = button("", () => writeUp(n), "note-head-button");
+    again.innerHTML =
+      '<svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="m10 3 1.7 4.6L16.5 9l-4.8 1.6L10 15.5l-1.7-4.9L3.5 9l4.8-1.4L10 3Z" fill="currentColor"/></svg>';
+    again.append(element("span", "Write up again"));
+    again.title = n.edited
+      ? "Replaces your edits with a fresh write-up"
+      : "Write a fresh summary from the transcript";
+    actions.append(again);
+  }
+  actions.append(copy, exportButton, remove);
+  const title = element("h1", n.title || "Untitled", "note-title");
+  title.contentEditable = "plaintext-only";
+  title.spellcheck = false;
+  title.setAttribute("aria-label", "Meeting title");
+  title.onfocus = () => (noteEditing = true);
+  const revertTitle = () => {
+    title.textContent = n.title || "Untitled";
+    dropQueuedNoteField(n.id, "title");
+  };
+  title.onblur = () => {
+    if (!title.textContent.trim()) revertTitle();
+    finishNoteEditing();
+  };
+  title.onkeydown = (event) => {
+    if (event.key === "Enter" || event.key === "Escape") {
+      event.preventDefault();
+      if (event.key === "Escape") revertTitle();
+      title.blur();
+    }
+  };
+  title.oninput = () => {
+    const value = title.textContent.trim();
+    if (value) queueNoteSave(n.id, { title: value.slice(0, 200) });
+  };
+  const meta = element("div", undefined, "note-meta");
+  meta.append(
+    element(
+      "span",
+      [
+        noteDate(n),
+        n.duration >= 60 ? noteDuration(n.duration) : "",
+        n.kind === "meeting" ? notePeople(n) : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    ),
+  );
+  if (n.kind === "meeting")
+    meta.append(
+      button(
+        n.participants?.length || n.speakerNames?.some(Boolean)
+          ? "Edit names"
+          : "Add names",
+        () => editNoteNames(n),
+        "note-link",
+      ),
+    );
   const tabs = element("div", undefined, "note-tabs");
-  for (const [id, title] of [
+  tabs.setAttribute("role", "tablist");
+  for (const [id, label] of [
     ["summary", "Summary"],
+    ["personal", "My notes"],
     ["transcript", "Transcript"],
-    ["personal", "My Notes"],
   ]) {
-    const b = button(
-      title,
-      () => {
-        if (noteEditing && !confirm("Discard your unsaved edit?")) return;
+    const tab = button(
+      label,
+      async () => {
+        await flushNoteSave();
         noteEditing = false;
         noteTab = id;
         noteVersion = "";
@@ -1029,171 +1361,77 @@ function renderNotes(s) {
       },
       noteTab === id ? "active" : "",
     );
-    b.setAttribute("aria-pressed", String(noteTab === id));
-    tabs.append(b);
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", String(noteTab === id));
+    tabs.append(tab);
   }
-  toolbar.append(tabs);
-  const tools = element("div", undefined, "note-actions");
-  const edit = button("Edit", () => editNoteField(n, "body", true));
-  edit.disabled =
-    noteTab !== "summary" ||
-    pendingNotes.has(n.id) ||
-    current.jobs?.includes(n.id);
-  tools.append(edit);
-  const share = button(
-    "↑",
-    () => call("export_data", { kind: "note", id: n.id }),
-    "note-icon-button",
-  );
-  share.setAttribute("aria-label", "Share meeting");
-  share.title = "Share meeting";
-  tools.append(share);
-  const menu = element("details", undefined, "notes-menu");
-  const trigger = element("summary", "•••");
-  trigger.setAttribute("aria-label", "More meeting actions");
-  const menuItems = element("div", undefined, "notes-menu-items");
-  menuItems.append(
-    button("Rename", () => editNoteField(n, "title", false)),
-    button("Copy as Markdown", () =>
-      call("copy_text", { text: `${n.title}\n\n${n.body || ""}` }),
-    ),
-    button("Copy Transcript", () =>
-      call("copy_text", { text: n.plainTranscript || "" }),
-    ),
-    button("Ask this meeting", () => openAsk([n.id])),
-    button(
-      "Delete…",
-      async () => {
-        if (
-          confirm(
-            `Delete “${n.title}”? Its notes and transcript are deleted. You can’t undo this.`,
-          )
-        )
-          await call("delete_note", { id: n.id });
-      },
-      "danger",
-    ),
-  );
-  menu.append(trigger, menuItems);
-  tools.append(menu);
-  toolbar.append(tools);
-  detail.append(toolbar);
+  head.append(actions, title, meta, tabs);
+  detail.append(head);
   const body = element("div", undefined, "note-body note-tab-" + noteTab);
   detail.append(body);
   if (noteTab === "summary") {
-    const top = element("div", undefined, "note-top");
-    const metadata = element("div", undefined, "note-metadata");
-    metadata.append(
-      element(
-        "span",
-        [
-          noteDate(n),
-          n.duration >= 60 ? noteDuration(n.duration) : "",
-          n.kind === "meeting" ? notePeople(n) : "",
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      ),
-    );
-    if (n.kind === "meeting")
-      metadata.append(
-        button(
-          n.participants?.length || n.speakerNames?.some(Boolean)
-            ? "Edit names"
-            : "Add names",
-          () => editNoteNames(n),
-          "note-link",
-        ),
-      );
-    top.append(element("h2", n.title), metadata);
-    body.append(top);
     if (n.notice) body.append(element("p", n.notice, "notice"));
-    const row = element("div", undefined, "row");
-    const writing = pendingNotes.has(n.id) || current.jobs?.includes(n.id);
     const failure = !writing && writeUpErrors.get(n.id);
     if (failure) {
       const banner = element("div", undefined, "notice row");
       banner.append(
         element("span", failure),
-        button("Try Again", () => writeUp(n, true)),
+        button("Try again", () => writeUp(n, true)),
       );
       body.append(banner);
     }
-    row.append(
-      button(
-        writing ? "Writing up…" : n.body ? "Write Up Again" : "Write Up Notes",
-        () => {
-          if (!writing) writeUp(n);
-        },
-        "primary",
-      ),
-    );
-    if (writing)
-      row.append(button("Cancel", () => call("cancel_note_job", { id: n.id })));
-    if (n.body && !writing) {
-      menuItems.append(row.firstElementChild);
-      row.hidden = true;
-    }
-    body.append(row);
-    const markdown = element("div", undefined, "markdown");
-    if (n.body) {
-      renderMarkdown(n.body, markdown, n);
-      for (const line of markdown.querySelectorAll(".markdown-list")) {
-        if (line.firstChild?.nodeType === Node.TEXT_NODE)
-          line.firstChild.nodeValue = line.firstChild.nodeValue.replace(
-            /^[-*]\s/u,
-            "",
-          );
+    if (n.body || writing) {
+      const editor = createNoteEditor({
+        value: n.body || "",
+        label: "Meeting notes",
+        placeholder: "Write your notes…",
+        readOnly: writing,
+        onChange: (markdown) => queueNoteSave(n.id, { body: markdown }),
+        onFocusChange: (focused) =>
+          focused ? (noteEditing = true) : finishNoteEditing(),
+      });
+      body.append(editor.element);
+      if (writing) {
+        const row = element("div", undefined, "note-writing");
+        row.append(
+          element("span", "Writing up your notes…"),
+          button("Cancel", () => call("cancel_note_job", { id: n.id })),
+        );
+        body.prepend(row);
       }
     } else {
       const building = s.active_note === n.id;
       const aiOff = s.settings.notesUseAI === false;
       const noProvider = accountInfo && !notesProviderAvailable();
-      markdown.append(
+      const empty = element("div", undefined, "note-empty");
+      empty.append(
         element(
-          "div",
+          "p",
           building
             ? "Your transcript is building. Notes will be ready after the recording ends."
             : noProvider
-              ? "Connect an Anthropic API key or a ChatGPT subscription to write a summary, decisions and action items. The full transcript is in the Transcript tab."
+              ? "Connect Claude or OpenAI to get a summary, decisions and action items. The full transcript is in the Transcript tab."
               : aiOff
                 ? "AI notes are off. The full transcript is in the Transcript tab."
-                : "This meeting hasn’t been written up yet. The full transcript is in the Transcript tab.",
-          "empty",
+                : `This ${n.kind === "voice" ? "voice note" : "meeting"} hasn’t been written up yet.`,
         ),
       );
-      if (!building && noProvider) {
-        row.replaceChildren(
-          button("Set Up AI…", () => navigate("ai"), "primary"),
+      if (!building)
+        empty.append(
+          noProvider
+            ? button("Connect AI", () => openSettings("ai"), "primary")
+            : aiOff
+              ? button(
+                  "Turn on AI notes",
+                  async () => {
+                    await setting({ notesUseAI: true });
+                    writeUp(n);
+                  },
+                  "primary",
+                )
+              : button("Write up notes", () => writeUp(n), "primary"),
         );
-      } else if (!building && aiOff) {
-        row.replaceChildren(
-          button(
-            "Turn On AI Notes",
-            async () => {
-              await setting({ notesUseAI: true });
-              writeUp(n);
-            },
-            "primary",
-          ),
-        );
-      }
-    }
-    body.append(markdown);
-    if (n.actions?.some((a) => a.owner?.toLowerCase() === "me" && !a.done)) {
-      menuItems.append(
-        button("Export my action items", () =>
-          call("export_data", { kind: "tasks", id: n.id }),
-        ),
-      );
-      if (current.platform === "macos")
-        tools.prepend(
-          button(
-            "Add to Reminders",
-            () => call("export_reminders", { id: n.id }),
-            "note-link",
-          ),
-        );
+      body.append(empty);
     }
   } else if (noteTab === "transcript") {
     const transcriptTools = element(
@@ -1285,60 +1523,104 @@ function renderNotes(s) {
     draw();
     body.append(transcript);
   } else if (noteTab === "personal") {
-    body.append(
-      element(
-        "p",
-        "Your private notes. Pressay works them into the summary.",
-        "muted",
-      ),
-    );
-    const area = element("textarea");
-    area.value = n.myNotes || "";
-    area.rows = 12;
-    area.setAttribute("aria-label", "My meeting notes");
-    area.oninput = () => {
-      noteEditing = true;
-    };
-    const actions = element("div", undefined, "row");
-    actions.append(
-      button(
-        "Save my notes",
-        async () => {
-          await call("edit_note", { id: n.id, patch: { myNotes: area.value } });
-          noteEditing = false;
-          noteVersion = "";
-          renderNotes(current.view);
-        },
-        "primary",
-      ),
-    );
+    let update = null;
+    const editor = createNoteEditor({
+      value: n.myNotes || "",
+      label: "My notes",
+      placeholder:
+        "Jot down anything. Pressay works your notes into the summary.",
+      onChange: (markdown) => {
+        queueNoteSave(n.id, { myNotes: markdown });
+        if (update) update.hidden = markdown === (n.myNotes || "");
+      },
+      onFocusChange: (focused) =>
+        focused ? (noteEditing = true) : finishNoteEditing(),
+    });
+    body.append(editor.element);
     if (
       n.kind === "meeting" &&
       n.body &&
-      !n.edited &&
       s.settings.notesUseAI !== false &&
       notesProviderAvailable()
     ) {
-      const update = button("Update Summary", async () => {
-        await call("edit_note", { id: n.id, patch: { myNotes: area.value } });
-        noteEditing = false;
-        noteTab = "summary";
-        writeUp(n);
-      });
+      update = button(
+        "",
+        async () => {
+          await flushNoteSave();
+          noteEditing = false;
+          noteTab = "summary";
+          writeUp(n);
+        },
+        "note-rewrite",
+      );
+      update.innerHTML =
+        '<svg viewBox="0 0 20 20" width="13" height="13" aria-hidden="true"><path d="m10 3 1.7 4.6L16.5 9l-4.8 1.6L10 15.5l-1.7-4.9L3.5 9l4.8-1.4L10 3Z" fill="currentColor"/></svg>';
+      update.append(element("span", "Update the summary with my notes"));
       update.hidden = true;
-      area.addEventListener("input", () => {
-        update.hidden = area.value === (n.myNotes || "");
-      });
-      actions.append(update);
+      body.append(update);
     }
-    body.append(area, actions);
   }
+}
+// Notes save as you type: edits collect for a moment, then go out together.
+let noteSave = null;
+function setNoteStatus(text) {
+  const status = $("note-save-status");
+  if (status) status.textContent = text;
+}
+function queueNoteSave(id, patch) {
+  if (noteSave && noteSave.id !== id) flushNoteSave();
+  noteEditing = true;
+  noteSave ||= { id, patch: {} };
+  Object.assign(noteSave.patch, patch);
+  clearTimeout(noteSave.timer);
+  setNoteStatus("Editing");
+  noteSave.timer = setTimeout(flushNoteSave, 700);
+}
+function dropQueuedNoteField(id, field) {
+  if (noteSave?.id !== id) return;
+  delete noteSave.patch[field];
+  if (Object.keys(noteSave.patch).length) return;
+  clearTimeout(noteSave.timer);
+  noteSave = null;
+  setNoteStatus("");
+}
+async function flushNoteSave() {
+  const pending = noteSave;
+  if (!pending) return;
+  noteSave = null;
+  clearTimeout(pending.timer);
+  setNoteStatus("Saving…");
+  try {
+    await call("edit_note", { id: pending.id, patch: pending.patch });
+    // Keep the shown state current until the next refresh arrives.
+    const saved = current?.view?.notes?.find((note) => note.id === pending.id);
+    if (saved) {
+      Object.assign(saved, pending.patch);
+      if ("body" in pending.patch) saved.edited = true;
+    }
+    setNoteStatus("Saved");
+    setTimeout(() => {
+      if ($("note-save-status")?.textContent === "Saved") setNoteStatus("");
+    }, 1600);
+  } catch {
+    setNoteStatus("Not saved");
+  }
+}
+function finishNoteEditing() {
+  flushNoteSave().finally(() => {
+    const active = document.activeElement;
+    if (!active?.closest?.(".note-editor-doc, .note-title"))
+      noteEditing = false;
+  });
 }
 function notesProviderAvailable() {
   return !!(accountInfo?.claudeApiKey || accountInfo?.chatgpt?.signed_in);
 }
 async function writeUp(n, confirmed = false) {
   if (pendingNotes.has(n.id)) return;
+  // Save any typing first, so the write-up sees it and asks before replacing it.
+  await flushNoteSave();
+  n = current.view.notes.find((note) => note.id === n.id) || n;
   if (
     n.edited &&
     !confirmed &&
@@ -1461,51 +1743,6 @@ function renderNotesActions(s) {
   if (!count) content.append(element("p", "You’re all caught up.", "muted"));
   detail.append(content);
 }
-function editNoteField(note, field, multiline) {
-  noteEditing = true;
-  const body = $("note-detail").querySelector(".note-body");
-  body.replaceChildren();
-  body.className = "note-body note-tab-summary note-editor";
-  const title = element("input");
-  title.className = "note-editor-title";
-  title.value = note.title || "";
-  title.setAttribute("aria-label", "Note title");
-  const input = multiline ? element("textarea") : title;
-  if (multiline) {
-    input.value = note.body || "";
-    input.rows = 18;
-    input.setAttribute("aria-label", "Note body");
-  }
-  body.append(title);
-  if (multiline) body.append(input);
-  const tools = $("note-detail").querySelector(".note-actions");
-  tools.replaceChildren();
-  $("note-detail")
-    .querySelectorAll(".note-tabs button")
-    .forEach((b) => (b.disabled = true));
-  const finish = () => {
-    noteEditing = false;
-    noteVersion = "";
-    renderNotes(current.view);
-  };
-  tools.append(
-    button("Cancel", finish),
-    button(
-      "Done",
-      async () => {
-        await call("edit_note", {
-          id: note.id,
-          patch: multiline
-            ? { title: title.value, body: input.value }
-            : { [field]: input.value },
-        });
-        finish();
-      },
-      "primary",
-    ),
-  );
-  input.focus();
-}
 function renderWorkspace(s) {
   if (!workspaceReady) setupWorkspace();
   renderStats(s.history);
@@ -1551,7 +1788,6 @@ function renderWorkspace(s) {
   syncShortcut(s.settings);
   syncPreferences(s.settings);
   renderGeneralSettings(s);
-  if ($("ask-dialog").open) renderAsk();
 }
 function setting(patch) {
   return call("save_settings", { patch });
@@ -1622,7 +1858,7 @@ function syncPreferences(s) {
   );
   $("ai-enabled").checked = s.claudeCleanup === true;
   if (
-    !document.activeElement?.closest('[data-panel="ai"]') &&
+    !document.activeElement?.closest("#settings-ai") &&
     !accountSaving &&
     !accountVerifying &&
     !accountSigningIn
@@ -1640,6 +1876,7 @@ function syncPreferences(s) {
   $("meeting-hours").value = s.maxMeetingHours || 3;
   $("meeting-model").value = s.meetingASRModel || "moss";
   $("detect-calls").checked = s.detectCalls !== false;
+  $("detect-calls-quick").checked = s.detectCalls !== false;
   $("wayland-cursor").checked = s.waylandCurrentCursor === true;
   $("wayland-option").hidden = !current.permissions.wayland;
   $("wayland-help").hidden = !current.permissions.wayland;
@@ -1783,216 +2020,109 @@ async function refreshAccount() {
     }
     accountChecked = true;
     renderNotesSettings(current.view.settings);
-    renderAsk();
     renderNotes(current.view);
   })().finally(() => {
     accountRefresh = null;
   });
   return accountRefresh;
 }
-let askContext = null,
-  askAcrossMeetings = false,
-  askEpoch = 0,
-  askInteraction = 0;
-function resetAsk() {
-  ++askEpoch;
-  if (askBusy) invoke("cancel_note_job", { id: "ask" }).catch(() => {});
-  exchanges = [];
-  $("ask-conversation").replaceChildren();
-  $("ask-question").value = "";
-  renderAsk();
-}
-function setAskContext(id) {
-  if (askContext === id) return;
-  askContext = id;
-  if (!askAcrossMeetings) {
-    askIds = id ? [id] : [];
-    resetAsk();
-  }
-}
-function openAsk(ids) {
-  setAskContext(ids.length === 1 ? ids[0] : null);
-  askIds = askAcrossMeetings || !askContext ? [] : [askContext];
-  if (!$("ask-dialog").open) $("ask-dialog").show();
-  $("ask-all").hidden = true;
-  renderAsk();
-  const epoch = askEpoch,
-    interaction = askInteraction;
-  refreshAccount().then(() => {
-    renderAsk();
-    if (
-      $("ask-dialog").open &&
-      epoch === askEpoch &&
-      interaction === askInteraction &&
-      !$("ask-question").disabled
-    )
-      $("ask-question").focus();
-  });
-  if (!$("ask-question").disabled) $("ask-question").focus();
-}
-function renderAsk() {
-  const available = !!(
-    current?.view.settings.notesUseAI !== false &&
-    (accountInfo?.claudeApiKey || accountInfo?.chatgpt?.signed_in)
-  );
-  $("ask-title").textContent = askIds.length ? "This meeting" : "All meetings";
-  $("ask-scope").hidden = !askContext;
-  $("ask-title").hidden = !!askContext;
-  for (const button of document.querySelectorAll("[data-ask-scope]"))
-    button.setAttribute(
-      "aria-pressed",
-      String((button.dataset.askScope === "all") === askAcrossMeetings),
-    );
-  $("ask-new-chat").disabled = !$("ask-conversation").children.length;
-  $("ask-question").disabled = !available;
-  $("ask-question").placeholder = !available
-    ? current?.view.settings.notesUseAI === false
-      ? "AI is off in Notetaker settings"
-      : "Set up AI in Settings to ask"
-    : exchanges.length
-      ? "Ask a follow-up"
-      : "Ask a question";
-  $("submit-ask").disabled =
-    !available || askBusy || !$("ask-question").value.trim();
-  $("cancel-ask").hidden = !askBusy;
-  const suggestions = $("ask-suggestions");
-  const key = JSON.stringify([askIds, available, askBusy]);
-  suggestions.hidden = $("ask-conversation").children.length > 0;
-  if (suggestions.dataset.key !== key) {
-    suggestions.dataset.key = key;
-    suggestions.replaceChildren(
-      element(
-        "p",
-        askIds.length
-          ? "Ask anything about this meeting."
-          : "Ask anything across your meetings.",
-      ),
-    );
-    for (const prompt of askIds.length
-      ? [
-          "What did we decide?",
-          "What do I need to do?",
-          "Write a follow-up email",
-        ]
-      : [
-          "What do I owe people?",
-          "Summarize this week’s meetings",
-          "What’s still unresolved?",
-        ]) {
-      const suggestion = button(prompt, () => sendAsk(prompt));
-      suggestion.disabled = !available || askBusy;
-      suggestions.append(suggestion);
-    }
-  }
-}
-async function sendAsk(question) {
-  question = question.trim();
-  if (askBusy || !question || $("ask-question").disabled) return;
-  const epoch = askEpoch;
-  askBusy = true;
-  $("ask-question").value = "";
-  $("ask-conversation").append(element("p", question, "question"));
-  const response = element(
-    "div",
-    "Reading your meetings…",
-    "answer markdown pending",
-  );
-  response.setAttribute("role", "status");
-  $("ask-conversation").append(response);
-  renderAsk();
-  response.scrollIntoView({ block: "nearest" });
-  try {
-    const answer = await invoke("ask_notes", {
-      question,
-      ids: [...askIds],
-      history: exchanges.slice(-20),
-    });
-    if (epoch !== askEpoch) return;
-    response.classList.remove("pending");
-    renderMarkdown(answer, response);
-    exchanges.push({ question, answer });
-  } catch (error) {
-    if (epoch !== askEpoch) return;
-    response.classList.remove("pending");
-    response.classList.add("is-error");
-    response.textContent = String(error);
-  } finally {
-    askBusy = false;
-    renderAsk();
-    if (epoch === askEpoch && $("ask-dialog").open) $("ask-question").focus();
-  }
-}
 function setupWorkspace() {
   workspaceReady = true;
   $("general-dictation").append(document.querySelector(".dictation-limit"));
-  for (const tab of document.querySelectorAll("[data-general-tab]")) {
-    tab.onclick = () => showGeneralTab(tab.dataset.generalTab);
+  for (const tab of document.querySelectorAll("[data-settings-tab]")) {
+    tab.onclick = () => showGeneralTab(tab.dataset.settingsTab);
     tab.onkeydown = (event) => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
         return;
       event.preventDefault();
-      const next =
-        event.key === "Home"
-          ? "dictation"
-          : event.key === "End"
-            ? "notetaker"
-            : generalTab === "dictation"
-              ? "notetaker"
-              : "dictation";
+      const index = settingsTabs.indexOf(generalTab),
+        next =
+          event.key === "Home"
+            ? settingsTabs[0]
+            : event.key === "End"
+              ? settingsTabs.at(-1)
+              : settingsTabs[
+                  (index + (event.key === "ArrowRight" ? 1 : -1) + 4) % 4
+                ];
       showGeneralTab(next);
-      $("general-" + next + "-tab").focus();
+      $("settings-tab-" + next).focus();
     };
   }
+  $("open-settings").onclick = () => openSettings();
+  $("close-settings").onclick = () => $("settings-dialog").close();
+  $("settings-dialog").addEventListener("cancel", (event) => {
+    // Esc belongs to the shortcut recorder while it is listening.
+    if (shortcutCapturing) event.preventDefault();
+  });
+  $("settings-dialog").addEventListener("close", () => stopShortcutCapture());
+  $("settings-dialog").addEventListener("click", (event) => {
+    if (event.target === $("settings-dialog")) $("settings-dialog").close();
+  });
   $("notes-connect-ai").onclick = () => {
-    navigate("ai");
+    openSettings("ai");
     document.querySelector("[data-ai-provider][aria-pressed=true]").focus();
-    refreshAccount();
   };
   $("clear-history").onclick = async () => {
     if (
       !confirm(
-        "Clear dictation history? All dictations, including pinned and corrected entries, and their audio recordings will be deleted. This can’t be undone.",
+        "Delete every dictation and its audio, including corrected ones? Meeting notes stay. You can’t undo this.",
       )
     )
       return;
     await call("clear_history").catch(() => {});
   };
-  for (const id of ["history-search", "history-pinned"])
-    $(id).addEventListener("input", () => renderHistory(current.view));
+  // Wait for a short pause in typing before searching; clearing the field
+  // and pressing Enter apply at once.
+  let searchTimer = 0;
+  const runSearch = () => {
+    clearTimeout(searchTimer);
+    appliedHistoryQuery = $("history-search").value.trim();
+    historyLimit = HISTORY_PAGE;
+    renderHistory(current.view);
+    document.querySelector("main").scrollTop = 0;
+  };
+  $("history-search").addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    if (!$("history-search").value.trim()) runSearch();
+    else searchTimer = setTimeout(runSearch, 180);
+  });
+  $("history-search").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runSearch();
+      return;
+    }
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    clearTimeout(searchTimer);
+    if ($("history-search").value) setHistoryQuery("");
+    else $("history-search").blur();
+  });
+  document.querySelector(".home-search").onpointerdown = (event) => {
+    if (event.target.closest("input, button")) return;
+    event.preventDefault();
+    $("history-search").focus();
+  };
+  $("clear-history-search").onclick = () => {
+    setHistoryQuery("");
+    $("history-search").focus();
+  };
   document.querySelector(".history-search-key").textContent =
-    current.platform === "macos" ? "⌘ F" : "Ctrl F";
+    current.platform === "macos" ? "⌘F" : "Ctrl F";
   document.addEventListener("keydown", (event) => {
     if (
-      !document.querySelector('[data-panel="history"]').hidden &&
+      !document.querySelector('[data-panel="dictation"]').hidden &&
       event.key.toLowerCase() === "f" &&
       (current.platform === "macos" ? event.metaKey : event.ctrlKey)
     ) {
       event.preventDefault();
       $("history-search").focus();
+      $("history-search").select();
     }
   });
   $("notes-search").oninput = () => renderNotes(current.view);
-  document.querySelector("#notes-home .heading").oncontextmenu = (event) => {
-    event.preventDefault();
-    $("notes-extra-actions").open = true;
-    $("notes-extra-actions").querySelector("button").focus();
-  };
-  $("notes-extra-actions").onkeydown = (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      $("notes-extra-actions").open = false;
-      $("notes-extra-actions").querySelector("summary").focus();
-    }
-  };
-  $("notes-settings").onclick = () => {
-    navigate("general");
-    $("general-notetaker-tab")?.click();
-  };
-  $("find-meeting").onclick = () => {
-    document.querySelector(".notes-toolbar").hidden = false;
-    $("notes-search").focus();
-    $("find-meeting").closest("details").open = false;
-  };
+  $("detect-calls-quick").onchange = () =>
+    setting({ detectCalls: $("detect-calls-quick").checked }).catch(() => {});
   document.addEventListener("pointerdown", (event) => {
     for (const menu of document.querySelectorAll(
       "details.notes-menu[open], details.history-row-menu[open], details.history-filter-menu[open]",
@@ -2029,7 +2159,6 @@ function setupWorkspace() {
     ["start-voice", "voice"],
   ])
     $(id).onclick = () => {
-      $("notes-extra-actions").open = false;
       selectedNote = null;
       notesActionMode = false;
       call("start_meeting", { kind }).catch(() => {});
@@ -2337,39 +2466,8 @@ function setupWorkspace() {
         await call("install_update");
     } catch {}
   };
-  $("ask-all").onclick = () => openAsk([]);
-  $("close-ask").onclick = () => $("ask-dialog").close();
-  $("ask-dialog").addEventListener("close", () => renderNotes(current.view));
-  $("ask-dialog").addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      $("ask-dialog").close();
-    }
-  });
-  document.addEventListener("pointerdown", () => ++askInteraction, true);
-  document.addEventListener("keydown", () => ++askInteraction, true);
-  $("ask-new-chat").onclick = resetAsk;
-  $("ask-question").oninput = renderAsk;
-  $("ask-question").onkeydown = (event) => {
-    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-      event.preventDefault();
-      sendAsk($("ask-question").value);
-    }
-  };
-  for (const button of document.querySelectorAll("[data-ask-scope]"))
-    button.onclick = () => {
-      const across = button.dataset.askScope === "all";
-      if (across === askAcrossMeetings) return;
-      askAcrossMeetings = across;
-      askIds = across || !askContext ? [] : [askContext];
-      resetAsk();
-    };
-  $("cancel-ask").onclick = () =>
-    invoke("cancel_note_job", { id: "ask" }).catch(() => {});
-  $("ask-form").onsubmit = (event) => {
-    event.preventDefault();
-    sendAsk($("ask-question").value);
-  };
+  window.pressayAsk.setup();
+
   document.addEventListener("keydown", (event) => {
     if (
       !(current.platform === "macos" ? event.metaKey : event.ctrlKey) ||
@@ -2378,12 +2476,12 @@ function setupWorkspace() {
       return;
     if (event.key === ",") {
       event.preventDefault();
-      navigate("general");
+      openSettings();
     }
     if (document.querySelector('[data-panel="meetings"]').hidden) return;
-    if (event.key.toLowerCase() === "j" && !$("ask-all").hidden) {
+    if (event.key.toLowerCase() === "j") {
       event.preventDefault();
-      $("ask-all").click();
+      window.pressayAsk.toggle();
     }
     if (
       event.key === "Enter" &&
@@ -2408,8 +2506,4 @@ function setupWorkspace() {
       ? `${c.application} is using your microphone. Take notes for this call?`
       : "";
   });
-  for (const page of ["general", "ai"])
-    document
-      .querySelector(`[data-page="${page}"]`)
-      .addEventListener("click", refreshAccount);
 }

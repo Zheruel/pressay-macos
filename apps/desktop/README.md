@@ -1,6 +1,16 @@
 # Pressay desktop app
 
-Pressay is the shared Rust core and Tauri implementation for [#31](https://github.com/Zheruel/pressay-macos/issues/31). Its implemented surface includes local dictation, history with audio playback and corrections, manual vocabulary, optional AI cleanup, voice notes, live meetings, speaker separation, editable notes, action items and Ask Notes. Guided setup requires real capture, recognition and insertion before practice completes.
+Pressay is the shared Rust core and Tauri implementation for [#31](https://github.com/Zheruel/pressay-macos/issues/31). It covers local dictation, searchable history with audio playback and corrections, manual vocabulary, optional AI cleanup, voice notes, live meetings, speaker separation, editable notes, action items and Ask. Guided setup checks the microphone, Accessibility and the speech model before you start.
+
+![The Pressay desktop app: Notetaker with a meeting note and an Ask answer that cites two meetings](../../docs/assets/desktop-app.jpg)
+
+The window has three tabs in its title bar:
+
+- **Home**: your last dictation, the week's stats, and every dictation, searchable with ⌘F.
+- **Notetaker**: meetings and voice notes. Edit a note in place; it saves as you type. Ask (⌘J) answers questions about one meeting or all of them and links each point to its meeting.
+- **Dictionary**: words Pressay should spell your way.
+
+Settings (⌘, or the cog) holds Dictation, AI Cleanup, Notetaker and General.
 
 The app uses the `dev.localflow.app` identity and installs in place of the Swift app, with its own store and credential entries. Platform integrations and release acceptance are tracked in the [architecture decision](../../docs/architecture/001-shared-rust-core.md) and [validation record](../../docs/cross-platform-validation.md).
 
@@ -19,7 +29,7 @@ Installers land in `target/release/bundle`. The build stages the pinned native r
 
 The manual `Desktop preview installers` workflow builds macOS, Windows and Linux artifacts without publishing a release. Signing, notarization and the signed desktop update channel need explicit release configuration; see [release setup](../../docs/releases.md). A local preview build does not imply trusted signing or an active update feed.
 
-On macOS, rebuilding with an ad-hoc signature changes the app's identity for permissions. Set `APPLE_SIGNING_IDENTITY` to a stable certificate (for example the local "Pressay Local Signing" identity) to keep Accessibility and Input Monitoring grants across rebuilds. If System Settings shows access enabled but Pressay still reports it missing, remove the stale entry, add the current app again, then reopen Pressay.
+On macOS, rebuilding with an ad-hoc signature changes the app's identity for permissions. Set `APPLE_SIGNING_IDENTITY` to a stable certificate (for example the local "Pressay Local Signing" identity) to keep Microphone and Accessibility grants across rebuilds. The talk key needs only Accessibility; Pressay no longer asks for Input Monitoring. If System Settings shows Accessibility on but setup still asks for it, choose **Reset Accessibility access**: it clears stale Pressay entries (including the old Preview app) and asks again.
 
 For development on macOS/Linux, use the staged workers explicitly so meeting analysis and Mac MLX resources resolve beside the selected ASR worker:
 
@@ -35,20 +45,20 @@ On Windows, set those environment variables in your shell and use `pressay-asr-w
 
 ## Use and platform differences
 
-- The default hold key is **Ctrl+Shift+Space**. General settings can change the chord; Mac also supports physical modifier/Fn keys. Setup displays the registered or portal-granted binding. Escape cancels active dictation, and overlays avoid taking text focus.
+- The default hold key is **Ctrl+Shift+Space**. **Settings › Dictation** can change the chord; Mac also supports physical modifier/Fn keys. Setup displays the registered or portal-granted binding. Escape cancels active dictation, and overlays avoid taking text focus.
 - Dictation recognizes completed speech in the background after eight seconds and a half-second pause, then processes the remaining tail on release. Original trim rules, begin/release/cancel/error sounds and live level/status overlays are retained. A five-minute capture limit stops and transcribes automatically; it does not discard the recording.
 - The catalog retains five recommended models (Orukeet, MOSS, Parakeet Ultra, Qwen3-ASR 1.7B, Mega-ASR) and four Other models (Fun-ASR MLT Nano, Whisper V3 Turbo, Voxtral Mini 3B, Qwen3-ASR 0.6B). Fixed-language choices appear only where supported. Orukeet and the existing Mega-ASR Swift/MLX worker remain Mac-only; Windows/Linux have the seven portable choices. Unavailable imported choices are preserved and require explicit selection.
 - Meetings keep microphone and remote tracks separate: CoreAudio process taps on Mac, WASAPI loopback on Windows, and the active PulseAudio/PipeWire monitor on Linux. Capture and optional final speaker separation support up to eight hours. Device/queue failures are reported. Mac voice processing has an explicit fallback; Windows/Linux currently have no echo cancellation in these adapters, so headphones matter.
 - Wayland uses GlobalShortcuts and RemoteDesktop keyboard portals with denial, revocation and session-loss handling. Enable **Insert at the current cursor using the desktop portal** to opt in: Wayland does not reveal the original target application. Keep the intended cursor focused until insertion finishes. Unsupported portals or rejected text leave the transcript available for manual copy. X11 uses its native focus/insertion path; Wayland never silently falls back to X11 automation.
 - Optional Claude/OpenAI API connections keep keys in the OS credential store. ChatGPT browser sign-in and Claude subscription access through the official Claude Code tool are implemented. AI sends text to the chosen provider; recognition remains local. Linux requires an available Secret Service for credential storage.
-- Notes support write-ups, transcript review, named speakers, action-item toggles, Markdown export, calendar-task export and grounded Ask Notes. macOS additionally supports native Reminders export. Call suggestions use native capture-stream heuristics, not guaranteed identification of every call. A meeting bound to a detected call stops when that call ends, including when suggestions are disabled. A two-minute warning precedes the duration limit. Quitting drains the transcript tail and defers optional write-up work; startup resumes eligible pending write-ups when AI and a provider are available.
-- Launch at login, retention and updater integration are implemented. Unpinned dictations retain 30 days of history and seven days of audio; pinned/corrected entries are preserved. History includes Paste Again, and Clear History explicitly confirms removal of all entries, including pins/corrections, and owned audio. Failed-recognition diagnostic audio expires after seven days. Silent completed recordings without personal notes and explicitly discarded recordings are removed; interrupted recordings retain saved transcript segments. Updates require a configured signing key/feed and wait for active work to finish.
+- Notes support write-ups, in-place Markdown editing, transcript review, named speakers, action-item checkboxes, Markdown export, calendar-task export and Ask with cited meetings. Ask across all meetings picks the meetings that match the question's words, people and dates ("last week", "on Monday"), up to 25. macOS additionally supports native Reminders export. Call suggestions use native capture-stream heuristics, not guaranteed identification of every call. A meeting bound to a detected call stops when that call ends, including when suggestions are disabled. A two-minute warning precedes the duration limit. Quitting drains the transcript tail and defers optional write-up work; startup resumes eligible pending write-ups when AI and a provider are available.
+- Launch at login, retention and updater integration are implemented. Dictations are kept for 30 days and their audio for seven; corrected entries (and any pinned in earlier versions) are kept. **Settings › General › Clear history** asks first, then removes every entry, including corrected ones, and their audio. Failed-recognition diagnostic audio expires after seven days. Silent completed recordings without personal notes and explicitly discarded recordings are removed; interrupted recordings retain saved transcript segments. Updates require a configured signing key/feed and wait for active work to finish.
 
 Physical-device, compositor, editor/IME and permission testing remains necessary across supported systems. [Meeting validation](../../docs/portable-meeting-validation.md) records the actual worker checks and memory bounds; it does not claim complete hardware QA.
 
 ## Migration and rollback
 
-In the updated native Mac app, choose **General → Export for cross-platform preview…**, then import that JSON under **General** in the Rust app. The export includes all history rows, raw settings/vocabulary and notes, but no credentials. Import validates transactionally, deduplicates records and preserves preview edits and unknown legacy fields. Keep the private export local.
+In the updated native Mac app, choose **General → Export for cross-platform preview…**, then import that JSON under **Settings › General** in the Rust app. The export includes all history rows, raw settings/vocabulary and notes, but no credentials. Import validates transactionally, deduplicates records and preserves preview edits and unknown legacy fields. Keep the private export local.
 
 Separate explicit Mac actions can copy existing API keys into the Rust app's credential entries or import original dictation recordings. They do not delete or rewrite the original app's data. Audio import accepts recordings up to five minutes; longer originals remain untouched. Microphones are saved by stable device ID. Imported Mac UIDs resolve to the exact device; unavailable IDs or ambiguous old device names require an explicit choice. Meeting analysis uses private temporary system-audio files, removed on completion/cancel and recovered by locked orphan cleanup after a crash; see the validation notes for details.
 

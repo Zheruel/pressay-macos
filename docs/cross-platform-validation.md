@@ -85,17 +85,17 @@ An earlier packaged preview launched, exposed its initial accessibility tree and
 
 A relocated packaged Mac app launched through Launch Services with a disposable synthetic profile. The separate setup window rendered the welcome and permission screens; closing it restored the main window. The tray opened from another foreground app, stayed within the display, and reopened setup through its real command. The original Preview profile was restored after quitting the fixture. Directly executing the relocated binary outside Launch Services failed path resolution; normal app launch passed.
 
-The comparisons below use matching synthetic content in the native Swift app and shared WebKit UI. Native traffic lights/window corners are supplied by macOS; browser fixtures omit them. Dates and readiness reflect each fixture's state, and text rasterization can differ. The packaged welcome image is the real Tauri window. The native reference's extra bottom title-bar strip is not reproduced.
+The desktop app no longer copies the native layout. It has title-bar tabs (Home, Notetaker, Dictionary) and a Settings sheet. Home combines the last dictation, the week's stats and searchable history. Notetaker is a list/detail split with an in-place Markdown editor and an Ask bar. The table pairs each native screen with the desktop screen that now does its job. Desktop images are 2× renders of the shared WebKit UI with synthetic content; macOS supplies the traffic lights and window corners, so the browser renders omit them. The setup image is the real Tauri window.
 
 | Screen | Native Pressay reference | Shared desktop |
 | --- | --- | --- |
 | Home | ![Native Home](assets/cross-platform/reference-home.png) | ![Desktop Home](assets/cross-platform/desktop-home.png) |
-| General | ![Native General](assets/cross-platform/reference-general.png) | ![Desktop General](assets/cross-platform/desktop-general.png) |
+| General (now Settings) | ![Native General](assets/cross-platform/reference-general.png) | ![Desktop Settings, Dictation tab](assets/cross-platform/desktop-general.png) |
 | Dictionary | ![Native Dictionary](assets/cross-platform/reference-dictionary.png) | ![Desktop Dictionary](assets/cross-platform/desktop-dictionary.png) |
-| History | ![Native History](assets/cross-platform/reference-history.png) | ![Desktop History](assets/cross-platform/desktop-history.png) |
+| History (now Home search) | ![Native History](assets/cross-platform/reference-history.png) | ![Desktop Home, searching dictations](assets/cross-platform/desktop-history.png) |
 | Notetaker | ![Native Notetaker](assets/cross-platform/reference-notes.png) | ![Desktop Notetaker](assets/cross-platform/desktop-notes.png) |
-| AI Cleanup | ![Native AI Cleanup](assets/cross-platform/reference-ai.png) | ![Desktop AI Cleanup](assets/cross-platform/desktop-ai.png) |
-| Ask | ![Native Ask](assets/cross-platform/reference-ask.png) | ![Packaged Ask](assets/cross-platform/desktop-ask.png) |
+| AI Cleanup | ![Native AI Cleanup](assets/cross-platform/reference-ai.png) | ![Desktop Settings, AI Cleanup tab](assets/cross-platform/desktop-ai.png) |
+| Ask | ![Native Ask](assets/cross-platform/reference-ask.png) | ![Desktop Ask, all meetings, with cited sources](assets/cross-platform/desktop-ask.png) |
 | Setup | ![Native setup](assets/cross-platform/reference-onboarding.png) | ![Packaged setup](assets/cross-platform/desktop-onboarding-current.png) |
 | Tray | ![Native tray](assets/cross-platform/reference-tray.png) | ![Desktop tray](assets/cross-platform/desktop-tray.png) |
 

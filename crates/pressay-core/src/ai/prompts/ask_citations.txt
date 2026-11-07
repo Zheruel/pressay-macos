@@ -1,0 +1,5 @@
+
+Citing and drafting (this app links answers to their meetings):
+- Each meeting has a number n. When more than one meeting is provided, cite the meeting each point comes from by putting its number in square brackets right after the point, like [2] or [1][3]. Cite only meetings you used. The app shows the title and date for each citation, so don't also write them out. With a single meeting, don't cite.
+- A transcript marked excerpt="true" holds only the parts that mention the question; the rest of that meeting was left out.
+- When asked to draft something, like a follow-up email or a message, write the draft in full, ready to send.

@@ -26,7 +26,9 @@ async function refreshAppMetadata(history) {
       appMetadata,
       (await invoke("history_app_metadata", { targets })) || {},
     );
-    renderRecent(current.view.history, current.shortcut);
+    heroKey = "";
+    historyKey = "";
+    historyIndex.clear();
     renderHistory(current.view);
   } catch {
   } finally {
@@ -34,11 +36,9 @@ async function refreshAppMetadata(history) {
   }
 }
 let current,
-  step = 0,
   recentVersion = "",
   initialized = false,
   modelSelectionPending = null;
-const dialog = $("onboarding");
 // Command failures stay visible briefly; the 1 s status poll would otherwise
 // replace them with the engine's own error state almost immediately.
 let commandError = null;
@@ -46,7 +46,6 @@ function error(message) {
   commandError = { text: String(message), until: Date.now() + 8000 };
   $("error").textContent = String(message);
   $("error").hidden = false;
-  $("setup-error").textContent = String(message);
 }
 async function call(command, args = {}) {
   try {
@@ -57,6 +56,13 @@ async function call(command, args = {}) {
   }
 }
 function navigate(page) {
+  // Older entry points (tray, notifications) still name the retired pages.
+  if (page === "general" || page === "ai") {
+    openSettings(page === "ai" ? "ai" : "dictation");
+    return;
+  }
+  if (page === "history") page = "dictation";
+  if ($("settings-dialog").open) $("settings-dialog").close();
   const changed =
     document.querySelector("[data-page].active")?.dataset.page !== page;
   if (changed && typeof stopShortcutCapture === "function")
@@ -69,295 +75,31 @@ function navigate(page) {
     b.setAttribute("aria-current", b.dataset.page === page ? "page" : "false");
   });
   if (changed) document.querySelector("main").scrollTop = 0;
-  if (page !== "meetings") $("ask-dialog").close();
+  if (page !== "meetings") window.pressayAsk?.close();
 }
 document
   .querySelectorAll("[data-page]")
   .forEach((b) => b.addEventListener("click", () => navigate(b.dataset.page)));
-$("view-history").onclick = () => navigate("history");
-$("home-record-meeting").onclick = () => {
-  navigate("meetings");
-  $("start-meeting").click();
-};
-let setupPracticeEpoch = 0,
-  setupPracticeReady = false,
-  setupPracticeAttempt = false,
-  setupShortcutActive = false,
-  setupShortcutSaving = false,
-  setupShortcutEpoch = 0,
-  setupShortcutTimer,
-  setupPreparationRequested = null,
-  setupOperationError = "";
-const setupPermissionKinds = ["microphone", "accessibility", "shortcut"];
-function setupFailure(error) {
-  setupOperationError = String(error);
-  $("setup-error").textContent = setupOperationError;
-}
-function setupPermissionAllowed(index, p = current?.permissions) {
-  if (!p) return false;
-  return index === 0
-    ? microphoneCanPractice(p)
-    : p[index === 1 ? "insertion" : "shortcut"] === "granted";
-}
-function firstMissingSetupPermission() {
-  const index = setupPermissionKinds.findIndex(
-    (_, index) => !setupPermissionAllowed(index),
-  );
-  return index < 0 ? 4 : index + 1;
-}
-async function setStep(value) {
-  if (setupShortcutActive) await stopSetupShortcut();
-  step = Math.max(0, Math.min(5, value));
-  const epoch = ++setupPracticeEpoch;
-  document.querySelectorAll("[data-setup]").forEach((panel) => {
-    panel.hidden =
-      panel.dataset.setup === "permissions"
-        ? !(step >= 1 && step <= 3)
-        : Number(panel.dataset.setup) !== step;
-  });
-  document
-    .querySelectorAll("[data-step]")
-    .forEach((bar) =>
-      bar.classList.toggle("complete", Number(bar.dataset.step) <= step),
-    );
-  $("setup-back").hidden = step === 0;
-  $("setup-welcome-next").hidden = step !== 0;
-  $("permissions-next").hidden = step < 1 || step > 3;
-  $("model-next").hidden = step !== 4;
-  $("finish-setup").hidden = step !== 5;
-  setupOperationError = "";
-  $("setup-error").textContent = "";
-  $("onboarding").querySelector(".setup-scroll").scrollTop = 0;
-  if (step === 5) {
-    setupPracticeReady = false;
-    setupPracticeAttempt = false;
-    $("practice").value = "";
-    $("practice").disabled = true;
-    renderSetup();
-    try {
-      await call("begin_practice");
-      if (step === 5 && epoch === setupPracticeEpoch && dialog.open) {
-        setupPracticeReady = true;
-        $("practice").disabled = false;
-        $("practice").focus();
-      }
-    } catch (error) {
-      setupFailure(error);
-    }
-  }
-  renderSetup();
-  if (step !== 5 && dialog.open)
-    $("setup-title").focus({ preventScroll: true });
-  if (
-    step === 4 &&
-    !selectedModelReady() &&
-    current?.view.stage === "idle" &&
-    setupPreparationRequested !== $("setup-model").value
-  ) {
-    setupPreparationRequested = $("setup-model").value;
-    call("prepare_model", { id: setupPreparationRequested }).catch(
-      setupFailure,
-    );
-  }
-}
-function microphoneCanPractice(p) {
-  return current?.platform === "macos"
-    ? p.microphone === "granted"
-    : p.microphone !== "denied";
-}
+$("readiness").onclick = () => openSetup();
+// The first-run tour lives in onboarding.js and its own window.
 function openSetup() {
-  if (!setupWindow) return call("open_onboarding").catch(() => {});
-  setupWindowVisible = true;
-  if (!dialog.open) {
-    $("setup-model").value = current.view.settings.asrModel;
-    $("setup-model-size").textContent = size($("setup-model").value);
-    dialog.showModal();
-    call("autostart_status")
-      .then((enabled) => {
-        $("setup-login").checked = enabled;
-      })
-      .catch(() => {});
-  }
-  setStep(0);
+  return call("open_onboarding").catch(() => {});
 }
-async function closeSetup() {
-  await stopSetupShortcut();
+$("hero-copy").onclick = async () => {
+  const record = current?.view.history[0];
+  if (!record) return;
   try {
-    if (setupWindow) await call("close_onboarding");
-    setupWindowVisible = false;
-    dialog.close();
-  } catch (error) {
-    setupFailure(error);
-  }
-}
-$("close-setup").onclick = closeSetup;
-dialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  closeSetup();
-});
-window.__TAURI__.event.listen("pressay-onboarding-open", () => {
-  if (!setupWindow) return;
-  setupWindowVisible = true;
-  refresh().then(openSetup);
-});
-window.__TAURI__.event.listen("pressay-onboarding-hidden", () => {
-  if (!setupWindow) return;
-  setupWindowVisible = false;
-  ++setupPracticeEpoch;
-  stopSetupShortcut();
-  dialog.close();
-});
-window.addEventListener("pagehide", stopSetupShortcut);
-dialog.addEventListener("close", () => {
-  ++setupPracticeEpoch;
-  stopSetupShortcut();
-});
-dialog.addEventListener("keydown", (event) => {
-  if (
-    event.key !== "Enter" ||
-    event.defaultPrevented ||
-    setupShortcutActive ||
-    ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(event.target.tagName)
-  )
-    return;
-  const primary = [...dialog.querySelectorAll(".setup-footer .primary")].find(
-    (button) => !button.hidden && !button.disabled,
-  );
-  if (primary) {
-    event.preventDefault();
-    primary.click();
-  }
-});
-$("setup-back").onclick = () => setStep(step - 1);
-$("setup-welcome-next").onclick = () => setStep(firstMissingSetupPermission());
-$("permissions-next").onclick = () => {
-  if (setupPermissionAllowed(step - 1)) setStep(step + 1);
-};
-$("model-next").onclick = () => {
-  if (selectedModelReady() && firstMissingSetupPermission() === 4) setStep(5);
-};
-$("setup-practice-retry").onclick = () => setStep(5);
-async function requestSetupPermission() {
-  const kind = setupPermissionKinds[step - 1];
-  if (!kind) return;
-  try {
-    if (kind === "accessibility" && current.permissions.wayland)
-      await call("save_settings", { patch: { waylandCurrentCursor: true } });
-    if (kind === "shortcut" && current.platform !== "macos")
-      await call("change_shortcut", {
-        binding: savedShortcut(current.view.settings),
-      });
-    else await call("request_permission", { kind });
-  } catch (error) {
-    setupFailure(error);
-  }
-}
-$("setup-allow").onclick = requestSetupPermission;
-$("setup-permission-recover").onclick = requestSetupPermission;
-$("setup-login").onchange = async () => {
-  const enabled = $("setup-login").checked;
-  try {
-    await call("launch_at_login", { enabled });
-  } catch (error) {
-    $("setup-login").checked = !enabled;
-    setupFailure(error);
-  }
-};
-async function stopSetupShortcut() {
-  if (!setupShortcutActive) return;
-  setupShortcutActive = false;
-  ++setupShortcutEpoch;
-  setupShortcutCandidate = null;
-  $("setup-shortcut-status").textContent = "";
-  clearTimeout(setupShortcutTimer);
-  try {
-    await call("set_shortcut_capture", {
-      active: false,
-      kind: savedShortcut(current.view.settings).kind,
-    });
+    await call("copy_text", { text: record.correction || record.text });
+    flashHeroStatus("Copied");
   } catch {}
-  renderSetup();
-}
-async function saveSetupShortcut(binding) {
-  if (!setupShortcutActive) return;
-  setupShortcutSaving = true;
-  await stopSetupShortcut();
-  try {
-    await call("change_shortcut", { binding });
-    $("setup-shortcut-status").textContent = "";
-  } catch {
-    $("setup-shortcut-status").textContent =
-      "Shortcut was not saved. Try recording it again.";
-  } finally {
-    setupShortcutSaving = false;
-    renderSetup();
-  }
-}
-$("setup-shortcut").onclick = async () => {
-  if (setupShortcutActive) return stopSetupShortcut();
-  setupShortcutActive = true;
-  const epoch = ++setupShortcutEpoch;
-  const kind = savedShortcut(current.view.settings).kind;
-  renderSetup();
-  try {
-    await call("set_shortcut_capture", { active: true, kind });
-    if (
-      !setupShortcutActive ||
-      epoch !== setupShortcutEpoch ||
-      !dialog.open ||
-      step !== 4
-    ) {
-      await call("set_shortcut_capture", { active: false, kind });
-      return;
-    }
-    $("setup-shortcut-status").textContent =
-      "Press a key or key combination, then release. Escape cancels.";
-    setupShortcutTimer = setTimeout(stopSetupShortcut, 30000);
-  } catch (error) {
-    setupShortcutActive = false;
-    setupFailure(error);
-    renderSetup();
-  }
 };
-let setupShortcutCandidate = null;
-document.addEventListener(
-  "keydown",
-  (event) => {
-    if (!setupShortcutActive) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (event.key === "Escape") {
-      stopSetupShortcut();
-      return;
-    }
-    if (savedShortcut(current.view.settings).kind === "chord") {
-      const binding = chordForEvent(event);
-      if (binding) setupShortcutCandidate = { binding, code: event.code };
-    }
-  },
-  true,
-);
-document.addEventListener(
-  "keyup",
-  (event) => {
-    if (!setupShortcutActive) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if (setupShortcutCandidate?.code === event.code) {
-      const binding = setupShortcutCandidate.binding;
-      setupShortcutCandidate = null;
-      saveSetupShortcut(binding);
-    }
-  },
-  true,
-);
-window.__TAURI__.event.listen("pressay-shortcut-captured", ({ payload }) => {
-  if (!setupShortcutActive) return;
-  if (payload.cancelled) stopSetupShortcut();
-  else if (payload.binding) saveSetupShortcut(payload.binding);
-});
-window.addEventListener("blur", stopSetupShortcut);
-$("cancel").onclick = () => call("cancel").catch(() => {});
+let heroStatusTimer;
+function flashHeroStatus(text, ms = 2400) {
+  clearTimeout(heroStatusTimer);
+  $("hero-status").textContent = text || "";
+  if (ms)
+    heroStatusTimer = setTimeout(() => ($("hero-status").textContent = ""), ms);
+}
 let dictionaryRows = [],
   dictionarySaved = null,
   dictionaryDirty = false,
@@ -410,51 +152,95 @@ async function saveDictionary() {
     if (saved && dictionaryDirty) queueDictionarySave();
   }
 }
+let editingWord = null;
 function drawDictionary() {
-  $("dictionary-rows").replaceChildren();
-  $("dictionary-empty").hidden = dictionaryRows.length !== 0;
-  $("dictionary-table").hidden = !dictionaryRows.length;
-  $("dictionary-help").hidden = !dictionaryRows.length;
-  for (const row of dictionaryRows) {
-    const container = element("div", undefined, "dictionary-row");
-    const word = element("input"),
-      aliases = element("input");
-    word.value = row.word;
-    word.placeholder = "Word";
-    word.setAttribute("aria-label", "Word");
-    word.spellcheck = false;
-    aliases.value = row.aliases;
-    aliases.placeholder = "Optional, comma-separated";
-    aliases.setAttribute("aria-label", "Sounds like");
-    aliases.spellcheck = false;
-    const remove = element("button", "×", "quiet");
-    remove.setAttribute(
-      "aria-label",
-      row.word ? `Remove ${row.word}` : "Remove word",
+  const chips = $("dictionary-rows");
+  chips.replaceChildren();
+  const rows = dictionaryRows.filter(
+    (row) => row.word.trim() || row === editingWord,
+  );
+  $("dictionary-empty").hidden = rows.length !== 0;
+  for (const row of rows) {
+    const chip = element("button", undefined, "word-chip");
+    chip.type = "button";
+    chip.append(
+      element("b", row.word || "New word"),
+      element(
+        "span",
+        row.aliases.trim()
+          ? `sounds like ${row.aliases.trim()}`
+          : "spelled as written",
+      ),
     );
-    word.oninput = () => {
-      row.word = word.value;
-      remove.setAttribute(
-        "aria-label",
-        row.word ? `Remove ${row.word}` : "Remove word",
-      );
-      queueDictionarySave();
-    };
-    aliases.oninput = () => {
-      row.aliases = aliases.value;
-      queueDictionarySave();
-    };
-    remove.onclick = () => {
-      dictionaryRows = dictionaryRows.filter((candidate) => candidate !== row);
-      drawDictionary();
-      queueDictionarySave();
-    };
-    container.append(word, aliases, remove);
-    $("dictionary-rows").append(container);
+    chip.classList.toggle("editing", row === editingWord);
+    chip.setAttribute("aria-label", `Edit ${row.word || "new word"}`);
+    chip.onclick = () => openWordEditor(row, chip);
+    chips.append(chip);
   }
 }
+function openWordEditor(row, chip) {
+  editingWord = row;
+  const editor = $("word-editor"),
+    page = editor.parentElement;
+  $("word-editor-word").value = row.word;
+  $("word-editor-aliases").value = row.aliases;
+  editor.hidden = false;
+  for (const other of $("dictionary-rows").children)
+    other.classList.toggle("editing", other === chip);
+  const box = chip.getBoundingClientRect(),
+    frame = page.getBoundingClientRect();
+  editor.style.left = `${Math.min(box.left - frame.left, frame.width - 320)}px`;
+  editor.style.top = `${box.bottom - frame.top + 8}px`;
+  $("word-editor-word").focus();
+}
+function closeWordEditor() {
+  if (!editingWord) return;
+  const row = editingWord;
+  editingWord = null;
+  $("word-editor").hidden = true;
+  if (!row.word.trim())
+    dictionaryRows = dictionaryRows.filter((candidate) => candidate !== row);
+  drawDictionary();
+  queueDictionarySave();
+}
+$("word-editor-word").oninput = () => {
+  if (!editingWord) return;
+  editingWord.word = $("word-editor-word").value;
+  queueDictionarySave();
+};
+$("word-editor-aliases").oninput = () => {
+  if (!editingWord) return;
+  editingWord.aliases = $("word-editor-aliases").value;
+  queueDictionarySave();
+};
+$("word-editor-done").onclick = closeWordEditor;
+$("word-editor-remove").onclick = () => {
+  if (!editingWord) return;
+  editingWord.word = "";
+  closeWordEditor();
+};
+$("word-editor").onkeydown = (event) => {
+  if (event.key === "Enter" || event.key === "Escape") {
+    event.preventDefault();
+    closeWordEditor();
+  }
+};
+document.addEventListener("pointerdown", (event) => {
+  if (
+    editingWord &&
+    !$("word-editor").contains(event.target) &&
+    !event.target.closest?.(".word-chip")
+  )
+    closeWordEditor();
+});
 function syncDictionary(source) {
-  if (dictionaryDirty || dictionarySaving || dictionarySaved === source) return;
+  if (
+    editingWord ||
+    dictionaryDirty ||
+    dictionarySaving ||
+    dictionarySaved === source
+  )
+    return;
   dictionarySaved = source;
   dictionaryRows = source.split(/\r?\n/u).flatMap((line) => {
     line = line.trim();
@@ -472,17 +258,24 @@ function syncDictionary(source) {
   });
   drawDictionary();
 }
-function addDictionaryWord() {
-  let index = dictionaryRows.findIndex((row) => !row.word.trim());
-  if (index < 0) {
-    index = dictionaryRows.length;
-    dictionaryRows.push({ word: "", aliases: "" });
-    drawDictionary();
-  }
-  $("dictionary-rows").children[index].querySelector("input").focus();
-}
-$("add-word").onclick = addDictionaryWord;
-$("add-first-word").onclick = addDictionaryWord;
+$("dictionary-add-form").onsubmit = (event) => {
+  event.preventDefault();
+  const word = $("dictionary-add").value.trim();
+  if (!word) return;
+  const existing = dictionaryRows.find(
+    (row) => row.word.trim().toLocaleLowerCase() === word.toLocaleLowerCase(),
+  );
+  if (!existing) dictionaryRows.push({ word, aliases: "" });
+  $("dictionary-add").value = "";
+  drawDictionary();
+  queueDictionarySave();
+  const chip = [...$("dictionary-rows").children].find(
+    (chip) => chip.querySelector("b").textContent === (existing?.word || word),
+  );
+  chip?.scrollIntoView({ block: "nearest" });
+  chip?.classList.add("added");
+  setTimeout(() => chip?.classList.remove("added"), 900);
+};
 $("retry-dictionary").onclick = saveDictionary;
 $("input-device").onchange = () =>
   call("save_settings", {
@@ -494,57 +287,13 @@ function size(id) {
     ? `${(model.artifacts.reduce((n, a) => n + a.bytes, 0) / 1e9).toFixed(2)} GB · verified download · ${model.languageCaption || "automatic language detection"}`
     : "";
 }
-function selectedModelReady() {
-  return !!(
-    current?.view.model_ready &&
-    $("setup-model").value === current.view.settings.asrModel
-  );
-}
-for (const id of ["model", "setup-model"])
-  $(id).onchange = () => {
-    $(id + "-size").textContent = size($(id).value);
-    $("model-next").disabled = !selectedModelReady();
-    renderSetup();
-    if (id === "model") {
-      modelSelectionPending = $(id).value;
-      call("prepare_model", { id: $(id).value }).catch(() => {});
-    }
-  };
+$("model").onchange = () => {
+  $("model-size").textContent = size($("model").value);
+  modelSelectionPending = $("model").value;
+  call("prepare_model", { id: $("model").value }).catch(() => {});
+};
 $("prepare").onclick = () =>
   call("prepare_model", { id: $("model").value }).catch(() => {});
-$("setup-prepare").onclick = () => {
-  setupOperationError = "";
-  call("prepare_model", { id: $("setup-model").value }).catch(setupFailure);
-};
-function practiceReady() {
-  const p = current?.view.practice;
-  return !!(
-    setupPracticeReady &&
-    setupPracticeAttempt &&
-    p?.received_audio &&
-    p?.inserted &&
-    p?.in_app &&
-    p?.recognized_text.trim() &&
-    $("practice").value.trim() === p.recognized_text.trim() &&
-    selectedModelReady() &&
-    firstMissingSetupPermission() === 4
-  );
-}
-$("practice").addEventListener("input", renderSetup);
-$("practice").addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    call("cancel").catch(() => {});
-  }
-});
-$("finish-setup").onclick = async () => {
-  try {
-    await call("complete_onboarding", { observed: $("practice").value });
-    await closeSetup();
-  } catch (error) {
-    setupFailure(error);
-  }
-};
 $("migration").onchange = async () => {
   const file = $("migration").files[0];
   if (!file) return;
@@ -567,277 +316,31 @@ function element(tag, text, className) {
   if (className) el.className = className;
   return el;
 }
-function renderPermissions() {
-  renderSetup();
-}
-function renderSetup() {
-  if (!current) return;
-  const mac = current.platform === "macos";
-  const p = current.permissions;
-  const s = current.view;
-  const permission = step >= 1 && step <= 3;
-  const permissionTitles = [
-    "Microphone",
-    mac ? "Accessibility" : p.wayland ? "Keyboard control" : "Text insertion",
-    mac ? "Input Monitoring" : "Global shortcut",
-  ];
-  const permissionDetails = [
-    "Hears your voice during dictation and meetings.",
-    "Types the finished text at your cursor.",
-    "Notices your talk key in any app.",
-  ];
-  if (
-    step === 5 &&
-    setupPracticeReady &&
-    ["starting", "recording"].includes(s.stage)
-  )
-    setupPracticeAttempt = true;
-  const complete = practiceReady();
-  $("setup-step-label").textContent =
-    step === 0 ? "WELCOME TO PRESSAY" : `STEP ${step} OF 5`;
-  $("setup-title").textContent = permission
-    ? permissionTitles[step - 1]
-    : step === 0
-      ? "Your voice. Your words."
-      : step === 4
-        ? "Prepare your speech model"
-        : complete
-          ? "You’re ready to dictate"
-          : "Give it a try";
-  $("setup-description").textContent = permission
-    ? permissionDetails[step - 1]
-    : step === 0
-      ? "Hold a key, say what’s on your mind, and release. Pressay types it where you’re working."
-      : step === 4
-        ? `Speech recognition runs on your ${mac ? "Mac" : "device"}. The model downloads once, then works offline.`
-        : complete
-          ? "Your microphone, speech model and text insertion worked together. You can now dictate in other apps."
-          : `Click the field below. Hold ${current.shortcut}, speak after the sound, then release to type.`;
-  $("setup-private-copy").textContent =
-    `Your speech is transcribed on your ${mac ? "Mac" : "device"}. No account is required.`;
-  $("setup-permissions-copy").textContent = mac
-    ? "Three macOS permissions let Pressay hear you, notice your talk key, and type at your cursor."
-    : "We’ll check microphone access, your talk key, and text insertion at your cursor.";
-  $("setup-login-detail").textContent = mac
-    ? "Ready every time you open your Mac."
-    : "Ready every time you sign in.";
-  if (permission) {
-    const index = step - 1;
-    const value =
-      p[index === 1 ? "insertion" : index === 2 ? "shortcut" : "microphone"];
-    const cursorChoice = index === 1 && p.wayland && value !== "granted";
-    $("setup-permission-icon").setAttribute(
-      "href",
-      ["#setup-mic", "#setup-access", "#setup-keyboard"][index],
-    );
-    $("setup-permission-status").textContent =
-      value === "granted"
-        ? "Allowed"
-        : index === 0 && !mac && value === "unknown"
-          ? "Checked during practice"
-          : value === "unavailable" && !cursorChoice
-            ? "Unavailable"
-            : "Not allowed yet";
-    $("setup-permission-status").classList.toggle(
-      "allowed",
-      value === "granted",
-    );
-    const macInstructions = [
-      "Choose Allow in the macOS prompt. If you previously denied access, turn on Pressay in the Microphone list.",
-      "Turn on Pressay in the Accessibility list. If it is missing, drag the app from the floating guide into the list, then turn it on.",
-      "Turn on Pressay in the Input Monitoring list. macOS may ask you to quit and reopen Pressay after changing this permission.",
-    ];
-    const portableInstructions = [
-      "Your microphone opens only when you hold your talk key. We’ll verify real audio during practice; allow microphone access if your desktop asks.",
-      p.wayland
-        ? "You can explicitly enable keyboard control and approve your desktop’s consent prompt. This inserts at the current cursor; Wayland cannot verify the original app or field. Keep your intended field focused until insertion finishes."
-        : "Pressay types into the field you chose. If the application changes before insertion, your words stay in History for you to copy.",
-      p.wayland
-        ? "Approve the global shortcut in your desktop’s consent prompt. If your desktop does not provide GlobalShortcuts, this check remains unavailable."
-        : "Your talk key works while another app is active. If another app uses the same shortcut, choose a different one in General settings.",
-    ];
-    $("setup-permission-instructions").textContent = (
-      mac ? macInstructions : portableInstructions
-    )[index];
-    $("setup-allow").hidden =
-      value === "granted" || (index === 0 && !mac && value === "unknown");
-    $("setup-allow").disabled = value === "unavailable" && !cursorChoice;
-    $("setup-allow").textContent = cursorChoice
-      ? "Enable cursor insertion"
-      : mac
-        ? index === 0
-          ? "Allow microphone"
-          : "Open System Settings"
-        : "Review access";
-    $("platform-note").textContent =
-      !mac && p.explanation
-        ? p.explanation
-        : mac
-          ? "This page updates automatically when access changes. You can revoke access at any time in System Settings."
-          : index === 0
-            ? "A permission indicator alone does not prove recording works. Your first real dictation completes that check."
-            : "This page updates automatically when access changes.";
-    $("setup-permission-recover").hidden = !mac;
-    $("setup-permission-recovery").textContent = mac
-      ? index === 0
-        ? "Microphone access must be requested by the app; dragging an app into this list does not grant access. If your microphone is managed, contact your administrator."
-        : "If an old entry no longer works after an update, remove it, add the current Pressay app, turn it on, then reopen Pressay."
-      : index === 0
-        ? "Check your selected microphone and your desktop’s privacy settings if audio does not arrive."
-        : "If access was revoked, approve it again before continuing. You can close setup and keep your saved dictations in History.";
-    $("permissions-next").disabled = !setupPermissionAllowed(index);
-  }
-  $("setup-shortcut").textContent = setupShortcutActive
-    ? "Press a key…"
-    : current.shortcut;
-  $("setup-shortcut").disabled =
-    setupShortcutSaving || (s.stage !== "idle" && !setupShortcutActive);
-  for (const option of $("setup-model").options) {
-    const model = current.models.find((model) => model.id === option.value);
-    if (model && option.textContent !== model.name)
-      option.textContent = model.name;
-  }
-  $("setup-model-ready").hidden = !selectedModelReady();
-  $("setup-model-status").textContent = selectedModelReady()
-    ? "Ready"
-    : s.stage === "loading"
-      ? "Loading and warming the model…"
-      : s.stage === "preparing"
-        ? "Preparing your speech model…"
-        : "Prepare the model to continue.";
-  $("setup-prepare").hidden =
-    selectedModelReady() || ["preparing", "loading"].includes(s.stage);
-  $("model-next").disabled =
-    !selectedModelReady() ||
-    firstMissingSetupPermission() !== 4 ||
-    setupShortcutActive ||
-    setupShortcutSaving;
-  $("finish-setup").disabled = !complete;
-  $("practice-status").textContent = s.stage.startsWith("meeting")
-    ? "Stop the Notetaker before practicing dictation"
-    : s.stage === "recording"
-      ? "Microphone is receiving audio"
-      : s.stage === "starting"
-        ? "Waiting for microphone audio…"
-        : "Microphone is off";
-  $("setup-practice-mic").setAttribute(
-    "href",
-    s.stage === "recording" ? "#setup-mic" : "#setup-mic-off",
-  );
-  $("practice-status").parentElement.classList.toggle(
-    "is-live",
-    s.stage === "recording",
-  );
-  $("setup-practice-evidence").textContent = complete
-    ? "✓ Speech captured, transcribed and inserted"
-    : "Use your talk key for this check. Typing or pasting a sample sentence won’t complete it.";
-  $("setup-practice-evidence").classList.toggle("setup-success", complete);
-  $("setup-error").textContent =
-    setupOperationError || (step >= 4 ? s.error || s.shortcut_error || "" : "");
-}
-function renderSetupWindow(data) {
-  const s = data.view;
-  if (!initialized) {
-    initialized = true;
-    populateModels("setup-model");
-    $("setup-model").value = s.settings.asrModel;
-    $("setup-model-size").textContent = size(s.settings.asrModel);
-    if (setupWindowVisible) openSetup();
-  }
-  $("setup-prepare").disabled = s.stage !== "idle";
-  const download = dialog.querySelector(".download");
-  download.hidden = !s.progress && !["preparing", "loading"].includes(s.stage);
-  if (s.progress) {
-    download.querySelector("progress").value =
-      s.progress.downloaded / s.progress.total;
-    download.querySelector(".download-label").textContent =
-      `${Math.round((s.progress.downloaded / s.progress.total) * 100)}%`;
-  } else {
-    download.querySelector("progress").removeAttribute("value");
-    download.querySelector(".download-label").textContent =
-      s.stage === "loading"
-        ? "Loading and warming the model…"
-        : "Checking existing model files…";
-  }
-  if (dialog.open && step >= 4 && firstMissingSetupPermission() !== 4)
-    setStep(firstMissingSetupPermission());
-  else if (dialog.open && step === 5 && !selectedModelReady()) setStep(4);
-  renderSetup();
-}
 function render(data) {
   current = data;
   if (setupWindow) {
     document.body.dataset.platform = data.platform;
-    renderSetupWindow(data);
+    window.pressayOnboarding?.render(data);
     return;
   }
   document.body.dataset.platform = data.platform;
   const s = data.view;
   refreshAppMetadata(s.history);
   const busy = s.stage !== "idle";
-  $("capture-hero").hidden = !busy;
-  $("home-record-meeting").disabled = busy;
   const ready =
     s.model_ready &&
     data.permissions.microphone === "granted" &&
     data.permissions.shortcut === "granted" &&
     data.permissions.insertion === "granted";
-  $("readiness").classList.toggle("ready", ready);
-  $("readiness-label").textContent = ready
-    ? "Ready to dictate"
-    : ["preparing", "loading"].includes(s.stage)
-      ? "Preparing model…"
-      : "Setup needed";
-  const activeModel = data.models.find(
-    (model) => model.id === s.settings.asrModel,
-  );
-  $("sidebar-model").textContent =
-    `On-device · ${activeModel?.name || "Speech recognition"}`;
-  const warning =
-    s.error ||
-    s.shortcut_error ||
-    (commandError && Date.now() < commandError.until ? commandError.text : "");
-  $("error").hidden = !warning;
-  $("error").textContent = warning;
-  $("setup-error").textContent = warning;
-  const labels = {
-    idle: "Hold. Speak. Release.",
-    starting: "Opening your microphone…",
-    recording: "Listening…",
-    processing: "Transcribing on your device…",
-    polishing: "Polishing your words…",
-    preparing: "Preparing your speech model…",
-    loading: "Loading your speech model…",
-    meeting_starting: "Preparing your meeting…",
-    meeting: "Recording your meeting",
-    meeting_finishing: "Finishing the transcript…",
-    meeting_speakers: "Separating voices on your device…",
-  };
-  document
-    .querySelectorAll(".shortcut")
-    .forEach((el) => (el.textContent = data.shortcut));
-  $("capture-status").textContent = labels[s.stage] || s.stage;
-  $("capture-detail").textContent =
-    s.stage === "starting"
-      ? "Waiting for the first real audio sample."
-      : "Your words appear at the cursor. Speech stays on this device.";
-  $("cancel").hidden = !busy;
+  const preparing = ["preparing", "loading"].includes(s.stage);
+  $("readiness").hidden = ready;
+  $("readiness").classList.toggle("preparing", preparing);
+  $("readiness-label").textContent = preparing
+    ? "Preparing model…"
+    : "Finish setup";
+  renderToast(s);
+  renderHero(s, data, ready);
   $("prepare").disabled = busy;
-  $("setup-prepare").disabled = busy;
-  $("model-next").disabled = !selectedModelReady();
-  $("latency").textContent =
-    s.release_to_text_ms == null
-      ? "—"
-      : (s.release_to_text_ms / 1000).toFixed(2) + " s";
-  $("count").textContent = s.history.length;
-  $("words").textContent = s.history
-    .reduce(
-      (n, r) =>
-        n +
-        (r.correction || r.text).trim().split(/\s+/u).filter(Boolean).length,
-      0,
-    )
-    .toLocaleString();
   for (const block of document.querySelectorAll(".download")) {
     block.hidden = !s.progress && !["preparing", "loading"].includes(s.stage);
     if (s.progress) {
@@ -854,99 +357,248 @@ function render(data) {
     }
   }
   renderWorkspace(s);
-  renderRecent(s.history, data.shortcut);
   syncDictionary(s.settings.vocabulary || "");
-  renderPermissions(data.permissions);
-  if (dialog.open && step >= 4 && firstMissingSetupPermission() !== 4)
-    setStep(firstMissingSetupPermission());
-  else if (dialog.open && step === 5 && !selectedModelReady()) setStep(4);
-  renderSetup();
   if (!initialized) {
     initialized = true;
-    for (const id of ["model", "setup-model"]) {
-      populateModels(id);
-      $(id).value = s.settings.asrModel;
-      $(id + "-size").textContent = size($(id).value);
-    }
+    populateModels("model");
+    $("model").value = s.settings.asrModel;
+    $("model-size").textContent = size($("model").value);
     refreshInputDevices().catch(() => {});
   }
 }
-function renderRecent(history, shortcut) {
-  const records = history.slice(0, 6);
-  const version = JSON.stringify([
-    records,
-    shortcut,
-    appMetadata,
-    Math.floor(Date.now() / 60000),
-  ]);
-  if (version === recentVersion) return;
-  recentVersion = version;
-  const list = $("recent-dictations");
-  list.replaceChildren();
-  $("view-history").hidden = !history.length;
-  if (!records.length) {
-    const empty = element("div", undefined, "recent-empty");
-    empty.append(
-      element("h2", "No dictations yet"),
-      element("p", `Hold ${shortcut} in any text field to dictate.`),
-    );
-    list.append(empty);
+// Problems you need to act on stay in the title bar (readiness). Everything
+// else is news: it shows once as a toast and then gets out of the way.
+let toastShown = "",
+  toastTimer;
+function renderToast(s) {
+  const latest = s.history[0];
+  const message =
+    commandError && Date.now() < commandError.until
+      ? commandError.text
+      : s.error || s.shortcut_error || "";
+  // A warning saved on the newest dictation is already shown on the hero.
+  const onRecord =
+    latest &&
+    dictationWarning(latest) &&
+    message.startsWith(dictationWarning(latest));
+  if (!message || onRecord) {
+    if (!message) toastShown = "";
+    return;
   }
-  for (const record of records) {
-    const row = element("article", undefined, "recent-row");
-    const metadata = appMetadata[record.target];
-    const icon = element(
-      metadata?.icon?.startsWith("data:image/") ? "img" : "span",
-      undefined,
-      "app-icon",
+  if (message === toastShown) return;
+  toastShown = message;
+  showToast(message);
+}
+function showToast(message) {
+  const toast = $("error");
+  toast.textContent = message;
+  toast.hidden = false;
+  toast.classList.remove("leaving");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.add("leaving");
+    toastTimer = setTimeout(() => (toast.hidden = true), 300);
+  }, 6000);
+}
+$("error").onclick = () => ($("error").hidden = true);
+function keyParts(label = "") {
+  const mac = current?.platform === "macos";
+  const symbols = mac
+    ? {
+        option: "⌥",
+        alt: "⌥",
+        command: "⌘",
+        cmd: "⌘",
+        shift: "⇧",
+        control: "⌃",
+        ctrl: "⌃",
+        fn: "fn",
+        space: "␣",
+      }
+    : {
+        option: "Alt",
+        alt: "Alt",
+        control: "Ctrl",
+        ctrl: "Ctrl",
+        shift: "Shift",
+        space: "Space",
+        command: "Win",
+        super: "Win",
+      };
+  const parts = label
+    .split("+")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length > 1)
+    return {
+      glyph: parts
+        .map((part) => symbols[part.toLowerCase()] || part)
+        .join(mac ? "" : "+"),
+      name: "",
+    };
+  const word = (parts[0] || "").replace(/^(Left|Right)\s+/u, "");
+  const symbol = symbols[word.toLowerCase()];
+  return symbol
+    ? { glyph: symbol, name: symbol === word ? "" : word.toLowerCase() }
+    : { glyph: word, name: "" };
+}
+let heroLevels = [];
+window.__TAURI__.event.listen("pressay-levels", ({ payload }) => {
+  const values = Array.isArray(payload)
+    ? payload
+    : payload?.audio_levels || payload?.levels || [];
+  heroLevels = values.map((value) =>
+    Math.max(0, Math.min(1, Number(value) || 0)),
+  );
+});
+function drawHeroWave() {
+  const bars = $("hero-wave").children;
+  const time = performance.now() / 1000;
+  for (let i = 0; i < bars.length; i++) {
+    const level = heroLevels.length
+      ? heroLevels[Math.floor((i / bars.length) * heroLevels.length)]
+      : 0;
+    const idle = 0.12 + 0.08 * Math.sin(time * 3 + i * 0.7);
+    const shape = 0.55 + 0.45 * Math.sin((i / (bars.length - 1)) * Math.PI);
+    bars[i].style.height =
+      `${Math.round(6 + 58 * Math.max(idle, level) * shape)}px`;
+  }
+}
+setInterval(() => {
+  if (!$("hero-wave").hidden) drawHeroWave();
+}, 90);
+let recordingSince = 0,
+  heroKey = "";
+function renderHero(s, data, ready) {
+  const listening = ["starting", "recording"].includes(s.stage);
+  if (listening && !recordingSince) recordingSince = Date.now();
+  if (!listening) recordingSince = 0;
+  const key = keyParts(data.shortcut);
+  $("keycap-glyph").textContent = key.glyph;
+  $("keycap-name").textContent = key.name;
+  $("keycap").classList.toggle("down", listening);
+  $("keycap").classList.toggle("wide", key.glyph.length > 2);
+  $("keycap-hint").textContent = listening
+    ? "Release to type"
+    : `Hold ${data.shortcut || "your talk key"} to talk`;
+  $("hero-wave").hidden = !listening;
+  const record = s.history[0];
+  let label,
+    text,
+    quiet = false;
+  if (listening) {
+    label = "Listening";
+    const seconds = Math.floor((Date.now() - recordingSince) / 1000);
+    text = "";
+    setHeroMeta(
+      null,
+      `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`,
+      "Your words appear where your cursor is when you let go.",
     );
-    icon.setAttribute("aria-hidden", "true");
-    if (icon.tagName === "IMG") {
+  } else if (["processing", "polishing"].includes(s.stage)) {
+    label = s.stage === "polishing" ? "Cleaning up" : "Transcribing";
+    text =
+      s.stage === "polishing"
+        ? "Polishing your words…"
+        : "Turning your speech into text…";
+    quiet = true;
+    setHeroMeta(null, "", "");
+  } else if (["preparing", "loading"].includes(s.stage)) {
+    label = "Getting ready";
+    text = s.progress
+      ? `Downloading your speech model, ${Math.round((s.progress.downloaded / s.progress.total) * 100)}%`
+      : "Loading your speech model…";
+    quiet = true;
+    setHeroMeta(
+      null,
+      "",
+      "This happens once. It runs on your device after that.",
+    );
+  } else if (!ready) {
+    label = "Almost ready";
+    text = "Pressay needs a couple of permissions before you can dictate.";
+    quiet = true;
+    setHeroMeta(null, "", "");
+  } else if (record) {
+    label = "Last dictation";
+    text = record.correction || record.text;
+    setHeroMeta(record, "", "");
+  } else {
+    label = "Ready";
+    text = `Hold ${data.shortcut || "your talk key"} and start talking.`;
+    quiet = true;
+    setHeroMeta(null, "", "Release, and Pressay types where your cursor is.");
+  }
+  $("hero-label").textContent = label;
+  $("hero-text").textContent = text;
+  $("hero-text").hidden = !text;
+  $("hero-text").classList.toggle("quiet", quiet);
+  const showActions = label === "Last dictation";
+  $("hero-actions").hidden = !showActions;
+  const warning = showActions ? dictationWarning(record) : "";
+  $("hero-note").hidden = !warning;
+  if (warning)
+    $("hero-note").replaceChildren(...warningNote(warning).childNodes);
+  if (!ready && !busyStage(s.stage)) {
+    if (!$("hero-setup")) {
+      const setup = element("button", "Finish setup", "primary");
+      setup.id = "hero-setup";
+      setup.type = "button";
+      setup.onclick = () => openSetup();
+      $("hero-actions").before(setup);
+    }
+  } else $("hero-setup")?.remove();
+}
+function busyStage(stage) {
+  return stage !== "idle";
+}
+function setHeroMeta(record, timer, text) {
+  const key = JSON.stringify([
+    record?.id,
+    record?.target,
+    timer,
+    text,
+    Math.floor(Date.now() / 60000),
+    appMetadata[record?.target]?.icon?.length,
+    appMetadata[record?.target]?.name,
+  ]);
+  if (key === heroKey) return;
+  heroKey = key;
+  const meta = $("hero-meta");
+  meta.replaceChildren();
+  if (record) {
+    const metadata = appMetadata[record.target];
+    if (metadata?.icon?.startsWith("data:image/")) {
+      const icon = element("img", undefined, "app-icon");
       icon.src = metadata.icon;
       icon.alt = "";
-    } else {
-      icon.classList.add("placeholder");
-      icon.textContent = "▢";
+      meta.append(icon);
     }
-    const content = element("div");
+    const name = historyAppName(record);
+    if (name) meta.append(element("span", name));
     const age = Math.max(
       0,
       Math.round((Date.now() / 1000 - record.created_at) / 60),
     );
-    const relative = new Intl.RelativeTimeFormat(navigator.language, {
-      numeric: "auto",
-    }).format(
-      age < 60
-        ? -age
-        : age < 1440
-          ? -Math.round(age / 60)
-          : -Math.round(age / 1440),
-      age < 60 ? "minute" : age < 1440 ? "hour" : "day",
-    );
-    content.append(
-      element("p", record.correction || record.text),
+    meta.append(
       element(
-        "small",
-        [historyAppName(record), relative, `${Math.round(record.duration)} sec`]
-          .filter(Boolean)
-          .join(" · "),
+        "span",
+        new Intl.RelativeTimeFormat(navigator.language, {
+          numeric: "auto",
+        }).format(
+          age < 60
+            ? -age
+            : age < 1440
+              ? -Math.round(age / 60)
+              : -Math.round(age / 1440),
+          age < 60 ? "minute" : age < 1440 ? "hour" : "day",
+        ),
+        "faint",
       ),
     );
-    const copy = element("button", undefined, "quiet copy-icon");
-    copy.append(historyIcon("copy"));
-    copy.setAttribute("aria-label", "Copy dictation");
-    copy.onclick = async () => {
-      try {
-        await call("copy_text", { text: record.correction || record.text });
-        copy.textContent = "✓";
-        setTimeout(() => {
-          if (copy.isConnected) copy.replaceChildren(historyIcon("copy"));
-        }, 1200);
-      } catch {}
-    };
-    row.append(icon, content, copy);
-    list.append(row);
   }
+  if (timer) meta.append(element("strong", timer, "hero-timer"));
+  if (text) meta.append(element("span", text));
 }
 let polling = false;
 async function refresh() {

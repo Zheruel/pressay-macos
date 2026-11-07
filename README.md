@@ -198,6 +198,10 @@ model availability and native integrations vary by platform. See the
 [architecture decision](docs/architecture/001-shared-rust-core.md), and
 [validation record](docs/cross-platform-validation.md).
 
+<p align="center">
+  <img src="docs/assets/desktop-app.jpg" width="100%" alt="The Pressay desktop app: Notetaker with a meeting note and an Ask answer that cites two meetings">
+</p>
+
 ## Development
 
 ```bash

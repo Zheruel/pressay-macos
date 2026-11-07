@@ -8,15 +8,9 @@
   </head>
   <body>
     <main id="tray-panel">
-      <header>
-        <img src="icon.png" alt="" width="34" height="34" /><strong
-          >Pressay</strong
-        ><span
-          id="ready-dot"
-          class="ready-dot"
-          role="img"
-          aria-label="Checking readiness"
-        ></span>
+      <header class="status">
+        <strong>Pressay</strong>
+        <span class="status-hint" id="status-hint" role="status"></span>
       </header>
       <div id="update-notice" class="notice" hidden>
         <span id="update-message"></span
@@ -24,28 +18,16 @@
       </div>
       <p id="tray-error" class="notice" role="alert" hidden></p>
       <section id="setup" hidden>
-        <p>Three permissions, then you’re ready.</p>
-        <button id="continue-setup" class="primary">Continue setup</button>
+        <hr />
+        <button id="continue-setup" class="row">Finish setup…</button>
       </section>
       <section id="ready-content" hidden>
-        <button id="attention" class="notice" hidden>
-          Speech model needs attention
-        </button>
-        <div class="talk-key">
-          <span>Hold to talk</span><kbd id="talk-key">…</kbd>
-        </div>
-        <label class="cleanup"
-          ><span class="sparkles" aria-hidden="true"
-            ><svg
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.1"
-              stroke-linejoin="round"
-            >
-              <path
-                d="m10 5 1.8 4.2L16 11l-4.2 1.8L10 17l-1.8-4.2L4 11l4.2-1.8L10 5ZM4 1l.8 2.2L7 4l-2.2.8L4 7l-.8-2.2L1 4l2.2-.8L4 1Z"
-              /></svg></span
+        <button id="attention" class="row attention" hidden></button>
+        <hr />
+        <h2 class="section">Last Dictation</h2>
+        <div id="recent"></div>
+        <hr />
+        <label class="row toggle"
           ><span>AI Cleanup</span
           ><input
             id="cleanup"
@@ -53,50 +35,21 @@
             role="switch"
             aria-label="AI Cleanup"
         /></label>
-        <div class="divider"></div>
-        <h2>RECENT DICTATIONS</h2>
-        <div id="recent"></div>
-        <div class="divider after-recent"></div>
-        <button id="meeting" class="menu-row">
-          <span id="meeting-icon" class="menu-icon" aria-hidden="true">＋</span
-          ><span id="meeting-label">Start Notetaker</span>
+        <button id="meeting" class="row">
+          <span id="meeting-label">Start Notetaker</span>
         </button>
-        <button id="open" class="menu-row">
-          <span class="menu-icon" aria-hidden="true"
-            ><svg
-              viewBox="0 0 20 20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.2"
-            >
-              <rect x="5.5" y="5.5" width="12" height="11" rx="2" />
-              <path
-                d="M13.5 5.5V3.8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"
-              /></svg></span
-          ><span>Open Pressay</span>
-        </button>
-        <button id="settings" class="menu-row">
-          <span class="menu-icon" aria-hidden="true"
-            ><svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linejoin="round"
-            >
-              <path
-                d="m9.6 3-.5 2-1.4.8-2-.5L3.3 9.5l1.5 1.5v1.8l-1.5 1.5 2.4 4.2 2-.5 1.4.8.5 2h4.8l.5-2 1.4-.8 2 .5 2.4-4.2-1.5-1.5V11l1.5-1.5-2.4-4.2-2 .5-1.4-.8-.5-2z"
-              />
-              <circle cx="12" cy="12" r="3.3" /></svg></span
-          ><span>Settings…</span
-          ><kbd class="menu-shortcut" id="settings-shortcut">⌘,</kbd>
+        <hr />
+        <button id="open" class="row">Open Pressay</button>
+        <button id="settings" class="row">
+          <span>Settings…</span
+          ><kbd class="shortcut" id="settings-shortcut">⌘,</kbd>
         </button>
       </section>
-      <div class="divider footer-divider"></div>
-      <button id="check-update" class="menu-row">Check for Updates…</button
-      ><button id="quit" class="menu-row">
+      <button id="check-update" class="row">Check for Updates…</button>
+      <hr />
+      <button id="quit" class="row">
         <span>Quit Pressay</span
-        ><kbd class="menu-shortcut" id="quit-shortcut">⌘Q</kbd>
+        ><kbd class="shortcut" id="quit-shortcut">⌘Q</kbd>
       </button>
     </main>
     <div id="record-menu" class="record-menu" role="menu" hidden>

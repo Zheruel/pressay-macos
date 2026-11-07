@@ -31,7 +31,8 @@ pub enum Command {
     CaptureEnded,
     Settings(Value, Reply),
     BeginPractice(Reply),
-    Complete(String, Reply),
+    /// Observed practice text, and whether the optional practice was skipped.
+    Complete(String, bool, Reply),
     Delete(String, Reply),
     Import(String, Reply),
 }
@@ -447,7 +448,7 @@ pub fn launch(
                     Command::StartMeeting(_, reply)
                     | Command::Settings(_, reply)
                     | Command::BeginPractice(reply)
-                    | Command::Complete(_, reply)
+                    | Command::Complete(_, _, reply)
                     | Command::Delete(_, reply)
                     | Command::Import(_, reply) => {
                         let _ = reply.send(Err("Operation cancelled".into()));
@@ -902,6 +903,14 @@ pub fn launch(
                             if audio_saved {
                                 record.legacy = json!({"managedAudio":true});
                             }
+                            // The warning belongs to this dictation, so History can show it
+                            // on the row long after the transient error toast is gone.
+                            if let Some(warning) = &warning {
+                                if !record.legacy.is_object() {
+                                    record.legacy = json!({});
+                                }
+                                record.legacy["warning"] = json!(warning);
+                            }
                             // Save before insertion so failures never discard recognized speech.
                             if let Err(e) = store.add(&record) {
                                 let _ = workspace.audio.remove(&record.id);
@@ -1075,7 +1084,7 @@ pub fn launch(
                     })();
                     let _ = reply.send(result);
                 }
-                Command::Complete(observed, reply) => {
+                Command::Complete(observed, skipped, reply) => {
                     let p = platform::permissions(
                         state.shortcut_registered.load(Ordering::Relaxed),
                         state.microphone_worked.load(Ordering::Relaxed),
@@ -1085,12 +1094,16 @@ pub fn launch(
                         (s.practice.clone(), s.settings.clone(), s.model_ready)
                     };
                     practice.observed_text = observed;
-                    let result = if practice.complete(&Readiness {
+                    let readiness = Readiness {
                         microphone: p.microphone,
                         shortcut: p.shortcut,
                         insertion: p.insertion,
                         model_ready,
-                    }) {
+                    };
+                    // Practice is optional, as in Hex's tour; skipping it still
+                    // needs working permissions and a ready model.
+                    let result = if (skipped && readiness.ready()) || practice.complete(&readiness)
+                    {
                         settings["onboardingComplete"] = json!(true);
                         store
                             .save_settings(&settings)

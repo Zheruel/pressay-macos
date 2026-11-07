@@ -478,6 +478,7 @@ fn notes_preserve_source_model_selection_title_and_context_rules() {
             title: "<Roadmap> \"Review\"".into(),
             date: "2026-11-05".into(),
             time: "09:00".into(),
+            people: String::new(),
             notes: "Ana owns it.".into(),
             my_notes: "Check Friday".into(),
             transcript: "Too much transcript".into(),
@@ -532,4 +533,48 @@ async fn response_size_and_malformed_duration_are_rejected_before_insertion_or_n
             Err(AiError::BadResponse)
         ));
     }
+}
+
+#[test]
+fn ask_search_terms_stem_and_long_transcripts_are_excerpted() {
+    use notes::*;
+    assert_eq!(
+        search_terms("What did Sam say about pricing?"),
+        ["sam", "pric"]
+    );
+    assert_eq!(
+        term_hits("We changed the prices again", &search_terms("pricing")),
+        1
+    );
+    let transcript = (0..400)
+        .map(|i| {
+            if i == 200 {
+                "[3:20] Others: The pricing goes up in March.".to_owned()
+            } else {
+                format!("[{i}:00] Me: Unrelated filler line number {i}.")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let input = AskInput {
+        question: "What about pricing?".into(),
+        today: "2026-11-06 (Friday)".into(),
+        history: vec![],
+        meetings: vec![AskMeeting {
+            title: "Sales".into(),
+            date: "2026-11-05".into(),
+            time: "09:00".into(),
+            people: "Sam".into(),
+            notes: String::new(),
+            my_notes: String::new(),
+            transcript,
+        }],
+    };
+    let user = ask_user(&input, 2_000);
+    assert!(user.contains("<meeting n=\"1\""));
+    assert!(user.contains("people=\"Sam\""));
+    assert!(user.contains("excerpt=\"true\""));
+    assert!(user.contains("pricing goes up in March"));
+    assert!(user.contains("filler line number 199"));
+    assert!(!user.contains("filler line number 50."));
 }

@@ -77,6 +77,15 @@ fn cancel(state: State<'_, Arc<Shared>>) {
 fn request_permission(kind: String) -> Result<(), String> {
     platform::request_permission(&kind)
 }
+/// macOS occasionally applies a privacy change only to a new
+/// process, so setup offers a relaunch when a switched-on grant is not seen.
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle, state: State<'_, Arc<Shared>>) -> Result<(), String> {
+    if state.view.lock().unwrap().stage != "idle" {
+        return Err("Finish the current operation first".into());
+    }
+    app.restart()
+}
 #[tauri::command]
 async fn input_devices() -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(audio::list_inputs)
@@ -135,10 +144,11 @@ async fn save_settings(patch: Value, state: State<'_, Arc<Shared>>) -> Result<()
 #[tauri::command]
 async fn complete_onboarding(
     observed: String,
+    skipped: Option<bool>,
     state: State<'_, Arc<Shared>>,
 ) -> Result<(), String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    state.send(Command::Complete(observed, tx))?;
+    state.send(Command::Complete(observed, skipped.unwrap_or(false), tx))?;
     rx.await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
@@ -270,6 +280,7 @@ fn main() {
             prepare_model,
             cancel,
             request_permission,
+            restart_app,
             input_devices,
             app_metadata::history_app_metadata,
             input_device_selection,
