@@ -298,6 +298,7 @@ fn native_adapter_passes_language_and_gates_formatting_against_actual_abi() {
         ("whisperTurboGGML", "hr:0:0:1"),
         ("voxtralMini", "hr:0:0:1"),
         ("qwen3ASR06", "auto:0:0:1"),
+        ("fourierEnglish", "auto:0:0:1"),
     ] {
         let mut engine = NativeEngine::load(id, &model, &temp.0).unwrap();
         assert_eq!(

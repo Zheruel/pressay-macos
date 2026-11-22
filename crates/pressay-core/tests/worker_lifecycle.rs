@@ -271,6 +271,7 @@ async fn preserves_qwen_long_context_and_other_models_bounded_chunks() {
     let cancel = CancellationToken::new();
     for (model, expected) in [
         ("qwen3ASR17", "qwen3ASR17:640000"),
+        ("fourierEnglish", "fourierEnglish:640000"),
         ("moss", "moss:320000 moss:320000"),
     ] {
         let text = host
