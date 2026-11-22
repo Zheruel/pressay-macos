@@ -235,6 +235,7 @@ fn plain_transcript(model: &str, text: &str) -> String {
         "megaASR",
         "qwen3ASR17",
         "qwen3ASR06",
+        "fourierEnglish",
         "funASRMLTNano",
         "voxtralMini",
     ]

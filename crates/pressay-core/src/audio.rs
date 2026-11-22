@@ -5,7 +5,15 @@ pub const MAX_CHUNK_SAMPLES: usize = 25 * SAMPLE_RATE;
 pub fn chunk_samples(model: &str) -> usize {
     if model == "whisperTurboGGML" {
         300 * SAMPLE_RATE
-    } else if ["qwen3ASR17", "qwen3ASR06", "funASRMLTNano", "voxtralMini"].contains(&model) {
+    } else if [
+        "qwen3ASR17",
+        "qwen3ASR06",
+        "fourierEnglish",
+        "funASRMLTNano",
+        "voxtralMini",
+    ]
+    .contains(&model)
+    {
         60 * SAMPLE_RATE
     } else {
         MAX_CHUNK_SAMPLES

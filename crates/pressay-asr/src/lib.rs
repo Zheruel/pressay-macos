@@ -229,8 +229,8 @@ pub fn runtime_library(model_id: &str, root: &Path) -> Result<PathBuf, String> {
             Ok(root.join("orukeet/lib/libnemo_speech_asr_c.dylib"))
         }
         "orukeet" => Err("The optimized Orukeet runtime is available only on Apple Silicon".into()),
-        "moss" | "parakeetUltra" | "qwen3ASR17" | "qwen3ASR06" | "funASRMLTNano"
-        | "whisperTurboGGML" | "voxtralMini" => {
+        "moss" | "parakeetUltra" | "qwen3ASR17" | "qwen3ASR06" | "fourierEnglish"
+        | "funASRMLTNano" | "whisperTurboGGML" | "voxtralMini" => {
             let filename = if cfg!(target_os = "windows") {
                 "transcribe.dll"
             } else if cfg!(target_os = "macos") {
@@ -354,6 +354,7 @@ mod option_tests {
             "parakeetUltra",
             "qwen3ASR17",
             "qwen3ASR06",
+            "fourierEnglish",
         ] {
             assert_eq!(run_options(model, Some("en")).unwrap(), (None, false));
         }

@@ -151,5 +151,18 @@
         "url": "https://huggingface.co/handy-computer/Qwen3-ASR-0.6B-gguf/resolve/7e7c69a577fa2725dfedbe34b5e999336e30a19b/Qwen3-ASR-0.6B-Q8_0.gguf"
       }
     ]
+  },
+  {
+    "id": "fourierEnglish",
+    "name": "Oruk Fourier 2B (English, noncommercial)",
+    "mac_only": false,
+    "artifacts": [
+      {
+        "path": "Fourier-2B-Q8_0.gguf",
+        "bytes": 2185030848,
+        "sha256": "6a7c419bd571f7b0e21da2d5ab1e3a1a3938a83470d622be57427af98f322981",
+        "url": "https://huggingface.co/oruk/oruk-fourier-2b/resolve/8bcce21695e4ba13569c48de6cedffcb8a7576f5/Fourier-2B-Q8_0.gguf"
+      }
+    ]
   }
 ]

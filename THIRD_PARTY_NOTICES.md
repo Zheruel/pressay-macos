@@ -38,6 +38,7 @@ The five recommended model sources are [Orukeet](https://huggingface.co/oruk/oru
 [Mega-ASR](https://huggingface.co/mlx-community/Mega-ASR-bf16).
 Model-card licenses and attribution requirements apply independently of Pressay's code license.
 
+- [Oruk Fourier 2B](https://huggingface.co/oruk/oruk-fourier-2b): optional English speech recognition by Oruk. The weights are [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). Commercial use requires a separate license from Oruk.
 - [Whisper Large V3 Turbo](https://huggingface.co/openai/whisper-large-v3-turbo): base model released under the MIT License. Consult the downloaded GGUF repository's model card for conversion-specific notices.
 - [Silero VAD v6.2 GGUF](https://huggingface.co/handy-computer/silero-vad-v6.2-gguf): MIT. Finds speech in meetings; downloaded on the first meeting.
 - [Streaming Sortformer 4spk v2.1 GGUF](https://huggingface.co/handy-computer/diar_streaming_sortformer_4spk-v2.1-gguf): NVIDIA speaker diarization model, converted for transcribe.cpp. Tells speakers apart in meetings. Consult the model card for its license.

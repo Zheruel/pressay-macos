@@ -14,7 +14,7 @@ and a one-second silent warm-up have succeeded. Native diagnostics go to stderr.
 
 | Model | Runtime location below the supplied directory | Platforms |
 | --- | --- | --- |
-| `moss`, `parakeetUltra`, `qwen3ASR17`, `qwen3ASR06`, `funASRMLTNano`, `whisperTurboGGML`, `voxtralMini` | `transcribe/libtranscribe.dylib`, `transcribe/transcribe.dll`, or `transcribe/libtranscribe.so` | macOS, Windows, Linux |
+| `moss`, `parakeetUltra`, `qwen3ASR17`, `qwen3ASR06`, `fourierEnglish`, `funASRMLTNano`, `whisperTurboGGML`, `voxtralMini` | `transcribe/libtranscribe.dylib`, `transcribe/transcribe.dll`, or `transcribe/libtranscribe.so` | macOS, Windows, Linux |
 | `orukeet` | `orukeet/lib/libnemo_speech_asr_c.dylib` | Apple Silicon macOS |
 | `megaASR` | Use the Swift MLX worker built from `Runtime/` | Apple Silicon macOS |
 

@@ -21,6 +21,7 @@ impl Model {
     pub fn language_caption(&self) -> &'static str {
         match self.id.as_str() {
             "orukeet" | "parakeetUltra" => "25 European languages · automatic detection",
+            "fourierEnglish" => "English · CC BY-NC 4.0",
             "moss" => "50+ languages · automatic detection",
             "qwen3ASR17" | "qwen3ASR06" => "30 languages · automatic detection",
             "funASRMLTNano" => "31 languages · automatic detection or a fixed language",
@@ -32,7 +33,7 @@ impl Model {
     pub fn is_secondary(&self) -> bool {
         matches!(
             self.id.as_str(),
-            "funASRMLTNano" | "whisperTurboGGML" | "voxtralMini" | "qwen3ASR06"
+            "funASRMLTNano" | "whisperTurboGGML" | "voxtralMini" | "qwen3ASR06" | "fourierEnglish"
         )
     }
     pub fn supports_language_hint(&self) -> bool {
@@ -47,6 +48,7 @@ impl Model {
                 "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv",
                 "lt", "mt", "pl", "pt", "ro", "ru", "sk", "sl", "es", "sv", "uk",
             ],
+            "fourierEnglish" => &["en"],
             "moss" => &[],
             "parakeetUltra" => &[
                 "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv",
@@ -109,6 +111,19 @@ pub fn find(id: &str) -> crate::Result<&'static Model> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fourier_is_an_optional_english_model_with_an_upfront_license_label() {
+        let model = find("fourierEnglish").unwrap();
+        assert!(model.is_secondary());
+        assert_eq!(model.language_codes(), &["en"]);
+        assert!(model.name.contains("noncommercial"));
+        assert!(model.language_caption().contains("CC BY-NC 4.0"));
+        assert_eq!(model.bytes(), 2_185_030_848);
+        assert_eq!(model.artifacts.len(), 1);
+        assert!(model.artifacts[0]
+            .url
+            .starts_with("https://huggingface.co/oruk/oruk-fourier-2b/resolve/"));
+    }
     #[test]
     fn every_model_has_languages_and_falls_back_to_automatic() {
         assert!(models().len() >= 9);
